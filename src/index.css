@@ -1,0 +1,257 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 🌊 Marine Plastic Detection Platform - Ocean Blues & Teals Design System */
+
+@layer base {
+  :root {
+    /* Ocean Blues & Teals Palette - Light Mode */
+    --background: 200 50% 98%;
+    --foreground: 210 40% 20%;
+
+    --card: 200 40% 100%;
+    --card-foreground: 210 40% 20%;
+
+    --popover: 200 40% 100%;
+    --popover-foreground: 210 40% 20%;
+
+    /* Deep Ocean Blue - Primary */
+    --primary: 203 77% 26%;
+    --primary-foreground: 200 50% 98%;
+
+    /* Soft Teal - Secondary */
+    --secondary: 170 50% 45%;
+    --secondary-foreground: 200 50% 98%;
+
+    /* Aqua - Accent */
+    --accent: 177 59% 41%;
+    --accent-foreground: 200 50% 98%;
+
+    --muted: 200 30% 94%;
+    --muted-foreground: 210 20% 45%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* Sea Green - Success */
+    --success: 160 84% 39%;
+    --success-foreground: 0 0% 100%;
+
+    /* Sand - Warning */
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 10%;
+
+    --border: 200 30% 88%;
+    --input: 200 30% 88%;
+    --ring: 203 77% 26%;
+
+    --radius: 0.75rem;
+
+    /* Glassmorphism */
+    --glass-bg: 200 50% 100% / 0.7;
+    --glass-border: 200 30% 90% / 0.5;
+
+    /* Sidebar */
+    --sidebar-background: 200 40% 98%;
+    --sidebar-foreground: 210 40% 25%;
+    --sidebar-primary: 203 77% 26%;
+    --sidebar-primary-foreground: 200 50% 98%;
+    --sidebar-accent: 177 59% 41%;
+    --sidebar-accent-foreground: 200 50% 98%;
+    --sidebar-border: 200 30% 90%;
+    --sidebar-ring: 203 77% 40%;
+
+    /* Chart Colors */
+    --chart-1: 203 77% 26%;
+    --chart-2: 170 50% 45%;
+    --chart-3: 177 59% 41%;
+    --chart-4: 160 84% 39%;
+    --chart-5: 38 92% 50%;
+  }
+
+  .dark {
+    /* Ocean Blues & Teals - Dark Mode */
+    --background: 215 50% 8%;
+    --foreground: 200 40% 95%;
+
+    --card: 215 45% 12%;
+    --card-foreground: 200 40% 95%;
+
+    --popover: 215 45% 12%;
+    --popover-foreground: 200 40% 95%;
+
+    /* Deep Ocean Blue - Primary (lighter for dark mode) */
+    --primary: 200 70% 55%;
+    --primary-foreground: 215 50% 8%;
+
+    /* Soft Teal - Secondary */
+    --secondary: 170 50% 40%;
+    --secondary-foreground: 200 40% 95%;
+
+    /* Aqua - Accent */
+    --accent: 177 59% 45%;
+    --accent-foreground: 215 50% 8%;
+
+    --muted: 215 40% 18%;
+    --muted-foreground: 200 20% 65%;
+
+    --destructive: 0 62% 45%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* Sea Green - Success */
+    --success: 160 70% 45%;
+    --success-foreground: 0 0% 100%;
+
+    /* Sand - Warning */
+    --warning: 38 80% 55%;
+    --warning-foreground: 0 0% 10%;
+
+    --border: 215 40% 20%;
+    --input: 215 40% 20%;
+    --ring: 200 70% 55%;
+
+    /* Glassmorphism Dark */
+    --glass-bg: 215 45% 15% / 0.8;
+    --glass-border: 215 40% 25% / 0.5;
+
+    /* Sidebar Dark */
+    --sidebar-background: 215 50% 10%;
+    --sidebar-foreground: 200 40% 90%;
+    --sidebar-primary: 200 70% 55%;
+    --sidebar-primary-foreground: 215 50% 8%;
+    --sidebar-accent: 177 59% 45%;
+    --sidebar-accent-foreground: 215 50% 8%;
+    --sidebar-border: 215 40% 18%;
+    --sidebar-ring: 200 70% 55%;
+
+    /* Chart Colors Dark */
+    --chart-1: 200 70% 55%;
+    --chart-2: 170 50% 50%;
+    --chart-3: 177 59% 50%;
+    --chart-4: 160 70% 50%;
+    --chart-5: 38 80% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  /* Smooth scrolling */
+  html {
+    scroll-behavior: smooth;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-muted/30;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-muted-foreground/30 rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/50;
+  }
+}
+
+@layer components {
+  /* Glassmorphism Card */
+  .glass-card {
+    @apply backdrop-blur-md border rounded-xl;
+    background: hsl(var(--glass-bg));
+    border-color: hsl(var(--glass-border));
+  }
+
+  /* Ocean wave animation background */
+  .ocean-gradient {
+    background: linear-gradient(
+      135deg,
+      hsl(var(--primary)) 0%,
+      hsl(var(--secondary)) 50%,
+      hsl(var(--accent)) 100%
+    );
+  }
+
+  /* Subtle ocean shimmer */
+  .ocean-shimmer {
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      hsl(var(--accent) / 0.1) 50%,
+      transparent 100%
+    );
+    animation: shimmer 2s infinite;
+  }
+
+  /* Hover lift effect */
+  .hover-lift {
+    @apply transition-all duration-300 ease-out;
+  }
+
+  .hover-lift:hover {
+    @apply -translate-y-1;
+    box-shadow: 0 10px 40px -10px hsl(var(--primary) / 0.3);
+  }
+
+  /* Page container */
+  .page-container {
+    @apply min-h-screen p-6 lg:p-8;
+  }
+
+  /* Section header */
+  .section-header {
+    @apply text-2xl font-bold tracking-tight mb-6;
+  }
+}
+
+@layer utilities {
+  /* Gradient text */
+  .gradient-text {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(
+      135deg,
+      hsl(var(--primary)) 0%,
+      hsl(var(--accent)) 100%
+    );
+  }
+
+  /* Animation delay utilities */
+  .animation-delay-100 {
+    animation-delay: 100ms;
+  }
+  .animation-delay-200 {
+    animation-delay: 200ms;
+  }
+  .animation-delay-300 {
+    animation-delay: 300ms;
+  }
+  .animation-delay-400 {
+    animation-delay: 400ms;
+  }
+  .animation-delay-500 {
+    animation-delay: 500ms;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}

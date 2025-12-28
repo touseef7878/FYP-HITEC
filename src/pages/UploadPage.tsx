@@ -51,14 +51,26 @@ interface DetectionResult {
     count: number;
     avgConfidence: number;
   }[];
-  annotatedImage: string;
-  originalImage: string;
+  annotatedImage?: string;
+  originalImage?: string;
+  annotatedVideo?: string;
+  originalVideo?: string;
+  annotatedVideoUrl?: string;  // New URL-based field
+  originalVideoUrl?: string;   // New URL-based field
+  totalFrames?: number;
+  processedFrames?: number;
+  fps?: number;
+  duration?: number;
+  resolution?: string;
 }
 
 export default function UploadPage() {
   const [files, setFiles] = useState<UploadFile[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isComplete, setIsComplete] = useState(false);
+  const [estimatedTime, setEstimatedTime] = useState<number | null>(null);
+  const [processingProgress, setProcessingProgress] = useState(0);
   const [logs, setLogs] = useState<string[]>([]);
   const [confidence, setConfidence] = useState(25);
   const [showSettings, setShowSettings] = useState(false);
@@ -70,13 +82,55 @@ export default function UploadPage() {
     setLogs((prev) => [...prev, `[${new Date().toLocaleTimeString()}] ${message}`]);
   };
 
+  // Estimate processing time based on video properties
+  const estimateProcessingTime = (file: File): Promise<number> => {
+    return new Promise((resolve) => {
+      if (file.type.startsWith('video/')) {
+        const video = document.createElement('video');
+        video.preload = 'metadata';
+        
+        video.onloadedmetadata = () => {
+          const duration = video.duration; // in seconds
+          const fileSize = file.size / (1024 * 1024); // in MB
+          
+          // Estimation formula: ~2-3 seconds per second of video + file size factor
+          const baseTime = duration * 2.5; // 2.5 seconds per video second
+          const sizeTime = fileSize * 0.1; // 0.1 seconds per MB
+          const estimatedSeconds = Math.max(baseTime + sizeTime, 5); // minimum 5 seconds
+          
+          addLog(`📹 Video detected: ${duration.toFixed(1)}s duration, ${fileSize.toFixed(1)}MB`);
+          addLog(`⏱️ Estimated processing time: ${estimatedSeconds.toFixed(0)} seconds`);
+          
+          resolve(estimatedSeconds);
+        };
+        
+        video.onerror = () => {
+          // Fallback estimation based on file size only
+          const fileSize = file.size / (1024 * 1024);
+          const estimatedSeconds = Math.max(fileSize * 0.5, 10);
+          addLog(`⏱️ Estimated processing time: ${estimatedSeconds.toFixed(0)} seconds (based on file size)`);
+          resolve(estimatedSeconds);
+        };
+        
+        video.src = URL.createObjectURL(file);
+      } else {
+        // For images, much faster processing
+        const fileSize = file.size / (1024 * 1024);
+        const estimatedSeconds = Math.max(fileSize * 0.1, 2);
+        addLog(`🖼️ Image detected: ${fileSize.toFixed(1)}MB`);
+        addLog(`⏱️ Estimated processing time: ${estimatedSeconds.toFixed(0)} seconds`);
+        resolve(estimatedSeconds);
+      }
+    });
+  };
+
   // Check backend health
   const checkBackendHealth = async () => {
     try {
       const response = await fetch(`${API_URL}/health`);
       const data = await response.json();
       setBackendStatus("online");
-      if (!data.model_loaded) {
+      if (!data.yolo_model_loaded) {
         addLog("⚠️ Backend online but model not loaded. Add weights to backend/weights/best.pt");
         toast({
           title: "Model Not Loaded",
@@ -86,7 +140,7 @@ export default function UploadPage() {
       } else {
         addLog("✓ Backend connected, model loaded");
       }
-      return data.model_loaded;
+      return data.yolo_model_loaded;
     } catch {
       setBackendStatus("offline");
       addLog("✗ Backend not reachable. Start with: cd backend && python main.py");
@@ -109,7 +163,7 @@ export default function UploadPage() {
     
     const newFiles: UploadFile[] = droppedFiles.map((file) => ({
       file,
-      id: Math.random().toString(36).substr(2, 9),
+      id: Math.random().toString(36).substring(2, 11),
       progress: 0,
       status: "pending",
     }));
@@ -127,7 +181,7 @@ export default function UploadPage() {
     
     const newFiles: UploadFile[] = selectedFiles.map((file) => ({
       file,
-      id: Math.random().toString(36).substr(2, 9),
+      id: Math.random().toString(36).substring(2, 11),
       progress: 0,
       status: "pending",
     }));
@@ -145,6 +199,9 @@ export default function UploadPage() {
     if (files.length === 0) return;
     
     setIsProcessing(true);
+    setIsComplete(false);
+    setProcessingProgress(0);
+
     addLog("Checking backend connection...");
     
     const modelLoaded = await checkBackendHealth();
@@ -153,13 +210,26 @@ export default function UploadPage() {
       return;
     }
 
-    addLog("Starting detection pipeline...");
+    // Calculate total estimated time for all files
+    let totalEstimatedTime = 0;
+    for (const file of files) {
+      const estimatedTime = await estimateProcessingTime(file.file);
+      totalEstimatedTime += estimatedTime;
+    }
+    
+    setEstimatedTime(totalEstimatedTime);
+    addLog(`🚀 Starting detection pipeline for ${files.length} file(s)`);
+    addLog(`⏱️ Total estimated time: ${Math.ceil(totalEstimatedTime)} seconds`);
+
     const results: DetectionResult[] = [];
+    let processedTime = 0;
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       const isVideo = file.file.type.startsWith("video/");
-      addLog(`Processing: ${file.file.name}`);
+      const fileEstimatedTime = await estimateProcessingTime(file.file);
+      
+      addLog(`Processing: ${file.file.name} ${isVideo ? '🎥' : '🖼️'}`);
       
       // Update to uploading status
       setFiles((prev) =>
@@ -173,6 +243,8 @@ export default function UploadPage() {
         formData.append("file", file.file);
 
         const endpoint = isVideo ? "/detect-video" : "/detect";
+        
+        const startTime = Date.now();
         const response = await fetch(
           `${API_URL}${endpoint}?confidence=${confidence / 100}`,
           {
@@ -188,15 +260,42 @@ export default function UploadPage() {
           )
         );
 
+        // Simulate progress updates during processing
+        const progressInterval = setInterval(() => {
+          const elapsed = (Date.now() - startTime) / 1000;
+          const progress = Math.min(90, 60 + (elapsed / fileEstimatedTime) * 30);
+          
+          setFiles((prev) =>
+            prev.map((f) =>
+              f.id === file.id ? { ...f, progress: Math.round(progress) } : f
+            )
+          );
+          
+          // Update overall progress
+          const overallProgress = ((processedTime + elapsed) / totalEstimatedTime) * 100;
+          setProcessingProgress(Math.min(95, overallProgress));
+        }, 500);
+
         if (!response.ok) {
+          clearInterval(progressInterval);
           const error = await response.json();
           throw new Error(error.detail || "Detection failed");
         }
 
         const result = await response.json();
+        clearInterval(progressInterval);
+        
+        const actualTime = (Date.now() - startTime) / 1000;
+        processedTime += actualTime;
+        
         results.push(result);
 
-        addLog(`✓ Detected ${result.totalDetections} objects in ${file.file.name}`);
+        if (isVideo) {
+          addLog(`✓ Video processed: ${result.totalDetections} objects detected in ${result.totalFrames} frames`);
+          addLog(`📊 Video stats: ${result.duration}s duration, ${result.fps} FPS, ${result.resolution}`);
+        } else {
+          addLog(`✓ Image processed: ${result.totalDetections} objects detected`);
+        }
         
         // Update to complete
         setFiles((prev) =>
@@ -204,6 +303,10 @@ export default function UploadPage() {
             f.id === file.id ? { ...f, progress: 100, status: "complete" } : f
           )
         );
+
+        // Update overall progress
+        const overallProgress = (processedTime / totalEstimatedTime) * 100;
+        setProcessingProgress(Math.min(100, overallProgress));
 
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unknown error";
@@ -220,21 +323,50 @@ export default function UploadPage() {
     }
 
     if (results.length > 0) {
-      addLog(`All files processed! Total detections: ${results.reduce((sum, r) => sum + r.totalDetections, 0)}`);
+      const totalDetections = results.reduce((sum, r) => sum + r.totalDetections, 0);
+      addLog(`🎉 All files processed! Total detections: ${totalDetections}`);
       
       // Store results in sessionStorage to pass to results page
       sessionStorage.setItem("detectionResults", JSON.stringify(results));
+      console.log("Stored results:", results); // Debug log
       
+      // Set completion state FIRST
+      setProcessingProgress(100);
+      setIsComplete(true);
+      
+      // Show completion notification
       toast({
-        title: "Detection Complete",
-        description: `Processed ${results.length} file(s) successfully`,
+        title: "🎉 Detection Complete!",
+        description: `Successfully processed ${results.length} file(s) with ${totalDetections} total detections`,
+        duration: 3000,
       });
 
-      // Navigate to results after short delay
-      setTimeout(() => navigate("/results"), 1000);
-    }
+      // Show completion popup for videos
+      const hasVideo = results.some(r => r.annotatedVideo || r.annotatedVideoUrl);
+      if (hasVideo) {
+        toast({
+          title: "🎬 Video Processing Complete!",
+          description: "Your annotated video with frame-by-frame detections is ready to view",
+          duration: 4000,
+        });
+      }
 
-    setIsProcessing(false);
+      // Navigate to results after showing completion
+      setTimeout(() => {
+        addLog("🚀 Redirecting to results...");
+        setIsProcessing(false); // Clear processing state just before navigation
+        navigate("/results");
+      }, 3000); // Increased delay to show completion state
+    } else {
+      setIsProcessing(false);
+      setIsComplete(false);
+      setProcessingProgress(0);
+      toast({
+        title: "Processing Failed",
+        description: "No files were processed successfully",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -424,6 +556,61 @@ export default function UploadPage() {
             )}
           </AnimatePresence>
 
+          {/* Processing Progress */}
+          <AnimatePresence>
+            {(isProcessing || isComplete || estimatedTime) && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                className="mb-6"
+              >
+                <Card className="glass-card">
+                  <CardHeader>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      {isComplete ? (
+                        <CheckCircle className="h-5 w-5 text-success" />
+                      ) : isProcessing ? (
+                        <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                      ) : (
+                        <CheckCircle className="h-5 w-5 text-muted-foreground" />
+                      )}
+                      {isComplete ? "Processing Complete!" : isProcessing ? "Processing in Progress..." : "Ready to Process"}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {estimatedTime && !isComplete && (
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">
+                          Estimated Time: {Math.ceil(estimatedTime)} seconds
+                        </span>
+                        <span className="text-muted-foreground">
+                          Progress: {Math.round(processingProgress)}%
+                        </span>
+                      </div>
+                    )}
+                    <Progress 
+                      value={processingProgress} 
+                      className={`h-2 ${isComplete ? 'bg-success/20' : ''}`}
+                    />
+                    {isComplete && (
+                      <div className="flex items-center gap-2 text-success text-sm">
+                        <CheckCircle className="h-4 w-4" />
+                        All files processed successfully! Redirecting to results...
+                      </div>
+                    )}
+                    {isProcessing && !isComplete && (
+                      <div className="flex items-center gap-2 text-primary text-sm">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Processing files... Please wait
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {/* Processing Logs */}
           <AnimatePresence>
             {logs.length > 0 && (
@@ -461,9 +648,14 @@ export default function UploadPage() {
               size="lg"
               className="flex-1"
               onClick={processFiles}
-              disabled={files.length === 0 || isProcessing}
+              disabled={files.length === 0 || isProcessing || isComplete}
             >
-              {isProcessing ? (
+              {isComplete ? (
+                <>
+                  <CheckCircle className="mr-2 h-5 w-5 text-green-500" />
+                  Complete! Redirecting...
+                </>
+              ) : isProcessing ? (
                 <>
                   <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                   Processing...
@@ -481,6 +673,10 @@ export default function UploadPage() {
               onClick={() => {
                 setFiles([]);
                 setLogs([]);
+                setIsComplete(false);
+                setIsProcessing(false);
+                setProcessingProgress(0);
+                setEstimatedTime(null);
               }}
               disabled={isProcessing}
             >

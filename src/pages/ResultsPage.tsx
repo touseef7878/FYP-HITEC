@@ -9,6 +9,8 @@ import {
   Package,
   Percent,
   ImageIcon,
+  Play,
+  Video,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,6 +18,10 @@ import { Badge } from "@/components/ui/badge";
 import { PageTransition, staggerContainer, fadeInUp } from "@/components/layout/PageTransition";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useToast } from "@/hooks/use-toast";
+
+// Backend API URL - change this if your backend runs on a different port
+const API_URL = "http://localhost:8000";
 
 interface DetectionResult {
   success: boolean;
@@ -31,8 +37,17 @@ interface DetectionResult {
     count: number;
     avgConfidence: number;
   }[];
-  annotatedImage: string;
-  originalImage: string;
+  annotatedImage?: string;
+  originalImage?: string;
+  annotatedVideo?: string;
+  originalVideo?: string;
+  annotatedVideoUrl?: string;  // New URL-based field
+  originalVideoUrl?: string;   // New URL-based field
+  totalFrames?: number;
+  processedFrames?: number;
+  fps?: number;
+  duration?: number;
+  resolution?: string;
 }
 
 // Sample fallback data
@@ -63,21 +78,36 @@ const chartColors = [
 export default function ResultsPage() {
   const [results, setResults] = useState<DetectionResult[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
+  const { toast } = useToast();
 
   useEffect(() => {
     // Load results from sessionStorage
     const storedResults = sessionStorage.getItem("detectionResults");
+    console.log("Loading results from storage:", storedResults); // Debug log
     if (storedResults) {
       try {
         const parsed = JSON.parse(storedResults);
+        console.log("Parsed results:", parsed); // Debug log
         setResults(parsed);
-      } catch {
+        
+        // Show completion notification for videos
+        const hasVideo = parsed.some((r: DetectionResult) => r.annotatedVideo || r.annotatedVideoUrl);
+        if (hasVideo) {
+          toast({
+            title: "🎬 Video Processing Complete!",
+            description: "Your annotated video with frame-by-frame detections is ready to view",
+            duration: 5000,
+          });
+        }
+      } catch (error) {
+        console.error("Error parsing results:", error); // Debug log
         setResults([sampleResult]);
       }
     } else {
+      console.log("No stored results found, using sample"); // Debug log
       setResults([sampleResult]);
     }
-  }, []);
+  }, [toast]);
 
   const currentResult = results[activeIndex] || sampleResult;
   const totalObjects = currentResult.totalDetections;
@@ -88,13 +118,30 @@ export default function ResultsPage() {
       )
     : 0;
 
+  const isVideo = !!(currentResult.annotatedVideo || currentResult.annotatedVideoUrl);
+
   const handleDownload = () => {
     if (currentResult.annotatedImage) {
       const link = document.createElement("a");
       link.href = currentResult.annotatedImage;
       link.download = `detected_${currentResult.filename}`;
       link.click();
+    } else if (currentResult.annotatedVideoUrl) {
+      const link = document.createElement("a");
+      link.href = `${API_URL}${currentResult.annotatedVideoUrl}`;
+      link.download = `detected_${currentResult.filename}`;
+      link.click();
+    } else if (currentResult.annotatedVideo) {
+      const link = document.createElement("a");
+      link.href = currentResult.annotatedVideo;
+      link.download = `detected_${currentResult.filename}`;
+      link.click();
     }
+    
+    toast({
+      title: "Download Started",
+      description: `Downloading ${isVideo ? 'video' : 'image'}: detected_${currentResult.filename}`,
+    });
   };
 
   return (
@@ -111,17 +158,28 @@ export default function ResultsPage() {
                 <ArrowLeft className="h-4 w-4 mr-1" />
                 Back to Upload
               </Link>
-              <h1 className="section-header mb-0">Detection Results</h1>
-              <p className="text-muted-foreground">{currentResult.filename}</p>
+              <h1 className="section-header mb-0 flex items-center gap-2">
+                Detection Results
+                {isVideo && <Video className="h-6 w-6 text-primary" />}
+              </h1>
+              <p className="text-muted-foreground flex items-center gap-2">
+                {currentResult.filename}
+                {isVideo && (
+                  <Badge variant="secondary" className="text-xs">
+                    <Play className="h-3 w-3 mr-1" />
+                    Video
+                  </Badge>
+                )}
+              </p>
             </div>
             <div className="flex gap-2">
               <Button variant="outline" size="sm">
                 <Share2 className="h-4 w-4 mr-2" />
                 Share
               </Button>
-              <Button size="sm" onClick={handleDownload} disabled={!currentResult.annotatedImage}>
+              <Button size="sm" onClick={handleDownload} disabled={!currentResult.annotatedImage && !currentResult.annotatedVideo && !currentResult.annotatedVideoUrl}>
                 <Download className="h-4 w-4 mr-2" />
-                Download
+                Download {isVideo ? 'Video' : 'Image'}
               </Button>
             </div>
           </div>
@@ -149,10 +207,18 @@ export default function ResultsPage() {
             <div className="lg:col-span-2">
               <Card className="glass-card overflow-hidden">
                 <CardHeader>
-                  <CardTitle>Before / After Comparison</CardTitle>
+                  <CardTitle className="flex items-center gap-2">
+                    Before / After Comparison
+                    {isVideo && (
+                      <Badge variant="outline" className="text-xs">
+                        <Video className="h-3 w-3 mr-1" />
+                        {currentResult.totalFrames} frames
+                      </Badge>
+                    )}
+                  </CardTitle>
                 </CardHeader>
                 <CardContent className="p-0">
-                  {currentResult.annotatedImage ? (
+                  {currentResult.annotatedImage || currentResult.annotatedVideo || currentResult.annotatedVideoUrl ? (
                     <Tabs defaultValue="after" className="w-full">
                       <div className="px-4 pt-2">
                         <TabsList className="grid w-full grid-cols-2">
@@ -168,6 +234,18 @@ export default function ResultsPage() {
                               alt="Original"
                               className="w-full h-full object-contain"
                             />
+                          ) : currentResult.originalVideoUrl ? (
+                            <video
+                              src={`${API_URL}${currentResult.originalVideoUrl}`}
+                              controls
+                              className="w-full h-full object-contain"
+                            />
+                          ) : currentResult.originalVideo ? (
+                            <video
+                              src={currentResult.originalVideo}
+                              controls
+                              className="w-full h-full object-contain"
+                            />
                           ) : (
                             <div className="flex items-center justify-center h-full">
                               <ImageIcon className="h-12 w-12 text-muted-foreground" />
@@ -177,11 +255,25 @@ export default function ResultsPage() {
                       </TabsContent>
                       <TabsContent value="after" className="mt-0">
                         <div className="relative aspect-video bg-muted">
-                          <img
-                            src={currentResult.annotatedImage}
-                            alt="Detected objects"
-                            className="w-full h-full object-contain"
-                          />
+                          {currentResult.annotatedImage ? (
+                            <img
+                              src={currentResult.annotatedImage}
+                              alt="Detected objects"
+                              className="w-full h-full object-contain"
+                            />
+                          ) : currentResult.annotatedVideoUrl ? (
+                            <video
+                              src={`${API_URL}${currentResult.annotatedVideoUrl}`}
+                              controls
+                              className="w-full h-full object-contain"
+                            />
+                          ) : currentResult.annotatedVideo ? (
+                            <video
+                              src={currentResult.annotatedVideo}
+                              controls
+                              className="w-full h-full object-contain"
+                            />
+                          ) : null}
                         </div>
                       </TabsContent>
                     </Tabs>
@@ -261,6 +353,30 @@ export default function ResultsPage() {
                       <span className="text-muted-foreground">Detections</span>
                       <span>{currentResult.totalDetections}</span>
                     </div>
+                    {currentResult.totalFrames && (
+                      <>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Total Frames</span>
+                          <span>{currentResult.totalFrames}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Processed Frames</span>
+                          <span>{currentResult.processedFrames}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Duration</span>
+                          <span>{currentResult.duration}s</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Resolution</span>
+                          <span>{currentResult.resolution}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">FPS</span>
+                          <span>{currentResult.fps}</span>
+                        </div>
+                      </>
+                    )}
                   </CardContent>
                 </Card>
               </motion.div>

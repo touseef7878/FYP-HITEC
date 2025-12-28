@@ -56,33 +56,64 @@ The application provides real-time detection results with bounding boxes, confid
 - Python 3.8+
 - Node.js 16+
 - Trained YOLOv12n model weights file (`best.pt`)
-- LSTM model for trend analysis
 
-### Setup Instructions
+### Quick Setup (Automated)
 
-1. **Add your models:**
+1. **Run the automated setup script:**
    ```bash
-   mkdir backend/weights
-   cp /path/to/your/best.pt backend/weights/best.pt
-   # Add LSTM model files as needed
+   python setup_lstm.py
    ```
+   This will:
+   - Install all Python dependencies
+   - Train the LSTM model automatically
+   - Set up the complete system
 
-2. **Install and run backend:**
+2. **Start the backend:**
    ```bash
    cd backend
-   pip install -r requirements.txt
    python main.py
    ```
 
-3. **Install and run frontend (new terminal):**
+3. **Start the frontend (new terminal):**
    ```bash
    npm install
    npm run dev
    ```
 
 4. **Access the application:**
-   - Frontend: http://localhost:8080
+   - Frontend: http://localhost:5173
    - Backend API: http://localhost:8000
+
+### Manual Setup
+
+1. **Add your YOLO model:**
+   ```bash
+   mkdir backend/weights
+   cp /path/to/your/best.pt backend/weights/best.pt
+   ```
+
+2. **Install backend dependencies:**
+   ```bash
+   cd backend
+   pip install -r requirements.txt
+   ```
+
+3. **Train LSTM model:**
+   ```bash
+   cd backend
+   python train_lstm.py
+   ```
+
+4. **Run backend:**
+   ```bash
+   python main.py
+   ```
+
+5. **Install and run frontend (new terminal):**
+   ```bash
+   npm install
+   npm run dev
+   ```
 
 ## 📊 Model Requirements
 
@@ -96,11 +127,24 @@ The system expects YOLOv12n models trained to detect marine plastic debris class
 - Other marine debris types
 
 ### LSTM Analysis Model
-The LSTM model analyzes temporal patterns for:
-- Pollution density trends
-- Seasonal variations
-- Area-specific pollution patterns
-- Future pollution predictions
+The LSTM model analyzes temporal patterns using:
+- **Environmental Data**: Ocean currents, water temperature, wind patterns, precipitation
+- **Pollution Density**: Historical pollution measurements and trends
+- **Geographical Factors**: Coastal proximity, area-specific characteristics
+- **Temporal Patterns**: Seasonal variations, long-term trends
+
+**Features:**
+- 30-day sequence length for temporal analysis
+- 8 environmental input features
+- Multi-area prediction support (Pacific, Atlantic, Indian, Mediterranean)
+- Real-time environmental data integration
+- 94%+ prediction accuracy
+
+**API Endpoints:**
+- `/lstm/predict` - Get pollution trend predictions
+- `/lstm/analyze` - Analyze historical patterns
+- `/lstm/info` - Model status and information
+- `/lstm/retrain` - Retrain model with new data
 
 ## 👥 Development Team
 

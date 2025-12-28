@@ -63,3 +63,7 @@ backend/weights/*.pt
 test_*.py
 *_test.py
 debug_*
+
+#Custom file that i wanna hide
+Project.pdf
+prompt.txt

@@ -83,11 +83,9 @@ export default function ResultsPage() {
   useEffect(() => {
     // Load results from sessionStorage
     const storedResults = sessionStorage.getItem("detectionResults");
-    console.log("Loading results from storage:", storedResults); // Debug log
     if (storedResults) {
       try {
         const parsed = JSON.parse(storedResults);
-        console.log("Parsed results:", parsed); // Debug log
         setResults(parsed);
         
         // Show completion notification for videos
@@ -100,11 +98,10 @@ export default function ResultsPage() {
           });
         }
       } catch (error) {
-        console.error("Error parsing results:", error); // Debug log
+        console.error("Error parsing results:", error);
         setResults([sampleResult]);
       }
     } else {
-      console.log("No stored results found, using sample"); // Debug log
       setResults([sampleResult]);
     }
   }, [toast]);

@@ -328,7 +328,6 @@ export default function UploadPage() {
       
       // Store results in sessionStorage to pass to results page
       sessionStorage.setItem("detectionResults", JSON.stringify(results));
-      console.log("Stored results:", results); // Debug log
       
       // Set completion state FIRST
       setProcessingProgress(100);

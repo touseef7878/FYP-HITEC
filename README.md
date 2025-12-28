@@ -50,31 +50,29 @@ The application provides real-time detection results with bounding boxes, confid
 - Heatmap generation for pollution hotspots
 - Comprehensive reporting system
 
-## 🚀 How to Run
+## 🚀 Quick Setup
 
 ### Prerequisites
 - Python 3.8+
 - Node.js 16+
 - Trained YOLOv12n model weights file (`best.pt`)
 
-### Quick Setup (Automated)
+### Setup Steps
 
-1. **Run the automated setup script:**
+1. **Add your YOLO model:**
    ```bash
-   python setup_lstm.py
+   mkdir backend/weights
+   cp /path/to/your/best.pt backend/weights/best.pt
    ```
-   This will:
-   - Install all Python dependencies
-   - Train the LSTM model automatically
-   - Set up the complete system
 
-2. **Start the backend:**
+2. **Install and start backend:**
    ```bash
    cd backend
+   pip install -r requirements.txt
    python main.py
    ```
 
-3. **Start the frontend (new terminal):**
+3. **Install and start frontend (new terminal):**
    ```bash
    npm install
    npm run dev
@@ -83,37 +81,6 @@ The application provides real-time detection results with bounding boxes, confid
 4. **Access the application:**
    - Frontend: http://localhost:5173
    - Backend API: http://localhost:8000
-
-### Manual Setup
-
-1. **Add your YOLO model:**
-   ```bash
-   mkdir backend/weights
-   cp /path/to/your/best.pt backend/weights/best.pt
-   ```
-
-2. **Install backend dependencies:**
-   ```bash
-   cd backend
-   pip install -r requirements.txt
-   ```
-
-3. **Train LSTM model:**
-   ```bash
-   cd backend
-   python train_lstm.py
-   ```
-
-4. **Run backend:**
-   ```bash
-   python main.py
-   ```
-
-5. **Install and run frontend (new terminal):**
-   ```bash
-   npm install
-   npm run dev
-   ```
 
 ## 📊 Model Requirements
 
@@ -145,6 +112,9 @@ The LSTM model analyzes temporal patterns using:
 - `/lstm/analyze` - Analyze historical patterns
 - `/lstm/info` - Model status and information
 - `/lstm/retrain` - Retrain model with new data
+- `/detect` - Detect objects in images
+- `/detect-video` - Process video files
+- `/health` - Check system status
 
 ## 👥 Development Team
 

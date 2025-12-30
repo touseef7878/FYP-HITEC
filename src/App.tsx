@@ -14,6 +14,7 @@ import PredictionsPage from "./pages/PredictionsPage";
 import ReportsPage from "./pages/ReportsPage";
 import SettingsPage from "./pages/SettingsPage";
 import NotFound from "./pages/NotFound";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 const queryClient = new QueryClient();
 
@@ -31,7 +32,11 @@ const App = () => (
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/history" element={<HistoryPage />} />
             <Route path="/heatmap" element={<HeatmapPage />} />
-            <Route path="/predictions" element={<PredictionsPage />} />
+            <Route path="/predictions" element={
+              <ErrorBoundary>
+                <PredictionsPage />
+              </ErrorBoundary>
+            } />
             <Route path="/reports" element={<ReportsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="*" element={<NotFound />} />

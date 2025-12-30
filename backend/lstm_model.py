@@ -24,7 +24,7 @@ class MarinePollutionLSTM:
     Uses environmental data and historical pollution measurements
     """
     
-    def __init__(self, sequence_length: int = 30, features: int = 8):
+    def __init__(self, sequence_length: int = 30, features: int = 9):
         self.sequence_length = sequence_length  # 30 days lookback
         self.features = features  # Number of input features
         self.model = None
@@ -41,7 +41,8 @@ class MarinePollutionLSTM:
             'wind_speed',            # Wind velocity
             'wind_direction',        # Wind direction (degrees)
             'precipitation',         # Rainfall data
-            'coastal_proximity'      # Distance to nearest coast
+            'coastal_proximity',     # Distance to nearest coast
+            'area_code'              # Area encoding (0=pacific, 1=atlantic, 2=indian, 3=mediterranean)
         ]
         
         # Area mappings for different marine regions
@@ -57,10 +58,20 @@ class MarinePollutionLSTM:
         Generate synthetic environmental and pollution data for training
         In production, this would be replaced with real data sources
         """
-        np.random.seed(42)  # For reproducible results
+        # Use area-specific seed for different patterns per area
+        area_seeds = {'pacific': 42, 'atlantic': 123, 'indian': 456, 'mediterranean': 789}
+        np.random.seed(area_seeds.get(area, 42))
         
         # Get area-specific parameters
         area_config = self.area_mappings.get(area, self.area_mappings['pacific'])
+        
+        # Area-specific base pollution levels (realistic values)
+        area_pollution_base = {
+            'pacific': np.random.uniform(60, 80),      # High pollution (Great Pacific Garbage Patch)
+            'atlantic': np.random.uniform(40, 60),     # Medium pollution
+            'indian': np.random.uniform(50, 70),       # Medium-high pollution
+            'mediterranean': np.random.uniform(30, 50)  # Lower pollution (smaller, more controlled)
+        }
         
         # Generate date range
         end_date = datetime.now()
@@ -68,15 +79,27 @@ class MarinePollutionLSTM:
         dates = pd.date_range(start=start_date, end=end_date, freq='D')
         
         data = []
-        base_pollution = np.random.uniform(20, 80)  # Base pollution level for area
+        base_pollution = area_pollution_base.get(area, 50)
+        
+        # Area-specific environmental characteristics
+        area_env_factors = {
+            'pacific': {'temp_base': 18, 'current_strength': 1.5, 'coastal_dist': 800},
+            'atlantic': {'temp_base': 16, 'current_strength': 1.2, 'coastal_dist': 400},
+            'indian': {'temp_base': 22, 'current_strength': 1.0, 'coastal_dist': 600},
+            'mediterranean': {'temp_base': 20, 'current_strength': 0.8, 'coastal_dist': 200}
+        }
+        
+        env_factors = area_env_factors.get(area, area_env_factors['pacific'])
         
         for i, date in enumerate(dates):
             # Seasonal patterns
             day_of_year = date.timetuple().tm_yday
             seasonal_factor = 1 + 0.3 * np.sin(2 * np.pi * day_of_year / 365)
             
-            # Trend component (increasing pollution over time)
-            trend_factor = 1 + (i / len(dates)) * 0.2
+            # Area-specific trend component
+            area_trend_rates = {'pacific': 0.25, 'atlantic': 0.15, 'indian': 0.20, 'mediterranean': 0.10}
+            trend_rate = area_trend_rates.get(area, 0.15)
+            trend_factor = 1 + (i / len(dates)) * trend_rate
             
             # Random noise
             noise = np.random.normal(0, 0.1)
@@ -85,16 +108,21 @@ class MarinePollutionLSTM:
             pollution_density = base_pollution * seasonal_factor * trend_factor * (1 + noise)
             pollution_density = max(0, min(100, pollution_density))  # Clamp to 0-100
             
-            # Environmental factors affecting pollution
-            ocean_current_speed = np.random.uniform(0.1, 2.5)  # m/s
-            ocean_current_direction = np.random.uniform(0, 360)  # degrees
-            water_temperature = 15 + 10 * np.sin(2 * np.pi * day_of_year / 365) + np.random.normal(0, 2)
-            wind_speed = np.random.exponential(5)  # m/s
-            wind_direction = np.random.uniform(0, 360)  # degrees
-            precipitation = max(0, np.random.exponential(2))  # mm
+            # Area-specific environmental factors
+            ocean_current_speed = np.random.uniform(0.1, env_factors['current_strength'] * 2)
+            ocean_current_direction = np.random.uniform(0, 360)
             
-            # Coastal proximity affects accumulation
-            coastal_proximity = np.random.uniform(0, 1000)  # km from coast
+            # Area-specific temperature patterns
+            temp_base = env_factors['temp_base']
+            water_temperature = temp_base + 8 * np.sin(2 * np.pi * day_of_year / 365) + np.random.normal(0, 2)
+            
+            wind_speed = np.random.exponential(5)
+            wind_direction = np.random.uniform(0, 360)
+            precipitation = max(0, np.random.exponential(2))
+            
+            # Area-specific coastal proximity
+            coastal_proximity = env_factors['coastal_dist'] + np.random.uniform(-200, 200)
+            coastal_proximity = max(0, coastal_proximity)
             
             data.append({
                 'date': date,
@@ -157,22 +185,27 @@ class MarinePollutionLSTM:
     
     def train(self, areas: List[str] = None, epochs: int = 50) -> Dict:
         """
-        Train the LSTM model on synthetic data
+        Train the LSTM model on synthetic data with area-specific patterns
         """
         if areas is None:
             areas = list(self.area_mappings.keys())
         
         logger.info(f"Training LSTM model for areas: {areas}")
         
-        # Generate training data for all areas
+        # Generate training data for all areas with area-specific patterns
         all_data = []
         for area in areas:
             area_data = self.generate_synthetic_data(area, days=730)  # 2 years of data
+            # Add area encoding as additional feature
+            area_encoding = {'pacific': 0, 'atlantic': 1, 'indian': 2, 'mediterranean': 3}
+            area_data['area_code'] = area_encoding.get(area, 0)
             all_data.append(area_data)
         
         # Combine all area data
         combined_data = pd.concat(all_data, ignore_index=True)
-        combined_data = combined_data.sort_values('date').reset_index(drop=True)
+        
+        # Shuffle data to mix areas during training
+        combined_data = combined_data.sample(frac=1, random_state=42).reset_index(drop=True)
         
         # Prepare sequences
         X, y = self.prepare_sequences(combined_data)
@@ -212,7 +245,7 @@ class MarinePollutionLSTM:
             'val_mse': float(val_mse),
             'train_mae': float(train_mae),
             'val_mae': float(val_mae),
-            'accuracy': float(1 - val_mae),  # Simplified accuracy metric
+            'accuracy': float(max(0, 1 - val_mae)),  # Ensure non-negative accuracy
             'epochs': epochs,
             'areas_trained': areas
         }
@@ -247,6 +280,10 @@ class MarinePollutionLSTM:
         # Generate recent data for the area (last 30 days)
         recent_data = self.generate_synthetic_data(area, days=self.sequence_length + days_ahead)
         
+        # Add area encoding
+        area_encoding = {'pacific': 0, 'atlantic': 1, 'indian': 2, 'mediterranean': 3}
+        recent_data['area_code'] = area_encoding.get(area, 0)
+        
         # Prepare the last sequence for prediction
         feature_data = recent_data[self.feature_names].values
         scaled_data = self.scaler.transform(feature_data)
@@ -267,6 +304,8 @@ class MarinePollutionLSTM:
             # Create new input with predicted pollution density
             new_input = current_sequence[0, -1:].copy()
             new_input[0, 0] = next_pred  # Update pollution density
+            # Keep area code the same
+            new_input[0, -1] = area_encoding.get(area, 0)
             
             # Shift sequence and add new input
             current_sequence = np.concatenate([
@@ -277,13 +316,15 @@ class MarinePollutionLSTM:
         # Denormalize predictions
         dummy_features = np.zeros((len(predictions), self.features))
         dummy_features[:, 0] = predictions
+        # Set area code for denormalization
+        dummy_features[:, -1] = area_encoding.get(area, 0)
         denormalized = self.scaler.inverse_transform(dummy_features)
         pollution_predictions = denormalized[:, 0]
         
         # Calculate trend statistics
         current_level = pollution_predictions[0]
         future_level = pollution_predictions[-1]
-        trend_change = ((future_level - current_level) / current_level) * 100
+        trend_change = ((future_level - current_level) / current_level) * 100 if current_level != 0 else 0
         
         # Generate dates for predictions
         start_date = datetime.now() + timedelta(days=1)

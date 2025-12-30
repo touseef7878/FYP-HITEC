@@ -562,11 +562,15 @@ async def analyze_area_pollution(
         min_pollution = float(historical_data['pollution_density'].min())
         trend_slope = float(np.polyfit(range(len(historical_data)), historical_data['pollution_density'], 1)[0])
         
-        # Recent vs historical comparison (last 30 days vs rest)
-        recent_data = historical_data.tail(30)
-        historical_avg = float(historical_data.head(-30)['pollution_density'].mean()) if len(historical_data) > 30 else avg_pollution
-        recent_avg = float(recent_data['pollution_density'].mean())
-        change_percent = ((recent_avg - historical_avg) / historical_avg) * 100 if historical_avg > 0 else 0
+        # Recent vs historical comparison (last 7 days vs previous period)
+        if len(historical_data) > 14:
+            recent_data = historical_data.tail(7)  # Last 7 days
+            previous_data = historical_data.iloc[-14:-7]  # Previous 7 days
+            recent_avg = float(recent_data['pollution_density'].mean())
+            previous_avg = float(previous_data['pollution_density'].mean())
+            change_percent = ((recent_avg - previous_avg) / previous_avg) * 100 if previous_avg > 0 else 0
+        else:
+            change_percent = 0
         
         # Environmental correlations
         correlations = {}

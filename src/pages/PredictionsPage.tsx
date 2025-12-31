@@ -9,6 +9,12 @@ import {
   AlertTriangle,
   RefreshCw,
   Loader2,
+  Brain,
+  Zap,
+  Settings,
+  Play,
+  CheckCircle,
+  XCircle,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -20,6 +26,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Slider } from "@/components/ui/slider";
 import { PageTransition, staggerContainer, fadeInUp } from "@/components/layout/PageTransition";
 import { MainLayout } from "@/components/layout/MainLayout";
 import {
@@ -80,6 +98,23 @@ export default function PredictionsPage() {
   const [areaAnalyses, setAreaAnalyses] = useState<Record<string, AreaAnalysis>>({});
   const [loading, setLoading] = useState(false);
   const [modelInfo, setModelInfo] = useState<any>(null);
+  
+  // Training state
+  const [isTraining, setIsTraining] = useState(false);
+  const [trainingDialogOpen, setTrainingDialogOpen] = useState(false);
+  const [trainingEpochs, setTrainingEpochs] = useState([50]);
+  const [selectedTrainingAreas, setSelectedTrainingAreas] = useState<string[]>(['pacific', 'atlantic', 'indian', 'mediterranean']);
+  const [trainingProgress, setTrainingProgress] = useState<string>('');
+  const [trainingMessages] = useState([
+    "🧠 Hey student, grab some coffee! The LSTM neurons are doing their magic...",
+    "🌊 Teaching the AI about ocean pollution patterns... This might take a while!",
+    "🤖 The neural network is learning faster than a dolphin swimming!",
+    "📊 Crunching environmental data like a hungry sea turtle!",
+    "⚡ LSTM layers are firing up! The AI is getting smarter by the second!",
+    "🔬 Deep learning in progress... The model is becoming an ocean expert!",
+    "🎯 Training accuracy is improving! The AI is almost ready to predict the future!",
+    "🌟 Almost there! The LSTM is polishing its prediction skills!"
+  ]);
 
   // Fetch LSTM model info and all area analyses
   useEffect(() => {
@@ -196,6 +231,77 @@ export default function PredictionsPage() {
     fetchAreaAnalysis(selectedArea);
   };
 
+  const handleTrainingAreaToggle = (areaId: string) => {
+    setSelectedTrainingAreas(prev => 
+      prev.includes(areaId) 
+        ? prev.filter(id => id !== areaId)
+        : [...prev, areaId]
+    );
+  };
+
+  const startTraining = async () => {
+    if (selectedTrainingAreas.length === 0) {
+      alert("Please select at least one area to train!");
+      return;
+    }
+
+    setIsTraining(true);
+    setTrainingDialogOpen(false);
+    
+    // Show fun training messages
+    let messageIndex = 0;
+    const messageInterval = setInterval(() => {
+      if (messageIndex < trainingMessages.length) {
+        setTrainingProgress(trainingMessages[messageIndex]);
+        messageIndex++;
+      } else {
+        messageIndex = 0; // Loop messages
+      }
+    }, 3000);
+
+    try {
+      // Build query parameters
+      const params = new URLSearchParams();
+      params.append('epochs', trainingEpochs[0].toString());
+      selectedTrainingAreas.forEach(area => {
+        params.append('areas', area);
+      });
+
+      const response = await fetch(`${API_BASE}/lstm/retrain?${params.toString()}`, {
+        method: 'POST',
+      });
+
+      const result = await response.json();
+      
+      clearInterval(messageInterval);
+      
+      if (result.success) {
+        setTrainingProgress("🎉 Training completed successfully! The LSTM is now smarter than ever!");
+        // Refresh model info and predictions
+        setTimeout(() => {
+          fetchModelInfo();
+          fetchPredictions(selectedArea);
+          setTrainingProgress('');
+          setIsTraining(false);
+        }, 3000);
+      } else {
+        setTrainingProgress("❌ Training failed. The AI needs more coffee!");
+        setTimeout(() => {
+          setTrainingProgress('');
+          setIsTraining(false);
+        }, 3000);
+      }
+    } catch (error) {
+      clearInterval(messageInterval);
+      console.error("Training error:", error);
+      setTrainingProgress("💥 Oops! Something went wrong during training. Try again!");
+      setTimeout(() => {
+        setTrainingProgress('');
+        setIsTraining(false);
+      }, 3000);
+    }
+  };
+
   // Prepare chart data - use actual LSTM predictions with proper variation
   const chartData = React.useMemo(() => {
     if (predictions?.predictions && predictions.predictions.length > 0) {
@@ -256,6 +362,206 @@ export default function PredictionsPage() {
               </Button>
             </div>
           </div>
+
+          {/* LSTM Model Status & Training */}
+          <motion.div 
+            className="mb-8"
+            variants={fadeInUp}
+            initial="initial"
+            animate="animate"
+          >
+            <Card className="border-2 border-dashed border-primary/20 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-950/20 dark:to-purple-950/20">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Brain className="h-6 w-6 text-primary" />
+                  LSTM Neural Network Status
+                  {modelInfo?.status === 'loaded' ? (
+                    <CheckCircle className="h-5 w-5 text-green-500" />
+                  ) : (
+                    <XCircle className="h-5 w-5 text-red-500" />
+                  )}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-primary">
+                      {modelInfo?.status === 'loaded' ? '✅' : '❌'}
+                    </div>
+                    <div className="text-sm text-muted-foreground">Model Status</div>
+                    <div className="font-medium">
+                      {modelInfo?.status === 'loaded' ? 'Loaded & Ready' : 'Not Loaded'}
+                    </div>
+                  </div>
+                  
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-primary">
+                      {modelInfo?.sequence_length || 30}
+                    </div>
+                    <div className="text-sm text-muted-foreground">Sequence Length</div>
+                    <div className="font-medium">Days Lookback</div>
+                  </div>
+                  
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-primary">
+                      {modelInfo?.features || 9}
+                    </div>
+                    <div className="text-sm text-muted-foreground">Input Features</div>
+                    <div className="font-medium">Environmental Data</div>
+                  </div>
+                  
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-primary">
+                      {modelInfo?.areas_supported?.length || 4}
+                    </div>
+                    <div className="text-sm text-muted-foreground">Marine Areas</div>
+                    <div className="font-medium">Supported Regions</div>
+                  </div>
+                </div>
+
+                {/* Model Last Updated */}
+                {modelInfo?.last_updated && (
+                  <div className="mb-4 text-center">
+                    <div className="text-xs text-muted-foreground">
+                      Last Updated: {new Date(modelInfo.last_updated).toLocaleString()}
+                    </div>
+                  </div>
+                )}
+
+                {/* Training Status */}
+                {isTraining && (
+                  <motion.div 
+                    className="mb-4 p-4 bg-gradient-to-r from-yellow-100 to-orange-100 dark:from-yellow-900/20 dark:to-orange-900/20 rounded-lg border border-yellow-200 dark:border-yellow-800"
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Loader2 className="h-5 w-5 animate-spin text-yellow-600" />
+                      <div className="flex-1">
+                        <div className="font-medium text-yellow-800 dark:text-yellow-200">
+                          LSTM Training in Progress...
+                        </div>
+                        <div className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
+                          {trainingProgress}
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+
+                {/* Training Controls */}
+                <div className="flex items-center gap-3">
+                  <Dialog open={trainingDialogOpen} onOpenChange={setTrainingDialogOpen}>
+                    <DialogTrigger asChild>
+                      <Button 
+                        variant="default" 
+                        size="sm"
+                        disabled={isTraining}
+                        className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
+                      >
+                        <Zap className="h-4 w-4 mr-2" />
+                        {isTraining ? 'Training...' : 'Train LSTM Model'}
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="sm:max-w-md">
+                      <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                          <Settings className="h-5 w-5" />
+                          Configure LSTM Training
+                        </DialogTitle>
+                        <DialogDescription>
+                          Set up your neural network training parameters. The AI will learn pollution patterns for the selected areas!
+                        </DialogDescription>
+                      </DialogHeader>
+                      
+                      <div className="space-y-6 py-4">
+                        {/* Epochs Slider */}
+                        <div className="space-y-3">
+                          <Label className="text-sm font-medium">
+                            Training Epochs: {trainingEpochs[0]}
+                          </Label>
+                          <Slider
+                            value={trainingEpochs}
+                            onValueChange={setTrainingEpochs}
+                            max={200}
+                            min={10}
+                            step={10}
+                            className="w-full"
+                          />
+                          <div className="flex justify-between text-xs text-muted-foreground">
+                            <span>10 (Fast)</span>
+                            <span>100 (Balanced)</span>
+                            <span>200 (Thorough)</span>
+                          </div>
+                        </div>
+
+                        {/* Area Selection */}
+                        <div className="space-y-3">
+                          <Label className="text-sm font-medium">
+                            Select Areas to Train ({selectedTrainingAreas.length}/4)
+                          </Label>
+                          <div className="grid grid-cols-2 gap-3">
+                            {areas.map((area) => (
+                              <div key={area.id} className="flex items-center space-x-2">
+                                <Checkbox
+                                  id={area.id}
+                                  checked={selectedTrainingAreas.includes(area.id)}
+                                  onCheckedChange={() => handleTrainingAreaToggle(area.id)}
+                                />
+                                <Label 
+                                  htmlFor={area.id} 
+                                  className="text-sm cursor-pointer"
+                                >
+                                  {area.name}
+                                </Label>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Training Info */}
+                        <div className="p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                          <div className="text-sm text-blue-800 dark:text-blue-200">
+                            <div className="font-medium mb-1">🎯 Training Preview:</div>
+                            <div>• Epochs: {trainingEpochs[0]} iterations</div>
+                            <div>• Areas: {selectedTrainingAreas.length} marine regions</div>
+                            <div>• Estimated time: {Math.ceil(trainingEpochs[0] / 10)} minutes</div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <DialogFooter>
+                        <Button 
+                          variant="outline" 
+                          onClick={() => setTrainingDialogOpen(false)}
+                        >
+                          Cancel
+                        </Button>
+                        <Button 
+                          onClick={startTraining}
+                          disabled={selectedTrainingAreas.length === 0}
+                          className="bg-gradient-to-r from-green-500 to-blue-600 hover:from-green-600 hover:to-blue-700"
+                        >
+                          <Play className="h-4 w-4 mr-2" />
+                          Start Training
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={fetchModelInfo}
+                    disabled={isTraining}
+                  >
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Refresh Status
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
 
           {/* Area Selection */}
           <motion.div 

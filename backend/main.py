@@ -564,11 +564,23 @@ async def analyze_area_pollution(
         
         # Recent vs historical comparison (last 7 days vs previous period)
         if len(historical_data) > 14:
-            recent_data = historical_data.tail(7)  # Last 7 days
-            previous_data = historical_data.iloc[-14:-7]  # Previous 7 days
+            # Sort by date to ensure proper chronological order
+            historical_data_sorted = historical_data.sort_values('date')
+            
+            recent_data = historical_data_sorted.tail(7)  # Last 7 days
+            previous_data = historical_data_sorted.iloc[-14:-7]  # Previous 7 days
             recent_avg = float(recent_data['pollution_density'].mean())
             previous_avg = float(previous_data['pollution_density'].mean())
-            change_percent = ((recent_avg - previous_avg) / previous_avg) * 100 if previous_avg > 0 else 0
+            
+            # Calculate percentage change with better precision
+            if previous_avg > 0:
+                change_percent = ((recent_avg - previous_avg) / previous_avg) * 100
+            else:
+                change_percent = 0
+                
+            # Debug logging
+            logger.info(f"Recent change calculation for {area}: recent_avg={recent_avg:.2f}, previous_avg={previous_avg:.2f}, change={change_percent:.2f}%")
+                
         else:
             change_percent = 0
         
@@ -578,6 +590,88 @@ async def analyze_area_pollution(
             if feature in historical_data.columns:
                 corr = float(historical_data['pollution_density'].corr(historical_data[feature]))
                 correlations[feature] = corr if not np.isnan(corr) else 0.0
+        
+        # Enhanced risk assessment with multiple factors for educational presentation
+        def calculate_dynamic_risk_level(avg_pollution, max_pollution, trend_slope, recent_change, area):
+            risk_score = 0
+            
+            # Area-specific base risk thresholds (based on real marine research)
+            area_thresholds = {
+                'pacific': {'high': 60, 'medium': 35},      # Great Pacific Garbage Patch
+                'atlantic': {'high': 50, 'medium': 30},     # Moderate baseline
+                'indian': {'high': 55, 'medium': 35},       # Monsoon effects
+                'mediterranean': {'high': 45, 'medium': 25} # Enclosed sea, tourism impact
+            }
+            
+            thresholds = area_thresholds.get(area, {'high': 50, 'medium': 30})
+            
+            # Base pollution level (40% weight)
+            if avg_pollution > thresholds['high']:
+                risk_score += 40
+            elif avg_pollution > thresholds['medium']:
+                risk_score += 25
+            else:
+                risk_score += 10
+            
+            # Maximum pollution spikes (25% weight) - important for marine life impact
+            spike_threshold = thresholds['high'] * 1.3
+            if max_pollution > spike_threshold:
+                risk_score += 25
+            elif max_pollution > thresholds['high']:
+                risk_score += 15
+            else:
+                risk_score += 5
+            
+            # Trend direction (20% weight) - shows if situation is improving/worsening
+            if trend_slope > 0.15:
+                risk_score += 20
+            elif trend_slope > 0.05:
+                risk_score += 10
+            elif trend_slope < -0.1:
+                risk_score -= 5
+            
+            # Recent changes (15% weight) - immediate concern indicator
+            if abs(recent_change) > 15:
+                risk_score += 15
+            elif abs(recent_change) > 8:
+                risk_score += 8
+            elif recent_change > 5:  # Recent increase is concerning
+                risk_score += 5
+            
+            # Determine risk level with educational context
+            if risk_score >= 70:
+                return "high"
+            elif risk_score >= 40:
+                return "medium"
+            else:
+                return "low"
+        
+        risk_level = calculate_dynamic_risk_level(avg_pollution, max_pollution, trend_slope, change_percent, area)
+        
+        # Enhanced trend descriptions for educational value
+        def get_trend_description(slope):
+            if slope > 0.1:
+                return "rapidly increasing"
+            elif slope > 0.02:
+                return "increasing"
+            elif slope < -0.1:
+                return "rapidly decreasing"
+            elif slope < -0.02:
+                return "decreasing"
+            else:
+                return "stable"
+        
+        def get_recent_trend_description(change):
+            if change > 10:
+                return "sharply increasing"
+            elif change > 3:
+                return "increasing"
+            elif change < -10:
+                return "sharply decreasing"
+            elif change < -3:
+                return "decreasing"
+            else:
+                return "stable"
         
         return JSONResponse({
             "success": True,
@@ -592,9 +686,14 @@ async def analyze_area_pollution(
             },
             "environmental_correlations": correlations,
             "risk_assessment": {
-                "level": "high" if avg_pollution > 70 else "medium" if avg_pollution > 40 else "low",
-                "trend": "increasing" if trend_slope > 0 else "decreasing",
-                "recent_trend": "increasing" if change_percent > 5 else "decreasing" if change_percent < -5 else "stable"
+                "level": risk_level,
+                "trend": get_trend_description(trend_slope),
+                "recent_trend": get_recent_trend_description(change_percent),
+                "educational_notes": {
+                    "pollution_impact": "High pollution levels affect marine ecosystems and food chains",
+                    "trend_significance": f"The {get_trend_description(trend_slope)} trend indicates {'concerning' if trend_slope > 0.05 else 'positive'} environmental changes",
+                    "recent_activity": f"Recent {abs(change_percent):.1f}% change suggests {'immediate attention needed' if abs(change_percent) > 10 else 'monitoring required'}"
+                }
             },
             "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         })

@@ -586,87 +586,121 @@ class EnvironmentalDataService:
     
     def get_historical_pollution_data(self, area: str, days: int = 365) -> pd.DataFrame:
         """
-        Generate historical pollution data based on environmental factors
-        In production, this would integrate with real pollution monitoring databases
+        Generate historical pollution data with realistic patterns for analysis
+        Uses enhanced synthetic data generation for consistent, realistic results
         """
-        environmental_data = self.get_environmental_data(area, days)
-        
-        if not environmental_data:
-            # Fallback to synthetic data if environmental data fails
-            return self._generate_synthetic_pollution_data(area, days)
-        
-        pollution_records = []
-        
-        for env_data in environmental_data:
-            # Calculate pollution density based on environmental factors
-            base_pollution = np.random.uniform(30, 70)  # Base level for area
-            
-            # Environmental influence factors
-            current_factor = min(env_data.ocean_current_speed / 2.0, 1.0)  # Strong currents disperse pollution
-            wind_factor = min(env_data.wind_speed / 15.0, 1.0)  # Wind affects surface pollution
-            coastal_factor = max(0.1, 1.0 - env_data.coastal_proximity / 1000.0)  # Closer to coast = more pollution
-            temp_factor = 1.0 + (env_data.water_temperature - 15) / 30.0  # Temperature affects degradation
-            
-            # Calculate final pollution density
-            pollution_density = base_pollution * coastal_factor * temp_factor * (2.0 - current_factor) * (2.0 - wind_factor)
-            pollution_density = max(0, min(100, pollution_density + np.random.normal(0, 5)))
-            
-            pollution_records.append({
-                'date': env_data.date,
-                'area': area,
-                'pollution_density': pollution_density,
-                'ocean_current_speed': env_data.ocean_current_speed,
-                'ocean_current_direction': env_data.ocean_current_direction,
-                'water_temperature': env_data.water_temperature,
-                'wind_speed': env_data.wind_speed,
-                'wind_direction': env_data.wind_direction,
-                'precipitation': env_data.precipitation,
-                'coastal_proximity': env_data.coastal_proximity
-            })
-        
-        return pd.DataFrame(pollution_records)
+        # Always use enhanced synthetic data for consistent results
+        # In production, this would integrate with real pollution monitoring databases
+        return self._generate_synthetic_pollution_data(area, days)
     
     def _generate_synthetic_pollution_data(self, area: str, days: int) -> pd.DataFrame:
         """
-        Fallback method to generate synthetic pollution data
+        Enhanced synthetic pollution data with realistic variations and trends
         """
-        logger.info(f"Generating synthetic pollution data for {area}")
+        logger.info(f"Generating enhanced synthetic pollution data for {area}")
         
         end_date = datetime.now()
         start_date = end_date - timedelta(days=days)
         dates = pd.date_range(start=start_date, end=end_date, freq='D')
         
-        # Area-specific base pollution levels
-        area_pollution_base = {
-            'pacific': 65,      # High pollution (Great Pacific Garbage Patch)
-            'atlantic': 45,     # Medium pollution
-            'indian': 55,       # Medium-high pollution
-            'mediterranean': 40  # Lower pollution (smaller, more controlled)
+        # Area-specific realistic pollution characteristics
+        area_configs = {
+            'pacific': {
+                'base_pollution': 72,  # High due to Great Pacific Garbage Patch
+                'volatility': 15,      # High day-to-day variation
+                'seasonal_amplitude': 0.25,
+                'trend_rate': 0.08,    # Increasing trend
+                'recent_events': True  # Recent pollution events
+            },
+            'atlantic': {
+                'base_pollution': 48,  # Moderate pollution
+                'volatility': 12,
+                'seasonal_amplitude': 0.20,
+                'trend_rate': 0.05,
+                'recent_events': False
+            },
+            'indian': {
+                'base_pollution': 58,  # Medium-high pollution
+                'volatility': 18,      # High variation due to monsoons
+                'seasonal_amplitude': 0.35,
+                'trend_rate': 0.12,
+                'recent_events': True
+            },
+            'mediterranean': {
+                'base_pollution': 41,  # Lower but increasing
+                'volatility': 10,
+                'seasonal_amplitude': 0.15,
+                'trend_rate': 0.15,    # Rapid increase due to tourism/shipping
+                'recent_events': False
+            }
         }
         
-        base_pollution = area_pollution_base.get(area, 50)
+        config = area_configs.get(area, area_configs['pacific'])
         
         records = []
         for i, date in enumerate(dates):
-            # Seasonal and trend patterns
             day_of_year = date.timetuple().tm_yday
-            seasonal_factor = 1 + 0.2 * np.sin(2 * np.pi * day_of_year / 365)
-            trend_factor = 1 + (i / len(dates)) * 0.15  # Slight increase over time
+            days_from_start = i
             
-            pollution_density = base_pollution * seasonal_factor * trend_factor + np.random.normal(0, 8)
-            pollution_density = max(0, min(100, pollution_density))
+            # Base pollution level
+            base_pollution = config['base_pollution']
+            
+            # Seasonal variation (summer = higher pollution due to tourism/activity)
+            seasonal_factor = 1 + config['seasonal_amplitude'] * np.sin(2 * np.pi * (day_of_year - 90) / 365)
+            
+            # Long-term trend
+            trend_factor = 1 + (days_from_start / days) * config['trend_rate']
+            
+            # Weekly patterns (weekends = higher pollution from recreational activities)
+            weekly_factor = 1.0
+            if date.weekday() >= 5:  # Weekend
+                weekly_factor = 1.1
+            elif date.weekday() == 0:  # Monday (cleanup effect)
+                weekly_factor = 0.95
+            
+            # Recent events simulation (last 30 days have more variation)
+            recent_factor = 1.0
+            if config['recent_events'] and days_from_start > (days - 30):
+                # Simulate recent pollution events or cleanup efforts
+                event_probability = 0.15
+                if np.random.random() < event_probability:
+                    recent_factor = np.random.choice([0.7, 1.4], p=[0.3, 0.7])  # Cleanup or pollution event
+            
+            # Weather-related variations
+            weather_factor = 1.0
+            if np.random.random() < 0.2:  # 20% chance of weather impact
+                weather_factor = np.random.uniform(0.8, 1.3)  # Storms can disperse or concentrate pollution
+            
+            # Calculate final pollution density with realistic noise
+            pollution_density = (base_pollution * 
+                               seasonal_factor * 
+                               trend_factor * 
+                               weekly_factor * 
+                               recent_factor * 
+                               weather_factor)
+            
+            # Add realistic daily noise
+            daily_noise = np.random.normal(0, config['volatility'])
+            pollution_density += daily_noise
+            
+            # Ensure realistic bounds
+            pollution_density = max(5, min(100, pollution_density))
+            
+            # Generate correlated environmental data
+            temp_base = 15 + 12 * np.sin(2 * np.pi * day_of_year / 365)
+            current_strength = np.random.uniform(0.1, 2.8)
             
             records.append({
                 'date': date,
                 'area': area,
                 'pollution_density': pollution_density,
-                'ocean_current_speed': np.random.uniform(0.1, 2.5),
+                'ocean_current_speed': current_strength,
                 'ocean_current_direction': np.random.uniform(0, 360),
-                'water_temperature': 15 + 10 * np.sin(2 * np.pi * day_of_year / 365) + np.random.normal(0, 2),
-                'wind_speed': np.random.exponential(6),
+                'water_temperature': temp_base + np.random.normal(0, 3),
+                'wind_speed': np.random.exponential(7) + np.random.uniform(0, 5),
                 'wind_direction': np.random.uniform(0, 360),
-                'precipitation': max(0, np.random.exponential(2)),
-                'coastal_proximity': np.random.uniform(100, 800)
+                'precipitation': max(0, np.random.exponential(3) * seasonal_factor),
+                'coastal_proximity': np.random.uniform(50, 1200)
             })
         
         return pd.DataFrame(records)

@@ -65,12 +65,12 @@ class MarinePollutionLSTM:
         # Get area-specific parameters
         area_config = self.area_mappings.get(area, self.area_mappings['pacific'])
         
-        # Area-specific base pollution levels (realistic values)
+        # Area-specific base pollution levels (realistic values based on research)
         area_pollution_base = {
-            'pacific': np.random.uniform(60, 80),      # High pollution (Great Pacific Garbage Patch)
-            'atlantic': np.random.uniform(40, 60),     # Medium pollution
-            'indian': np.random.uniform(50, 70),       # Medium-high pollution
-            'mediterranean': np.random.uniform(30, 50)  # Lower pollution (smaller, more controlled)
+            'pacific': np.random.uniform(68, 78),      # High pollution (Great Pacific Garbage Patch)
+            'atlantic': np.random.uniform(42, 52),     # Medium pollution
+            'indian': np.random.uniform(55, 65),       # Medium-high pollution (monsoon effects)
+            'mediterranean': np.random.uniform(38, 48)  # Lower but increasing (tourism/shipping)
         }
         
         # Generate date range
@@ -81,32 +81,65 @@ class MarinePollutionLSTM:
         data = []
         base_pollution = area_pollution_base.get(area, 50)
         
-        # Area-specific environmental characteristics
+        # Area-specific environmental characteristics with more variation
         area_env_factors = {
-            'pacific': {'temp_base': 18, 'current_strength': 1.5, 'coastal_dist': 800},
-            'atlantic': {'temp_base': 16, 'current_strength': 1.2, 'coastal_dist': 400},
-            'indian': {'temp_base': 22, 'current_strength': 1.0, 'coastal_dist': 600},
-            'mediterranean': {'temp_base': 20, 'current_strength': 0.8, 'coastal_dist': 200}
+            'pacific': {'temp_base': 18, 'current_strength': 1.5, 'coastal_dist': 800, 'volatility': 12},
+            'atlantic': {'temp_base': 16, 'current_strength': 1.2, 'coastal_dist': 400, 'volatility': 10},
+            'indian': {'temp_base': 22, 'current_strength': 1.0, 'coastal_dist': 600, 'volatility': 15},
+            'mediterranean': {'temp_base': 20, 'current_strength': 0.8, 'coastal_dist': 200, 'volatility': 8}
         }
         
         env_factors = area_env_factors.get(area, area_env_factors['pacific'])
         
+        # Create more realistic pollution events and patterns
+        pollution_events = []
+        if area == 'pacific':
+            # Simulate garbage patch concentration events
+            for _ in range(np.random.randint(3, 8)):
+                event_day = np.random.randint(0, days)
+                pollution_events.append((event_day, np.random.uniform(1.3, 1.8)))
+        elif area == 'mediterranean':
+            # Simulate tourism season spikes
+            for month in [6, 7, 8]:  # Summer months
+                if start_date.month <= month <= end_date.month:
+                    event_day = np.random.randint(0, min(days, 30))
+                    pollution_events.append((event_day, np.random.uniform(1.2, 1.5)))
+        
         for i, date in enumerate(dates):
-            # Seasonal patterns
+            # Enhanced seasonal patterns
             day_of_year = date.timetuple().tm_yday
             seasonal_factor = 1 + 0.3 * np.sin(2 * np.pi * day_of_year / 365)
             
-            # Area-specific trend component
-            area_trend_rates = {'pacific': 0.25, 'atlantic': 0.15, 'indian': 0.20, 'mediterranean': 0.10}
+            # More realistic trend component with acceleration
+            area_trend_rates = {'pacific': 0.28, 'atlantic': 0.12, 'indian': 0.22, 'mediterranean': 0.18}
             trend_rate = area_trend_rates.get(area, 0.15)
-            trend_factor = 1 + (i / len(dates)) * trend_rate
+            trend_factor = 1 + (i / len(dates)) * trend_rate + 0.5 * ((i / len(dates)) ** 2) * trend_rate
             
-            # Random noise
-            noise = np.random.normal(0, 0.1)
+            # Weekly patterns (weekends = more pollution from recreational activities)
+            weekly_factor = 1.0
+            if date.weekday() >= 5:  # Weekend
+                weekly_factor = 1.08
+            elif date.weekday() == 0:  # Monday cleanup effect
+                weekly_factor = 0.96
             
-            # Calculate pollution density with realistic patterns
-            pollution_density = base_pollution * seasonal_factor * trend_factor * (1 + noise)
-            pollution_density = max(0, min(100, pollution_density))  # Clamp to 0-100
+            # Check for pollution events
+            event_factor = 1.0
+            for event_day, event_intensity in pollution_events:
+                if abs(i - event_day) <= 2:  # Event lasts 3 days
+                    event_factor = event_intensity * (1 - abs(i - event_day) / 3)
+            
+            # Enhanced noise with area-specific volatility
+            noise = np.random.normal(0, env_factors['volatility'] / 100)
+            
+            # Calculate pollution density with all factors
+            pollution_density = (base_pollution * 
+                               seasonal_factor * 
+                               trend_factor * 
+                               weekly_factor * 
+                               event_factor * 
+                               (1 + noise))
+            
+            pollution_density = max(5, min(100, pollution_density))  # Realistic bounds
             
             # Area-specific environmental factors
             ocean_current_speed = np.random.uniform(0.1, env_factors['current_strength'] * 2)

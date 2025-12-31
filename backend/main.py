@@ -19,9 +19,10 @@ import uuid
 # Load environment variables
 load_dotenv()
 
-# Import LSTM components
+# Import enhanced LSTM components
 from lstm_model import lstm_model
 from environmental_data import environmental_service
+from noaa_cdo_api import noaa_client
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

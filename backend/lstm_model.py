@@ -108,33 +108,187 @@ class EnhancedMarinePollutionLSTM:
     
     def fetch_real_environmental_data(self, area: str, days: int = 30) -> pd.DataFrame:
         """
-        Fetch real environmental data from NOAA CDO API
-        This is the key enhancement for FYP realism
+        Fetch real environmental data from NOAA CDO API + WAQI pollution data
+        This is the key enhancement for FYP realism - combines weather + pollution
         """
         try:
-            # Import NOAA client
+            # Import both NOAA and WAQI clients
             from noaa_cdo_api import noaa_client
+            from waqi_api import waqi_client
             
-            if noaa_client is None:
-                logger.warning("NOAA client not available, using enhanced synthetic data")
-                return self._generate_enhanced_synthetic_data(area, days)
+            logger.info(f"🌊 Fetching REAL environmental + pollution data for {area}")
             
-            # Get real NOAA data
-            real_data = noaa_client.get_area_environmental_data(area, days)
+            # Get real NOAA weather data
+            noaa_data = None
+            if noaa_client is not None:
+                try:
+                    noaa_data = noaa_client.get_area_environmental_data(area, days)
+                    logger.info(f"✅ NOAA weather data: {len(noaa_data) if noaa_data is not None else 0} days")
+                except Exception as e:
+                    logger.warning(f"NOAA data fetch failed: {e}")
             
-            if real_data is not None and len(real_data) > 0:
-                logger.info(f"✅ Using real NOAA environmental data for {area}: {len(real_data)} days")
-                
-                # Convert NOAA data to LSTM format
-                lstm_data = self._convert_noaa_to_lstm_format(real_data, area)
-                return lstm_data
+            # Get real WAQI pollution data
+            waqi_data = None
+            if waqi_client is not None:
+                try:
+                    waqi_data = waqi_client.get_historical_pollution_trends(area, days)
+                    logger.info(f"✅ WAQI pollution data: {len(waqi_data) if waqi_data is not None else 0} days")
+                except Exception as e:
+                    logger.warning(f"WAQI data fetch failed: {e}")
+            
+            # Combine real data sources
+            if noaa_data is not None and len(noaa_data) > 0 and waqi_data is not None and len(waqi_data) > 0:
+                # Merge NOAA weather + WAQI pollution data
+                combined_data = self._merge_noaa_waqi_data(noaa_data, waqi_data, area)
+                logger.info(f"🎯 Using REAL combined NOAA + WAQI data for {area}: {len(combined_data)} days")
+                return self._convert_real_data_to_lstm_format(combined_data, area)
+            
+            elif waqi_data is not None and len(waqi_data) > 0:
+                # Use WAQI pollution data with synthetic weather
+                logger.info(f"🔄 Using REAL WAQI pollution + synthetic weather for {area}")
+                enhanced_data = self._enhance_waqi_with_synthetic_weather(waqi_data, area)
+                return self._convert_real_data_to_lstm_format(enhanced_data, area)
+            
+            elif noaa_data is not None and len(noaa_data) > 0:
+                # Use NOAA weather with enhanced pollution calculation
+                logger.info(f"🔄 Using REAL NOAA weather + enhanced pollution for {area}")
+                return self._convert_noaa_to_lstm_format(noaa_data, area)
+            
             else:
-                logger.warning(f"No NOAA data available for {area}, using enhanced synthetic")
+                logger.warning(f"No real data available for {area}, using enhanced synthetic")
                 return self._generate_enhanced_synthetic_data(area, days)
                 
         except Exception as e:
             logger.error(f"Error fetching real data for {area}: {e}")
             return self._generate_enhanced_synthetic_data(area, days)
+    
+    def _merge_noaa_waqi_data(self, noaa_data: pd.DataFrame, waqi_data: pd.DataFrame, area: str) -> pd.DataFrame:
+        """
+        Merge NOAA weather data with WAQI pollution data for ultimate realism
+        """
+        try:
+            # Ensure both dataframes have date columns
+            if 'date' not in noaa_data.columns:
+                noaa_data['date'] = pd.date_range(end=datetime.now(), periods=len(noaa_data), freq='D')
+            if 'date' not in waqi_data.columns:
+                waqi_data['date'] = pd.date_range(end=datetime.now(), periods=len(waqi_data), freq='D')
+            
+            # Convert to datetime if needed
+            noaa_data['date'] = pd.to_datetime(noaa_data['date'])
+            waqi_data['date'] = pd.to_datetime(waqi_data['date'])
+            
+            # Merge on date
+            merged_data = pd.merge(noaa_data, waqi_data, on='date', how='outer', suffixes=('_noaa', '_waqi'))
+            
+            # Fill missing values with interpolation
+            merged_data = merged_data.sort_values('date')
+            numeric_columns = merged_data.select_dtypes(include=[np.number]).columns
+            merged_data[numeric_columns] = merged_data[numeric_columns].interpolate(method='linear')
+            
+            # Create combined pollution metric using both sources
+            merged_data['combined_pollution_density'] = self._calculate_combined_pollution(merged_data, area)
+            
+            logger.info(f"✅ Successfully merged NOAA + WAQI data: {len(merged_data)} days")
+            return merged_data
+            
+        except Exception as e:
+            logger.error(f"Error merging NOAA + WAQI data: {e}")
+            return waqi_data  # Fallback to WAQI data
+    
+    def _enhance_waqi_with_synthetic_weather(self, waqi_data: pd.DataFrame, area: str) -> pd.DataFrame:
+        """
+        Enhance WAQI pollution data with realistic synthetic weather data
+        """
+        try:
+            enhanced_records = []
+            
+            for _, row in waqi_data.iterrows():
+                date = row['date']
+                day_of_year = date.timetuple().tm_yday
+                
+                # Generate realistic weather based on area and season
+                config = self.area_configs[area]
+                
+                # Seasonal weather patterns
+                temp_base = {'pacific': 18, 'atlantic': 16, 'indian': 22, 'mediterranean': 20}[area]
+                water_temperature = temp_base + 8 * np.sin(2 * np.pi * day_of_year / 365) + np.random.normal(0, 2)
+                
+                # Weather correlated with pollution (high pollution often = low wind)
+                pollution_factor = row.get('aqi', 50) / 100
+                wind_speed = np.random.exponential(6) * (1.5 - pollution_factor * 0.5)  # Less wind = more pollution
+                
+                enhanced_record = {
+                    'date': date,
+                    'area': area,
+                    
+                    # Real WAQI pollution data
+                    'pollution_density': row.get('marine_pollution_correlation', 50),
+                    'aqi': row.get('aqi', 50),
+                    'pm25': row.get('pm25', 25),
+                    'pm10': row.get('pm10', 40),
+                    'no2': row.get('no2', 20),
+                    'so2': row.get('so2', 5),
+                    'co': row.get('co', 1),
+                    'o3': row.get('o3', 30),
+                    
+                    # Synthetic weather (realistic)
+                    'water_temperature': water_temperature,
+                    'ocean_current_speed': np.random.uniform(0.2, 2.0),
+                    'ocean_current_direction': np.random.uniform(0, 360),
+                    'wind_speed': wind_speed,
+                    'wind_direction': np.random.uniform(0, 360),
+                    'precipitation': max(0, np.random.exponential(2)),
+                    'atmospheric_pressure': 1013 + np.random.normal(0, 12),
+                    'wave_height': 1.0 + wind_speed * 0.1 + np.random.normal(0, 0.3),
+                    'sea_surface_height': np.random.normal(0, 0.2),
+                    
+                    # Data source tracking
+                    'data_source': 'WAQI_real + synthetic_weather'
+                }
+                
+                enhanced_records.append(enhanced_record)
+            
+            result_df = pd.DataFrame(enhanced_records)
+            logger.info(f"✅ Enhanced WAQI data with synthetic weather: {len(result_df)} records")
+            return result_df
+            
+        except Exception as e:
+            logger.error(f"Error enhancing WAQI data: {e}")
+            return waqi_data
+    
+    def _calculate_combined_pollution(self, merged_data: pd.DataFrame, area: str) -> pd.Series:
+        """
+        Calculate combined pollution density using both NOAA weather and WAQI pollution data
+        """
+        try:
+            combined_pollution = []
+            
+            for _, row in merged_data.iterrows():
+                # Base pollution from WAQI (real air quality data)
+                base_pollution = row.get('marine_pollution_correlation', row.get('aqi', 50))
+                
+                # Environmental dispersion factors from NOAA weather
+                wind_speed = row.get('wind_speed', 5)
+                precipitation = row.get('precipitation', 0)
+                water_temp = row.get('water_temperature', 16)
+                
+                # Real physics-based dispersion
+                wind_dispersion = 1 / (1 + wind_speed * 0.03)  # Wind disperses pollution
+                rain_washout = 1 / (1 + precipitation * 0.02)  # Rain removes pollution
+                temp_factor = 1 + (water_temp - 15) * 0.02     # Temperature affects degradation
+                
+                # Calculate realistic marine pollution
+                marine_pollution = base_pollution * wind_dispersion * rain_washout * temp_factor
+                
+                # Add realistic bounds
+                marine_pollution = max(5, min(100, marine_pollution))
+                combined_pollution.append(marine_pollution)
+            
+            return pd.Series(combined_pollution)
+            
+        except Exception as e:
+            logger.error(f"Error calculating combined pollution: {e}")
+            return pd.Series([50] * len(merged_data))  # Fallback
     
     def _convert_noaa_to_lstm_format(self, noaa_data: pd.DataFrame, area: str) -> pd.DataFrame:
         """
@@ -278,6 +432,185 @@ class EnhancedMarinePollutionLSTM:
         except Exception as e:
             logger.error(f"Error converting NOAA data: {e}")
             return self._generate_enhanced_synthetic_data(area, len(noaa_data))
+    
+    def _convert_real_data_to_lstm_format(self, real_data: pd.DataFrame, area: str) -> pd.DataFrame:
+        """
+        Convert combined real data (NOAA + WAQI) to enhanced LSTM feature format
+        This creates the most realistic training data possible for your FYP
+        """
+        try:
+            lstm_records = []
+            pollution_history = []
+            
+            for i, row in real_data.iterrows():
+                date = row['date']
+                
+                # === TEMPORAL FEATURES ===
+                day_of_year = date.timetuple().tm_yday
+                day_of_week = date.weekday()
+                hour = 12
+                
+                # Cyclical encoding
+                day_of_year_sin = np.sin(2 * np.pi * day_of_year / 365)
+                day_of_year_cos = np.cos(2 * np.pi * day_of_year / 365)
+                day_of_week_sin = np.sin(2 * np.pi * day_of_week / 7)
+                day_of_week_cos = np.cos(2 * np.pi * day_of_week / 7)
+                hour_sin = np.sin(2 * np.pi * hour / 24)
+                hour_cos = np.cos(2 * np.pi * hour / 24)
+                
+                # === REAL ENVIRONMENTAL FEATURES ===
+                # From NOAA weather data
+                water_temperature = row.get('water_temperature', 16)
+                ocean_current_speed = row.get('ocean_current_speed', 0.5)
+                ocean_current_direction = row.get('ocean_current_direction', 180)
+                wind_speed = row.get('wind_speed', 5)
+                wind_direction = row.get('wind_direction', np.random.uniform(0, 360))
+                precipitation = row.get('precipitation', 0)
+                atmospheric_pressure = row.get('pressure', row.get('atmospheric_pressure', 1013))
+                wave_height = row.get('wave_height', 1.0 + wind_speed * 0.1)
+                sea_surface_height = row.get('sea_surface_height', np.random.normal(0, 0.2))
+                
+                # === REAL POLLUTION FEATURES FROM WAQI ===
+                # This is the key enhancement - real pollution measurements!
+                pollution_density = row.get('combined_pollution_density', 
+                                          row.get('marine_pollution_correlation',
+                                          row.get('pollution_density', 50)))
+                
+                # Real air quality measurements
+                aqi = row.get('aqi', 50)
+                pm25 = row.get('pm25', 25)
+                pm10 = row.get('pm10', 40)
+                no2 = row.get('no2', 20)
+                so2 = row.get('so2', 5)
+                co = row.get('co', 1)
+                o3 = row.get('o3', 30)
+                
+                # === ENHANCED HUMAN ACTIVITY FEATURES ===
+                config = self.area_configs[area]
+                
+                # Shipping density (correlated with real pollution)
+                base_shipping = config['shipping_factor']
+                pollution_shipping_correlation = 1 + (aqi - 50) / 100  # Higher AQI = more shipping
+                seasonal_shipping = 1 + 0.3 * np.sin(2 * np.pi * (day_of_year - 90) / 365)
+                weekend_shipping = 0.7 if day_of_week >= 5 else 1.0
+                shipping_density = (base_shipping * pollution_shipping_correlation * 
+                                  seasonal_shipping * weekend_shipping)
+                
+                # Tourism index (correlated with pollution)
+                tourism_base = 0.8 if area == 'mediterranean' else 0.4
+                tourism_seasonal = 1 + 0.6 * np.sin(2 * np.pi * (day_of_year - 90) / 365)
+                pollution_tourism_factor = 1 + (pm25 - 25) / 50  # Higher PM2.5 = more activity
+                tourism_index = tourism_base * tourism_seasonal * pollution_tourism_factor
+                
+                # Other activity features (enhanced with real data correlation)
+                fishing_activity = 0.6 + 0.4 * np.sin(2 * np.pi * day_of_year / 365)
+                coastal_population = config.get('coastal_pop', 1.0) * (1 + (aqi - 50) / 200)
+                industrial_activity = 0.8 + (no2 - 20) / 100  # NO2 indicates industrial activity
+                
+                # Store pollution for lag features
+                pollution_history.append(pollution_density)
+                
+                # === LAG FEATURES ===
+                pollution_lag_1 = pollution_history[-2] if len(pollution_history) > 1 else pollution_density
+                pollution_lag_7 = pollution_history[-8] if len(pollution_history) > 7 else pollution_density
+                pollution_lag_30 = pollution_history[-31] if len(pollution_history) > 30 else pollution_density
+                
+                # === INTERACTION FEATURES ===
+                temp_current_interaction = water_temperature * ocean_current_speed / 50
+                wind_wave_interaction = wind_speed * wave_height / 20
+                pollution_weather_interaction = (pm25 * wind_speed) / 100  # New: pollution-weather interaction
+                
+                # === GEOGRAPHIC FEATURES ===
+                coastal_proximity = np.random.uniform(50, 1000)
+                depth = np.random.uniform(100, 4000)
+                area_code = {'pacific': 0, 'atlantic': 1, 'indian': 2, 'mediterranean': 3}[area]
+                
+                # Create comprehensive LSTM record with REAL DATA
+                lstm_record = {
+                    'date': date,
+                    'area': area,
+                    'pollution_density': pollution_density,
+                    
+                    # Real environmental data from NOAA
+                    'ocean_current_speed': ocean_current_speed,
+                    'ocean_current_direction': ocean_current_direction,
+                    'water_temperature': water_temperature,
+                    'sea_surface_height': sea_surface_height,
+                    'wind_speed': wind_speed,
+                    'wind_direction': wind_direction,
+                    'wave_height': wave_height,
+                    'precipitation': precipitation,
+                    'atmospheric_pressure': atmospheric_pressure,
+                    
+                    # Real pollution data from WAQI
+                    'aqi': aqi,
+                    'pm25': pm25,
+                    'pm10': pm10,
+                    'no2': no2,
+                    'so2': so2,
+                    'co': co,
+                    'o3': o3,
+                    
+                    # Temporal (cyclical)
+                    'day_of_year_sin': day_of_year_sin,
+                    'day_of_year_cos': day_of_year_cos,
+                    'day_of_week_sin': day_of_week_sin,
+                    'day_of_week_cos': day_of_week_cos,
+                    'hour_sin': hour_sin,
+                    'hour_cos': hour_cos,
+                    
+                    # Human activity (enhanced with real pollution correlation)
+                    'shipping_density': shipping_density,
+                    'fishing_activity': fishing_activity,
+                    'tourism_index': tourism_index,
+                    'coastal_population': coastal_population,
+                    'industrial_activity': industrial_activity,
+                    
+                    # Lag features
+                    'pollution_lag_1': pollution_lag_1,
+                    'pollution_lag_7': pollution_lag_7,
+                    'pollution_lag_30': pollution_lag_30,
+                    
+                    # Interactions (including new pollution-weather interaction)
+                    'temp_current_interaction': temp_current_interaction,
+                    'wind_wave_interaction': wind_wave_interaction,
+                    'pollution_weather_interaction': pollution_weather_interaction,
+                    
+                    # Geographic
+                    'coastal_proximity': coastal_proximity,
+                    'depth': depth,
+                    'area_code': area_code,
+                    
+                    # Data source tracking for FYP presentation
+                    'data_source': row.get('data_source', 'NOAA+WAQI_real')
+                }
+                
+                lstm_records.append(lstm_record)
+            
+            result_df = pd.DataFrame(lstm_records)
+            
+            # Update feature names to include new pollution features
+            if self.enhanced_features:
+                self.feature_names = [
+                    'pollution_density',
+                    'ocean_current_speed', 'ocean_current_direction', 'water_temperature', 'sea_surface_height',
+                    'wind_speed', 'wind_direction', 'wave_height', 'precipitation', 'atmospheric_pressure',
+                    'aqi', 'pm25', 'pm10', 'no2', 'so2', 'co', 'o3',  # Real WAQI pollution data
+                    'day_of_year_sin', 'day_of_year_cos', 'day_of_week_sin', 'day_of_week_cos', 'hour_sin', 'hour_cos',
+                    'shipping_density', 'fishing_activity', 'tourism_index', 'coastal_population', 'industrial_activity',
+                    'pollution_lag_1', 'pollution_lag_7', 'pollution_lag_30',
+                    'temp_current_interaction', 'wind_wave_interaction', 'pollution_weather_interaction',
+                    'coastal_proximity', 'depth', 'area_code'
+                ]
+                self.features = len(self.feature_names)
+            
+            logger.info(f"🎯 Converted REAL data to LSTM format: {len(result_df)} records with {len(result_df.columns)} features")
+            logger.info(f"📊 Features now include REAL pollution measurements: AQI, PM2.5, PM10, NO2, SO2, CO, O3")
+            return result_df
+            
+        except Exception as e:
+            logger.error(f"Error converting real data: {e}")
+            return self._generate_enhanced_synthetic_data(area, len(real_data))
     
     def _calculate_realistic_pollution(self, water_temp: float, wind_speed: float, 
                                      precipitation: float, current_speed: float,

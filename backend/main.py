@@ -15,6 +15,8 @@ from typing import Optional, List
 from dotenv import load_dotenv
 import tempfile
 import uuid
+import asyncio
+from pydantic import BaseModel
 
 # Load environment variables
 load_dotenv()
@@ -39,6 +41,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Pydantic models for request validation
+class PredictionRequest(BaseModel):
+    area: str
+    days_ahead: int = 7
+
+class AnalysisRequest(BaseModel):
+    area: str
+    historical_days: int = 365
+
+class TrainingRequest(BaseModel):
+    epochs: int = 50
+    areas: List[str] = ['pacific', 'atlantic', 'indian', 'mediterranean']
 
 # Mount static files (for favicon)
 static_path = os.path.join(os.path.dirname(__file__), "..", "public")
@@ -97,6 +112,361 @@ async def health_check():
         "weights_path": WEIGHTS_PATH,
         "lstm_info": lstm_info
     }
+
+# ============================================================================
+# LSTM PREDICTION ENDPOINTS
+# ============================================================================
+
+@app.get("/api/prediction/areas")
+async def get_available_areas():
+    """Get list of supported marine areas for prediction"""
+    try:
+        areas = [
+            {
+                "id": "pacific",
+                "name": "Pacific Ocean",
+                "description": "North Pacific region including Great Pacific Garbage Patch",
+                "coordinates": {"lat": 35.0, "lon": -140.0}
+            },
+            {
+                "id": "atlantic", 
+                "name": "Atlantic Ocean",
+                "description": "North Atlantic marine region",
+                "coordinates": {"lat": 40.0, "lon": -30.0}
+            },
+            {
+                "id": "indian",
+                "name": "Indian Ocean", 
+                "description": "Indian Ocean marine region",
+                "coordinates": {"lat": -20.0, "lon": 80.0}
+            },
+            {
+                "id": "mediterranean",
+                "name": "Mediterranean Sea",
+                "description": "Mediterranean marine region", 
+                "coordinates": {"lat": 35.0, "lon": 15.0}
+            }
+        ]
+        
+        return {
+            "success": True,
+            "areas": areas,
+            "total_areas": len(areas)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting areas: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/prediction/data-fetch")
+async def fetch_environmental_data(request: AnalysisRequest):
+    """Fetch and prepare environmental data for a marine area"""
+    try:
+        logger.info(f"Fetching environmental data for {request.area}")
+        
+        # Validate area
+        valid_areas = ['pacific', 'atlantic', 'indian', 'mediterranean']
+        if request.area not in valid_areas:
+            raise HTTPException(status_code=400, detail=f"Invalid area. Must be one of: {valid_areas}")
+        
+        # Fetch comprehensive environmental data
+        df = await environmental_service.get_comprehensive_data(
+            request.area, 
+            request.historical_days
+        )
+        
+        if df.empty:
+            raise HTTPException(status_code=500, detail="Failed to fetch environmental data")
+        
+        # Calculate basic statistics
+        stats = {
+            "total_records": len(df),
+            "date_range": {
+                "start": df.index.min().strftime('%Y-%m-%d'),
+                "end": df.index.max().strftime('%Y-%m-%d')
+            },
+            "features": list(df.columns),
+            "pollution_stats": {
+                "mean": float(df['pollution_level'].mean()) if 'pollution_level' in df.columns else None,
+                "min": float(df['pollution_level'].min()) if 'pollution_level' in df.columns else None,
+                "max": float(df['pollution_level'].max()) if 'pollution_level' in df.columns else None,
+                "std": float(df['pollution_level'].std()) if 'pollution_level' in df.columns else None
+            }
+        }
+        
+        return {
+            "success": True,
+            "area": request.area,
+            "data_stats": stats,
+            "message": f"Successfully fetched {len(df)} records of environmental data"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching data for {request.area}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/prediction/train")
+async def train_lstm_model(request: TrainingRequest):
+    """Train LSTM model on environmental data"""
+    try:
+        logger.info(f"Starting LSTM training with {request.epochs} epochs for areas: {request.areas}")
+        
+        # Validate areas
+        valid_areas = ['pacific', 'atlantic', 'indian', 'mediterranean']
+        invalid_areas = [area for area in request.areas if area not in valid_areas]
+        if invalid_areas:
+            raise HTTPException(status_code=400, detail=f"Invalid areas: {invalid_areas}")
+        
+        # Validate epochs
+        if not 10 <= request.epochs <= 200:
+            raise HTTPException(status_code=400, detail="Epochs must be between 10 and 200")
+        
+        # Collect training data from all specified areas
+        all_training_data = []
+        
+        for area in request.areas:
+            logger.info(f"Fetching training data for {area}")
+            df = await environmental_service.get_comprehensive_data(area, days_back=730)  # 2 years of data
+            
+            if not df.empty:
+                df['area'] = area
+                all_training_data.append(df)
+        
+        if not all_training_data:
+            raise HTTPException(status_code=500, detail="Failed to fetch training data for any area")
+        
+        # Combine all training data
+        import pandas as pd
+        combined_df = pd.concat(all_training_data, ignore_index=False)
+        
+        # Ensure we have required features for LSTM
+        required_features = lstm_model.config['feature_names']
+        missing_features = [f for f in required_features if f not in combined_df.columns]
+        
+        if missing_features:
+            logger.warning(f"Missing features: {missing_features}, will be filled with defaults")
+            for feature in missing_features:
+                combined_df[feature] = combined_df.select_dtypes(include=[np.number]).mean().mean()
+        
+        # Train the model
+        training_result = lstm_model.train(combined_df, epochs=request.epochs)
+        
+        if training_result['success']:
+            return {
+                "success": True,
+                "training_result": training_result,
+                "areas_trained": request.areas,
+                "total_samples": training_result['training_samples'],
+                "model_info": lstm_model.get_model_info()
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Training failed")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error training LSTM model: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/prediction/predict")
+async def predict_pollution_trends(request: PredictionRequest):
+    """Generate pollution trend predictions using LSTM model"""
+    try:
+        logger.info(f"Generating predictions for {request.area}, {request.days_ahead} days ahead")
+        
+        # Validate area
+        valid_areas = ['pacific', 'atlantic', 'indian', 'mediterranean']
+        if request.area not in valid_areas:
+            raise HTTPException(status_code=400, detail=f"Invalid area. Must be one of: {valid_areas}")
+        
+        # Validate prediction horizon
+        if not 1 <= request.days_ahead <= 90:
+            raise HTTPException(status_code=400, detail="Days ahead must be between 1 and 90")
+        
+        # Get recent data for prediction context
+        recent_df = await environmental_service.get_comprehensive_data(
+            request.area, 
+            days_back=60  # Use last 60 days as context
+        )
+        
+        if recent_df.empty:
+            raise HTTPException(status_code=500, detail="Failed to fetch recent environmental data")
+        
+        # Generate predictions
+        prediction_result = lstm_model.predict(recent_df, days_ahead=request.days_ahead)
+        
+        if prediction_result['success']:
+            # Add additional analysis
+            predictions = prediction_result['predictions']
+            current_level = recent_df['pollution_level'].iloc[-1] if 'pollution_level' in recent_df.columns else 50
+            predicted_level = predictions[-1]['pollution_level'] if predictions else current_level
+            
+            # Calculate trend
+            trend_change = ((predicted_level - current_level) / current_level) * 100
+            
+            # Determine risk level
+            avg_predicted = np.mean([p['pollution_level'] for p in predictions])
+            if avg_predicted < 30:
+                risk_level = "Low"
+            elif avg_predicted < 60:
+                risk_level = "Moderate" 
+            elif avg_predicted < 80:
+                risk_level = "High"
+            else:
+                risk_level = "Critical"
+            
+            return {
+                "success": True,
+                "area": request.area,
+                "predictions": predictions,
+                "summary": {
+                    "current_level": float(current_level),
+                    "predicted_level": float(predicted_level),
+                    "trend_change_percent": float(trend_change),
+                    "risk_level": risk_level,
+                    "average_confidence": float(np.mean([p['confidence'] for p in predictions]))
+                },
+                "model_info": prediction_result['model_info']
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Prediction failed")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating predictions: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/prediction/analyze")
+async def analyze_area_pollution(request: AnalysisRequest):
+    """Analyze historical pollution patterns for a marine area"""
+    try:
+        logger.info(f"Analyzing pollution patterns for {request.area}")
+        
+        # Validate area
+        valid_areas = ['pacific', 'atlantic', 'indian', 'mediterranean']
+        if request.area not in valid_areas:
+            raise HTTPException(status_code=400, detail=f"Invalid area. Must be one of: {valid_areas}")
+        
+        # Get historical data
+        df = await environmental_service.get_comprehensive_data(
+            request.area,
+            days_back=request.historical_days
+        )
+        
+        if df.empty:
+            raise HTTPException(status_code=500, detail="Failed to fetch historical data")
+        
+        # Calculate comprehensive statistics
+        pollution_col = 'pollution_level' if 'pollution_level' in df.columns else 'pollution_index'
+        if pollution_col not in df.columns:
+            raise HTTPException(status_code=500, detail="No pollution data available")
+        
+        pollution_data = df[pollution_col].dropna()
+        
+        # Basic statistics
+        stats = {
+            "average_pollution": float(pollution_data.mean()),
+            "max_pollution": float(pollution_data.max()),
+            "min_pollution": float(pollution_data.min()),
+            "std_pollution": float(pollution_data.std()),
+            "median_pollution": float(pollution_data.median())
+        }
+        
+        # Trend analysis
+        from scipy import stats as scipy_stats
+        days = np.arange(len(pollution_data))
+        slope, intercept, r_value, p_value, std_err = scipy_stats.linregress(days, pollution_data)
+        
+        stats["trend_slope"] = float(slope)
+        stats["trend_r_squared"] = float(r_value ** 2)
+        stats["trend_p_value"] = float(p_value)
+        
+        # Recent change (last 30 days vs previous 30 days)
+        if len(pollution_data) >= 60:
+            recent_30 = pollution_data.tail(30).mean()
+            previous_30 = pollution_data.iloc[-60:-30].mean()
+            stats["recent_change_percent"] = float(((recent_30 - previous_30) / previous_30) * 100)
+        else:
+            stats["recent_change_percent"] = 0.0
+        
+        # Risk assessment
+        avg_pollution = stats["average_pollution"]
+        recent_trend = stats["recent_change_percent"]
+        
+        if avg_pollution < 30:
+            risk_level = "Low"
+        elif avg_pollution < 60:
+            risk_level = "Moderate"
+        elif avg_pollution < 80:
+            risk_level = "High"
+        else:
+            risk_level = "Critical"
+        
+        # Trend direction
+        if stats["trend_slope"] > 0.1:
+            trend_direction = "Increasing"
+        elif stats["trend_slope"] < -0.1:
+            trend_direction = "Decreasing"
+        else:
+            trend_direction = "Stable"
+        
+        # Recent trend
+        if recent_trend > 5:
+            recent_trend_direction = "Worsening"
+        elif recent_trend < -5:
+            recent_trend_direction = "Improving"
+        else:
+            recent_trend_direction = "Stable"
+        
+        return {
+            "success": True,
+            "area": request.area,
+            "analysis_period": {
+                "days": request.historical_days,
+                "start_date": df.index.min().strftime('%Y-%m-%d'),
+                "end_date": df.index.max().strftime('%Y-%m-%d')
+            },
+            "statistics": stats,
+            "risk_assessment": {
+                "level": risk_level,
+                "trend": trend_direction,
+                "recent_trend": recent_trend_direction
+            },
+            "data_quality": {
+                "total_records": len(df),
+                "pollution_records": len(pollution_data),
+                "completeness": float(len(pollution_data) / len(df))
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error analyzing area pollution: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/prediction/model-info")
+async def get_model_info():
+    """Get LSTM model information and status"""
+    try:
+        model_info = lstm_model.get_model_info()
+        
+        return {
+            "success": True,
+            "model_info": model_info,
+            "api_status": {
+                "noaa_available": noaa_client is not None,
+                "waqi_available": waqi_client is not None,
+                "environmental_service_ready": True
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting model info: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/detect")
 async def detect_objects(file: UploadFile = File(...), confidence: float = 0.25):

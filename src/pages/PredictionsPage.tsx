@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import * as React from "react";
 import { motion } from "framer-motion";
 import {
   TrendingUp,
@@ -15,6 +14,10 @@ import {
   Play,
   CheckCircle,
   XCircle,
+  Activity,
+  BarChart3,
+  Waves,
+  Wind,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -40,6 +43,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Slider } from "@/components/ui/slider";
 import { PageTransition, staggerContainer, fadeInUp } from "@/components/layout/PageTransition";
 import { MainLayout } from "@/components/layout/MainLayout";
+import { useToast } from "@/hooks/use-toast";
 import {
   LineChart,
   Line,
@@ -49,24 +53,31 @@ import {
   Tooltip,
   ResponsiveContainer,
   Legend,
+  Area,
+  AreaChart,
 } from "recharts";
 
 // API base URL
 const API_BASE = "http://localhost:8000";
 
+// Types
 interface PredictionData {
   date: string;
   pollution_level: number;
+  confidence: number;
 }
 
 interface AreaPrediction {
   area: string;
   predictions: PredictionData[];
-  trend_change_percent: number;
-  current_level: number;
-  predicted_level: number;
-  risk_level: string;
-  confidence: number;
+  summary: {
+    current_level: number;
+    predicted_level: number;
+    trend_change_percent: number;
+    risk_level: string;
+    average_confidence: number;
+  };
+  model_info: any;
 }
 
 interface AreaAnalysis {
@@ -85,104 +96,128 @@ interface AreaAnalysis {
   };
 }
 
+interface ModelInfo {
+  status: string;
+  model_exists: boolean;
+  config: any;
+  model_size_mb: number;
+}
+
+// Marine areas configuration
 const areas = [
-  { id: "pacific", name: "Pacific Ocean", description: "North Pacific region including Great Pacific Garbage Patch" },
-  { id: "atlantic", name: "Atlantic Ocean", description: "North Atlantic marine region" },
-  { id: "indian", name: "Indian Ocean", description: "Indian Ocean marine region" },
-  { id: "mediterranean", name: "Mediterranean Sea", description: "Mediterranean marine region" },
+  { 
+    id: "pacific", 
+    name: "Pacific Ocean", 
+    description: "North Pacific region including Great Pacific Garbage Patch",
+    coordinates: { lat: 35.0, lon: -140.0 }
+  },
+  { 
+    id: "atlantic", 
+    name: "Atlantic Ocean", 
+    description: "North Atlantic marine region",
+    coordinates: { lat: 40.0, lon: -30.0 }
+  },
+  { 
+    id: "indian", 
+    name: "Indian Ocean", 
+    description: "Indian Ocean marine region",
+    coordinates: { lat: -20.0, lon: 80.0 }
+  },
+  { 
+    id: "mediterranean", 
+    name: "Mediterranean Sea", 
+    description: "Mediterranean marine region",
+    coordinates: { lat: 35.0, lon: 15.0 }
+  },
 ];
 
 export default function PredictionsPage() {
+  const { toast } = useToast();
+  
+  // State management
   const [selectedArea, setSelectedArea] = useState("pacific");
+  const [predictionHorizon, setPredictionHorizon] = useState(7);
   const [predictions, setPredictions] = useState<AreaPrediction | null>(null);
   const [areaAnalyses, setAreaAnalyses] = useState<Record<string, AreaAnalysis>>({});
+  const [modelInfo, setModelInfo] = useState<ModelInfo | null>(null);
+  
+  // Loading states
   const [loading, setLoading] = useState(false);
-  const [modelInfo, setModelInfo] = useState<any>(null);
+  const [fetchingData, setFetchingData] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
   
   // Training state
   const [isTraining, setIsTraining] = useState(false);
   const [trainingDialogOpen, setTrainingDialogOpen] = useState(false);
   const [trainingEpochs, setTrainingEpochs] = useState([50]);
   const [selectedTrainingAreas, setSelectedTrainingAreas] = useState<string[]>(['pacific', 'atlantic', 'indian', 'mediterranean']);
-  const [trainingProgress, setTrainingProgress] = useState<string>('');
-  const [trainingMessages] = useState([
-    "🧠 Hey student, grab some coffee! The LSTM neurons are doing their magic...",
-    "🌊 Teaching the AI about ocean pollution patterns... This might take a while!",
-    "🤖 The neural network is learning faster than a dolphin swimming!",
-    "📊 Crunching environmental data like a hungry sea turtle!",
-    "⚡ LSTM layers are firing up! The AI is getting smarter by the second!",
-    "🔬 Deep learning in progress... The model is becoming an ocean expert!",
-    "🎯 Training accuracy is improving! The AI is almost ready to predict the future!",
-    "🌟 Almost there! The LSTM is polishing its prediction skills!"
-  ]);
 
-  // Fetch LSTM model info and all area analyses
+  // Fetch model info on component mount
   useEffect(() => {
-    try {
-      fetchModelInfo();
-      // Fetch analysis for all areas on page load
-      areas.forEach(area => {
-        fetchAreaAnalysis(area.id);
-      });
-    } catch (error) {
-      console.error("Error in initial data fetch:", error);
-    }
+    fetchModelInfo();
+    // Fetch analysis for all areas on page load
+    areas.forEach(area => {
+      fetchAreaAnalysis(area.id);
+    });
   }, []);
 
-  // Fetch predictions when area changes
+  // Fetch predictions when area or horizon changes
   useEffect(() => {
-    try {
-      if (selectedArea) {
-        fetchPredictions(selectedArea);
-        fetchAreaAnalysis(selectedArea);
-      }
-    } catch (error) {
-      console.error("Error in area change:", error);
+    if (selectedArea && modelInfo?.status === 'loaded') {
+      fetchPredictions(selectedArea, predictionHorizon);
     }
-  }, [selectedArea]);
+  }, [selectedArea, predictionHorizon, modelInfo]);
 
   const fetchModelInfo = async () => {
     try {
-      const response = await fetch(`${API_BASE}/lstm/info`);
+      const response = await fetch(`${API_BASE}/api/prediction/model-info`);
       const data = await response.json();
-      setModelInfo(data);
+      
+      if (data.success) {
+        setModelInfo(data.model_info);
+      } else {
+        toast({
+          title: "Model Info Error",
+          description: "Failed to fetch model information",
+          variant: "destructive",
+        });
+      }
     } catch (error) {
       console.error("Error fetching model info:", error);
+      toast({
+        title: "Connection Error",
+        description: "Failed to connect to prediction service",
+        variant: "destructive",
+      });
     }
   };
 
-  const fetchPredictions = async (area: string) => {
+  const fetchPredictions = async (area: string, daysAhead: number) => {
     setLoading(true);
     try {
-      const url = `${API_BASE}/lstm/predict?area=${area}&days_ahead=30`;
-      
-      const response = await fetch(url, {
+      const response = await fetch(`${API_BASE}/api/prediction/predict`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ area, days_ahead: daysAhead })
       });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
       
       const data = await response.json();
       
-      if (data.success && data.predictions) {
-        // The backend returns predictions nested inside the response
-        setPredictions(data.predictions);
+      if (data.success) {
+        setPredictions(data);
+        toast({
+          title: "Predictions Generated",
+          description: `Successfully generated ${daysAhead}-day forecast for ${area}`,
+        });
       } else {
-        throw new Error("Invalid API response");
+        throw new Error(data.detail || 'Prediction failed');
       }
     } catch (error) {
       console.error("Error fetching predictions:", error);
-      // Fallback to mock data if API fails
-      setPredictions({
-        area: area,
-        predictions: generateMockPredictions(),
-        trend_change_percent: Math.random() * 20 - 10,
-        current_level: 45 + Math.random() * 30,
-        predicted_level: 50 + Math.random() * 30,
-        risk_level: ["low", "medium", "high"][Math.floor(Math.random() * 3)],
-        confidence: 0.94
+      toast({
+        title: "Prediction Error",
+        description: error instanceof Error ? error.message : "Failed to generate predictions",
+        variant: "destructive",
       });
     } finally {
       setLoading(false);
@@ -191,602 +226,520 @@ export default function PredictionsPage() {
 
   const fetchAreaAnalysis = async (area: string) => {
     try {
-      const response = await fetch(`${API_BASE}/lstm/analyze?area=${area}&historical_days=365`, {
+      const response = await fetch(`${API_BASE}/api/prediction/analyze`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ area, historical_days: 365 })
       });
       
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          setAreaAnalyses(prev => ({
-            ...prev,
-            [area]: data
-          }));
-        }
+      const data = await response.json();
+      
+      if (data.success) {
+        setAreaAnalyses(prev => ({
+          ...prev,
+          [area]: data
+        }));
       }
     } catch (error) {
-      console.error("Error fetching area analysis:", error);
+      console.error(`Error fetching analysis for ${area}:`, error);
     }
   };
 
-  const generateMockPredictions = (): PredictionData[] => {
-    const predictions: PredictionData[] = [];
-    const startDate = new Date();
-    
-    for (let i = 1; i <= 30; i++) {
-      const date = new Date(startDate);
-      date.setDate(date.getDate() + i);
-      
-      predictions.push({
-        date: date.toISOString().split('T')[0],
-        pollution_level: 45 + Math.random() * 30 + Math.sin(i / 5) * 10
-      });
-    }
-    
-    return predictions;
-  };
-
-  const refreshPredictions = () => {
-    fetchPredictions(selectedArea);
-    fetchAreaAnalysis(selectedArea);
-  };
-
-  const handleTrainingAreaToggle = (areaId: string) => {
-    setSelectedTrainingAreas(prev => 
-      prev.includes(areaId) 
-        ? prev.filter(id => id !== areaId)
-        : [...prev, areaId]
-    );
-  };
-
-  const startTraining = async () => {
-    if (selectedTrainingAreas.length === 0) {
-      alert("Please select at least one area to train!");
-      return;
-    }
-
+  const handleTraining = async () => {
     setIsTraining(true);
-    setTrainingDialogOpen(false);
-    
-    // Show fun training messages
-    let messageIndex = 0;
-    const messageInterval = setInterval(() => {
-      if (messageIndex < trainingMessages.length) {
-        setTrainingProgress(trainingMessages[messageIndex]);
-        messageIndex++;
-      } else {
-        messageIndex = 0; // Loop messages
-      }
-    }, 3000);
-
     try {
-      // Build query parameters
-      const params = new URLSearchParams();
-      params.append('epochs', trainingEpochs[0].toString());
-      selectedTrainingAreas.forEach(area => {
-        params.append('areas', area);
-      });
-
-      const response = await fetch(`${API_BASE}/lstm/retrain?${params.toString()}`, {
+      const response = await fetch(`${API_BASE}/api/prediction/train`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          epochs: trainingEpochs[0],
+          areas: selectedTrainingAreas
+        })
       });
-
-      const result = await response.json();
       
-      clearInterval(messageInterval);
+      const data = await response.json();
       
-      if (result.success) {
-        setTrainingProgress("🎉 Training completed successfully! The LSTM is now smarter than ever!");
-        // Refresh model info and predictions
-        setTimeout(() => {
-          fetchModelInfo();
-          fetchPredictions(selectedArea);
-          setTrainingProgress('');
-          setIsTraining(false);
-        }, 3000);
+      if (data.success) {
+        toast({
+          title: "Training Completed",
+          description: `Model trained successfully on ${data.total_samples} samples`,
+        });
+        setTrainingDialogOpen(false);
+        fetchModelInfo(); // Refresh model info
       } else {
-        setTrainingProgress("❌ Training failed. The AI needs more coffee!");
-        setTimeout(() => {
-          setTrainingProgress('');
-          setIsTraining(false);
-        }, 3000);
+        throw new Error(data.detail || 'Training failed');
       }
     } catch (error) {
-      clearInterval(messageInterval);
-      console.error("Training error:", error);
-      setTrainingProgress("💥 Oops! Something went wrong during training. Try again!");
-      setTimeout(() => {
-        setTrainingProgress('');
-        setIsTraining(false);
-      }, 3000);
+      console.error("Error training model:", error);
+      toast({
+        title: "Training Error",
+        description: error instanceof Error ? error.message : "Failed to train model",
+        variant: "destructive",
+      });
+    } finally {
+      setIsTraining(false);
     }
   };
 
-  // Prepare chart data - use actual LSTM predictions with proper variation
-  const chartData = React.useMemo(() => {
-    if (predictions?.predictions && predictions.predictions.length > 0) {
-      return predictions.predictions.map((pred, index) => {
-        const baseValue = pred.pollution_level;
-        // Create historical data that shows realistic progression
-        const historicalValue = index < 15 ? 
-          baseValue - (15 - index) * 0.8 + Math.sin(index / 4) * 3 + (index * 0.1) : 
-          null;
-        
-        return {
-          day: `Day ${index + 1}`,
-          date: pred.date,
-          predicted: Math.round(baseValue * 10) / 10,
-          actual: historicalValue ? Math.round(historicalValue * 10) / 10 : null
-        };
-      });
+  const getRiskBadgeVariant = (riskLevel: string) => {
+    switch (riskLevel.toLowerCase()) {
+      case 'low': return 'default';
+      case 'moderate': return 'secondary';
+      case 'high': return 'destructive';
+      case 'critical': return 'destructive';
+      default: return 'secondary';
     }
-    
-    // Return sample data if no predictions
-    const sampleData = [];
-    for (let i = 1; i <= 30; i++) {
-      const baseValue = 50 + Math.sin(i / 5) * 10 + (i * 0.3);
-      sampleData.push({
-        day: `Day ${i}`,
-        date: new Date(Date.now() + i * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        predicted: Math.round(baseValue * 10) / 10,
-        actual: i < 15 ? Math.round((baseValue - 5 + (i * 0.2)) * 10) / 10 : null
-      });
-    }
-    return sampleData;
-  }, [predictions]);
+  };
 
-  try {
-    return (
-      <MainLayout>
-        <PageTransition className="page-container">
-          <div className="mb-8">
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="section-header">Area-Wise Trend Predictions</h1>
-                <p className="text-muted-foreground">
-                  LSTM-powered pollution forecasting and hotspot accumulation analysis
-                </p>
-              </div>
-              <Button 
-                onClick={refreshPredictions} 
-                disabled={loading}
-                variant="outline"
-                size="sm"
-              >
-                {loading ? (
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                ) : (
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                )}
-                Refresh
-              </Button>
-            </div>
-          </div>
+  const getTrendIcon = (trend: number) => {
+    if (trend > 5) return <TrendingUp className="h-4 w-4 text-destructive" />;
+    if (trend < -5) return <TrendingDown className="h-4 w-4 text-success" />;
+    return <Activity className="h-4 w-4 text-muted-foreground" />;
+  };
 
-          {/* LSTM Model Status & Training */}
-          <motion.div 
+  // Prepare chart data
+  const chartData = predictions?.predictions.map((pred, index) => ({
+    date: new Date(pred.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+    pollution_level: pred.pollution_level,
+    confidence: pred.confidence * 100,
+    day: index + 1
+  })) || [];
+
+  return (
+    <MainLayout>
+      <PageTransition>
+        <div className="page-container">
+          {/* Header Section */}
+          <motion.div
+            variants={staggerContainer}
+            initial="hidden"
+            animate="show"
             className="mb-8"
-            variants={fadeInUp}
-            initial="initial"
-            animate="animate"
           >
-            <Card className="border-2 border-dashed border-primary/20 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-950/20 dark:to-purple-950/20">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Brain className="h-6 w-6 text-primary" />
-                  LSTM Neural Network Status
-                  {modelInfo?.status === 'loaded' ? (
-                    <CheckCircle className="h-5 w-5 text-green-500" />
-                  ) : (
-                    <XCircle className="h-5 w-5 text-red-500" />
+            <motion.div variants={fadeInUp} className="text-center mb-6">
+              <h1 className="section-header mb-2 flex items-center justify-center gap-3">
+                <Brain className="h-8 w-8 text-primary" />
+                Environmental & Marine Trend Prediction
+              </h1>
+              <p className="text-muted-foreground max-w-2xl mx-auto">
+                Advanced LSTM-based forecasting system using real environmental data from multiple sources 
+                including NOAA Climate Data, World Air Quality Index, and marine observations.
+              </p>
+            </motion.div>
+
+            {/* Model Status Card */}
+            <motion.div variants={fadeInUp}>
+              <Card className="glass-card mb-6">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Zap className="h-5 w-5" />
+                    LSTM Model Status
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="flex items-center gap-2">
+                      {modelInfo?.status === 'loaded' ? (
+                        <CheckCircle className="h-5 w-5 text-success" />
+                      ) : (
+                        <XCircle className="h-5 w-5 text-destructive" />
+                      )}
+                      <span className="text-sm">
+                        Status: {modelInfo?.status === 'loaded' ? 'Ready' : 'Not Loaded'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <BarChart3 className="h-5 w-5 text-muted-foreground" />
+                      <span className="text-sm">
+                        Size: {modelInfo?.model_size_mb || 0} MB
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Activity className="h-5 w-5 text-muted-foreground" />
+                      <span className="text-sm">
+                        Features: {modelInfo?.config?.n_features || 8}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Calendar className="h-5 w-5 text-muted-foreground" />
+                      <span className="text-sm">
+                        Sequence: {modelInfo?.config?.sequence_length || 30} days
+                      </span>
+                    </div>
+                  </div>
+                  
+                  {modelInfo?.config?.last_trained && (
+                    <div className="mt-4 p-3 bg-muted/50 rounded-lg">
+                      <p className="text-sm text-muted-foreground">
+                        Last trained: {new Date(modelInfo.config.last_trained).toLocaleString()}
+                      </p>
+                      {modelInfo.config.validation_mae && (
+                        <p className="text-sm text-muted-foreground">
+                          Validation MAE: {modelInfo.config.validation_mae.toFixed(4)} | 
+                          RMSE: {modelInfo.config.validation_rmse.toFixed(4)}
+                        </p>
+                      )}
+                    </div>
                   )}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-primary">
-                      {modelInfo?.status === 'loaded' ? '✅' : '❌'}
-                    </div>
-                    <div className="text-sm text-muted-foreground">Model Status</div>
-                    <div className="font-medium">
-                      {modelInfo?.status === 'loaded' ? 'Loaded & Ready' : 'Not Loaded'}
-                    </div>
-                  </div>
-                  
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-primary">
-                      {modelInfo?.sequence_length || 30}
-                    </div>
-                    <div className="text-sm text-muted-foreground">Sequence Length</div>
-                    <div className="font-medium">Days Lookback</div>
-                  </div>
-                  
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-primary">
-                      {modelInfo?.features || 9}
-                    </div>
-                    <div className="text-sm text-muted-foreground">Input Features</div>
-                    <div className="font-medium">Environmental Data</div>
-                  </div>
-                  
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-primary">
-                      {modelInfo?.areas_supported?.length || 4}
-                    </div>
-                    <div className="text-sm text-muted-foreground">Marine Areas</div>
-                    <div className="font-medium">Supported Regions</div>
-                  </div>
-                </div>
-
-                {/* Model Last Updated */}
-                {modelInfo?.last_updated && (
-                  <div className="mb-4 text-center">
-                    <div className="text-xs text-muted-foreground">
-                      Last Updated: {new Date(modelInfo.last_updated).toLocaleString()}
-                    </div>
-                  </div>
-                )}
-
-                {/* Training Status */}
-                {isTraining && (
-                  <motion.div 
-                    className="mb-4 p-4 bg-gradient-to-r from-yellow-100 to-orange-100 dark:from-yellow-900/20 dark:to-orange-900/20 rounded-lg border border-yellow-200 dark:border-yellow-800"
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                  >
-                    <div className="flex items-center gap-3">
-                      <Loader2 className="h-5 w-5 animate-spin text-yellow-600" />
-                      <div className="flex-1">
-                        <div className="font-medium text-yellow-800 dark:text-yellow-200">
-                          LSTM Training in Progress...
-                        </div>
-                        <div className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
-                          {trainingProgress}
-                        </div>
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-
-                {/* Training Controls */}
-                <div className="flex items-center gap-3">
-                  <Dialog open={trainingDialogOpen} onOpenChange={setTrainingDialogOpen}>
-                    <DialogTrigger asChild>
-                      <Button 
-                        variant="default" 
-                        size="sm"
-                        disabled={isTraining}
-                        className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
-                      >
-                        <Zap className="h-4 w-4 mr-2" />
-                        {isTraining ? 'Training...' : 'Train LSTM Model'}
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent className="sm:max-w-md">
-                      <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2">
-                          <Settings className="h-5 w-5" />
-                          Configure LSTM Training
-                        </DialogTitle>
-                        <DialogDescription>
-                          Set up your neural network training parameters. The AI will learn pollution patterns for the selected areas!
-                        </DialogDescription>
-                      </DialogHeader>
-                      
-                      <div className="space-y-6 py-4">
-                        {/* Epochs Slider */}
-                        <div className="space-y-3">
-                          <Label className="text-sm font-medium">
-                            Training Epochs: {trainingEpochs[0]}
-                          </Label>
-                          <Slider
-                            value={trainingEpochs}
-                            onValueChange={setTrainingEpochs}
-                            max={200}
-                            min={10}
-                            step={10}
-                            className="w-full"
-                          />
-                          <div className="flex justify-between text-xs text-muted-foreground">
-                            <span>10 (Fast)</span>
-                            <span>100 (Balanced)</span>
-                            <span>200 (Thorough)</span>
-                          </div>
-                        </div>
-
-                        {/* Area Selection */}
-                        <div className="space-y-3">
-                          <Label className="text-sm font-medium">
-                            Select Areas to Train ({selectedTrainingAreas.length}/4)
-                          </Label>
-                          <div className="grid grid-cols-2 gap-3">
-                            {areas.map((area) => (
-                              <div key={area.id} className="flex items-center space-x-2">
-                                <Checkbox
-                                  id={area.id}
-                                  checked={selectedTrainingAreas.includes(area.id)}
-                                  onCheckedChange={() => handleTrainingAreaToggle(area.id)}
-                                />
-                                <Label 
-                                  htmlFor={area.id} 
-                                  className="text-sm cursor-pointer"
-                                >
-                                  {area.name}
-                                </Label>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Training Info */}
-                        <div className="p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                          <div className="text-sm text-blue-800 dark:text-blue-200">
-                            <div className="font-medium mb-1">🎯 Training Preview:</div>
-                            <div>• Epochs: {trainingEpochs[0]} iterations</div>
-                            <div>• Areas: {selectedTrainingAreas.length} marine regions</div>
-                            <div>• Estimated time: {Math.ceil(trainingEpochs[0] / 10)} minutes</div>
-                          </div>
-                        </div>
-                      </div>
-
-                      <DialogFooter>
-                        <Button 
-                          variant="outline" 
-                          onClick={() => setTrainingDialogOpen(false)}
-                        >
-                          Cancel
-                        </Button>
-                        <Button 
-                          onClick={startTraining}
-                          disabled={selectedTrainingAreas.length === 0}
-                          className="bg-gradient-to-r from-green-500 to-blue-600 hover:from-green-600 hover:to-blue-700"
-                        >
-                          <Play className="h-4 w-4 mr-2" />
-                          Start Training
-                        </Button>
-                      </DialogFooter>
-                    </DialogContent>
-                  </Dialog>
-
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={fetchModelInfo}
-                    disabled={isTraining}
-                  >
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    Refresh Status
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            </motion.div>
           </motion.div>
 
-          {/* Area Selection */}
-          <motion.div 
+          {/* Controls Panel */}
+          <motion.div
+            variants={staggerContainer}
+            initial="hidden"
+            animate="show"
             className="mb-8"
-            variants={fadeInUp}
-            initial="initial"
-            animate="animate"
           >
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <MapPin className="h-5 w-5" />
-                  Select Marine Area
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Select value={selectedArea} onValueChange={setSelectedArea}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Choose a marine area" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {areas.map((area) => (
-                      <SelectItem key={area.id} value={area.id}>
-                        <div className="flex flex-col">
-                          <span className="font-medium">{area.name}</span>
-                          <span className="text-sm text-muted-foreground">{area.description}</span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </CardContent>
-            </Card>
+            <motion.div variants={fadeInUp}>
+              <Card className="glass-card">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Settings className="h-5 w-5" />
+                    Prediction Controls
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {/* Area Selection */}
+                    <div className="space-y-2">
+                      <Label>Marine Region</Label>
+                      <Select value={selectedArea} onValueChange={setSelectedArea}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {areas.map((area) => (
+                            <SelectItem key={area.id} value={area.id}>
+                              <div className="flex items-center gap-2">
+                                <MapPin className="h-4 w-4" />
+                                {area.name}
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Prediction Horizon */}
+                    <div className="space-y-2">
+                      <Label>Forecast Period</Label>
+                      <Select 
+                        value={predictionHorizon.toString()} 
+                        onValueChange={(value) => setPredictionHorizon(parseInt(value))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="7">7 days</SelectItem>
+                          <SelectItem value="14">14 days</SelectItem>
+                          <SelectItem value="30">30 days</SelectItem>
+                          <SelectItem value="60">60 days</SelectItem>
+                          <SelectItem value="90">90 days</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="space-y-2">
+                      <Label>Actions</Label>
+                      <Button
+                        onClick={() => fetchPredictions(selectedArea, predictionHorizon)}
+                        disabled={loading || modelInfo?.status !== 'loaded'}
+                        className="w-full"
+                      >
+                        {loading ? (
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        ) : (
+                          <Play className="h-4 w-4 mr-2" />
+                        )}
+                        Run Prediction
+                      </Button>
+                    </div>
+
+                    {/* Training Button */}
+                    <div className="space-y-2">
+                      <Label>Model Training</Label>
+                      <Dialog open={trainingDialogOpen} onOpenChange={setTrainingDialogOpen}>
+                        <DialogTrigger asChild>
+                          <Button variant="outline" className="w-full">
+                            <Brain className="h-4 w-4 mr-2" />
+                            Train Model
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                          <DialogHeader>
+                            <DialogTitle>Train LSTM Model</DialogTitle>
+                            <DialogDescription>
+                              Configure training parameters for the environmental prediction model.
+                            </DialogDescription>
+                          </DialogHeader>
+                          
+                          <div className="space-y-4">
+                            <div>
+                              <Label>Training Epochs: {trainingEpochs[0]}</Label>
+                              <Slider
+                                value={trainingEpochs}
+                                onValueChange={setTrainingEpochs}
+                                min={10}
+                                max={200}
+                                step={10}
+                                className="mt-2"
+                              />
+                            </div>
+                            
+                            <div>
+                              <Label>Training Areas</Label>
+                              <div className="grid grid-cols-2 gap-2 mt-2">
+                                {areas.map((area) => (
+                                  <div key={area.id} className="flex items-center space-x-2">
+                                    <Checkbox
+                                      id={area.id}
+                                      checked={selectedTrainingAreas.includes(area.id)}
+                                      onCheckedChange={(checked) => {
+                                        if (checked) {
+                                          setSelectedTrainingAreas([...selectedTrainingAreas, area.id]);
+                                        } else {
+                                          setSelectedTrainingAreas(selectedTrainingAreas.filter(a => a !== area.id));
+                                        }
+                                      }}
+                                    />
+                                    <Label htmlFor={area.id} className="text-sm">
+                                      {area.name}
+                                    </Label>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <DialogFooter>
+                            <Button
+                              onClick={handleTraining}
+                              disabled={isTraining || selectedTrainingAreas.length === 0}
+                            >
+                              {isTraining ? (
+                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                              ) : (
+                                <Brain className="h-4 w-4 mr-2" />
+                              )}
+                              {isTraining ? 'Training...' : 'Start Training'}
+                            </Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
           </motion.div>
 
           {/* Area Overview Cards */}
-          <motion.div 
-            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8"
+          <motion.div
             variants={staggerContainer}
-            initial="initial"
-            animate="animate"
+            initial="hidden"
+            animate="show"
+            className="mb-8"
           >
-            {areas.map((area) => {
-              const analysis = areaAnalyses[area.id];
-              const isSelected = selectedArea === area.id;
-              
-              return (
-                <motion.div key={area.id} variants={fadeInUp}>
-                  <Card 
-                    className={`cursor-pointer transition-all duration-200 hover:shadow-lg ${
-                      isSelected ? 'ring-2 ring-primary shadow-lg' : ''
-                    }`}
-                    onClick={() => setSelectedArea(area.id)}
-                  >
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-lg">{area.name}</CardTitle>
-                      <div className="flex items-center gap-2">
-                        {analysis?.risk_assessment?.level && (
-                          <Badge 
-                            variant={
-                              analysis.risk_assessment.level === 'high' ? 'destructive' :
-                              analysis.risk_assessment.level === 'medium' ? 'default' : 'secondary'
-                            }
-                          >
-                            {analysis.risk_assessment.level} risk
-                          </Badge>
-                        )}
-                        {analysis?.risk_assessment?.recent_trend && (
-                          <div className="flex items-center gap-1">
-                            {analysis.risk_assessment.recent_trend === 'increasing' ? (
-                              <TrendingUp className="h-4 w-4 text-red-500" />
-                            ) : analysis.risk_assessment.recent_trend === 'decreasing' ? (
-                              <TrendingDown className="h-4 w-4 text-green-500" />
-                            ) : (
-                              <div className="h-4 w-4 rounded-full bg-yellow-500" />
-                            )}
+            <motion.div variants={fadeInUp} className="mb-4">
+              <h2 className="text-xl font-semibold">Marine Area Overview</h2>
+              <p className="text-muted-foreground">Current pollution status across all monitored regions</p>
+            </motion.div>
+            
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {areas.map((area) => {
+                const analysis = areaAnalyses[area.id];
+                return (
+                  <motion.div key={area.id} variants={fadeInUp}>
+                    <Card className={`glass-card hover-lift cursor-pointer transition-all ${
+                      selectedArea === area.id ? 'ring-2 ring-primary' : ''
+                    }`} onClick={() => setSelectedArea(area.id)}>
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <Waves className="h-4 w-4" />
+                          {area.name}
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        {analysis ? (
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm text-muted-foreground">Risk Level</span>
+                              <Badge variant={getRiskBadgeVariant(analysis.risk_assessment.level)}>
+                                {analysis.risk_assessment.level}
+                              </Badge>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm text-muted-foreground">Avg Pollution</span>
+                              <span className="text-sm font-medium">
+                                {analysis.statistics.average_pollution.toFixed(1)}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm text-muted-foreground">Trend</span>
+                              <div className="flex items-center gap-1">
+                                {getTrendIcon(analysis.statistics.recent_change_percent)}
+                                <span className="text-sm">
+                                  {analysis.risk_assessment.recent_trend}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-center py-4">
+                            <Loader2 className="h-4 w-4 animate-spin" />
                           </div>
                         )}
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      {analysis ? (
-                        <div className="space-y-2">
-                          <div className="flex justify-between text-sm">
-                            <span className="text-muted-foreground">Avg Pollution:</span>
-                            <span className="font-medium">{analysis.statistics.average_pollution.toFixed(1)} units</span>
-                          </div>
-                          <div className="flex justify-between text-sm">
-                            <span className="text-muted-foreground">Recent Change:</span>
-                            <span className={`font-medium ${
-                              analysis.statistics.recent_change_percent > 0 ? 'text-red-500' : 
-                              analysis.statistics.recent_change_percent < 0 ? 'text-green-500' : 'text-yellow-500'
-                            }`}>
-                              {analysis.statistics.recent_change_percent > 0 ? '+' : ''}
-                              {analysis.statistics.recent_change_percent.toFixed(1)}%
-                            </span>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="text-sm text-muted-foreground">Loading analysis...</div>
-                      )}
-                    </CardContent>
-                  </Card>
-                </motion.div>
-              );
-            })}
+                      </CardContent>
+                    </Card>
+                  </motion.div>
+                );
+              })}
+            </div>
           </motion.div>
 
           {/* Prediction Results */}
           {predictions && (
-            <motion.div 
-              className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8"
+            <motion.div
               variants={staggerContainer}
-              initial="initial"
-              animate="animate"
+              initial="hidden"
+              animate="show"
+              className="mb-8"
             >
-              {/* Current Status */}
-              <motion.div variants={fadeInUp}>
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Calendar className="h-5 w-5" />
-                      Current Status
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      <div>
-                        <div className="text-2xl font-bold">{predictions.current_level.toFixed(1)}</div>
-                        <div className="text-sm text-muted-foreground">Current Pollution Level</div>
+              {/* Summary Cards */}
+              <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <motion.div variants={fadeInUp}>
+                  <Card className="glass-card">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Activity className="h-4 w-4" />
+                        Current Level
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">
+                        {predictions.summary.current_level.toFixed(1)}
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Badge 
-                          variant={
-                            predictions.risk_level === 'high' ? 'destructive' :
-                            predictions.risk_level === 'medium' ? 'default' : 'secondary'
-                          }
-                        >
-                          {predictions.risk_level} risk
-                        </Badge>
-                        <span className="text-sm text-muted-foreground">
-                          {(predictions.confidence * 100).toFixed(0)}% confidence
-                        </span>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </motion.div>
+                      <p className="text-sm text-muted-foreground">Pollution Index</p>
+                    </CardContent>
+                  </Card>
+                </motion.div>
 
-              {/* Trend Forecast */}
-              <motion.div variants={fadeInUp}>
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      {predictions.trend_change_percent > 0 ? (
-                        <TrendingUp className="h-5 w-5 text-red-500" />
-                      ) : (
-                        <TrendingDown className="h-5 w-5 text-green-500" />
-                      )}
-                      30-Day Forecast
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      <div>
-                        <div className="text-2xl font-bold">{predictions.predicted_level.toFixed(1)}</div>
-                        <div className="text-sm text-muted-foreground">Predicted Level</div>
+                <motion.div variants={fadeInUp}>
+                  <Card className="glass-card">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <TrendingUp className="h-4 w-4" />
+                        {predictionHorizon}-Day Forecast
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">
+                        {predictions.summary.predicted_level.toFixed(1)}
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className={`text-lg font-semibold ${
-                          predictions.trend_change_percent > 0 ? 'text-red-500' : 'text-green-500'
-                        }`}>
-                          {predictions.trend_change_percent > 0 ? '+' : ''}
-                          {predictions.trend_change_percent.toFixed(1)}%
-                        </span>
-                        <span className="text-sm text-muted-foreground">change expected</span>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </motion.div>
+                      <p className="text-sm text-muted-foreground">Predicted Level</p>
+                    </CardContent>
+                  </Card>
+                </motion.div>
 
-              {/* Risk Assessment */}
+                <motion.div variants={fadeInUp}>
+                  <Card className="glass-card">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        {getTrendIcon(predictions.summary.trend_change_percent)}
+                        Trend Change
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">
+                        {predictions.summary.trend_change_percent > 0 ? '+' : ''}
+                        {predictions.summary.trend_change_percent.toFixed(1)}%
+                      </div>
+                      <p className="text-sm text-muted-foreground">vs Current</p>
+                    </CardContent>
+                  </Card>
+                </motion.div>
+
+                <motion.div variants={fadeInUp}>
+                  <Card className="glass-card">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <AlertTriangle className="h-4 w-4" />
+                        Risk Assessment
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <Badge variant={getRiskBadgeVariant(predictions.summary.risk_level)} className="mb-2">
+                        {predictions.summary.risk_level}
+                      </Badge>
+                      <p className="text-sm text-muted-foreground">
+                        {(predictions.summary.average_confidence * 100).toFixed(1)}% confidence
+                      </p>
+                    </CardContent>
+                  </Card>
+                </motion.div>
+              </div>
+
+              {/* Prediction Chart */}
               <motion.div variants={fadeInUp}>
-                <Card>
+                <Card className="glass-card">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      <AlertTriangle className="h-5 w-5" />
-                      Risk Assessment
+                      <BarChart3 className="h-5 w-5" />
+                      Pollution Trend Forecast - {areas.find(a => a.id === selectedArea)?.name}
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm">Pollution Risk</span>
-                        <Badge 
-                          variant={
-                            predictions.risk_level === 'high' ? 'destructive' :
-                            predictions.risk_level === 'medium' ? 'default' : 'secondary'
-                          }
-                        >
-                          {predictions.risk_level}
-                        </Badge>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm">Trend Direction</span>
-                        <div className="flex items-center gap-1">
-                          {predictions.trend_change_percent > 5 ? (
-                            <>
-                              <TrendingUp className="h-4 w-4 text-red-500" />
-                              <span className="text-sm text-red-500">Increasing</span>
-                            </>
-                          ) : predictions.trend_change_percent < -5 ? (
-                            <>
-                              <TrendingDown className="h-4 w-4 text-green-500" />
-                              <span className="text-sm text-green-500">Decreasing</span>
-                            </>
-                          ) : (
-                            <>
-                              <div className="h-4 w-4 rounded-full bg-yellow-500" />
-                              <span className="text-sm text-yellow-600">Stable</span>
-                            </>
-                          )}
-                        </div>
-                      </div>
+                    <div className="h-80">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={chartData}>
+                          <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                          <XAxis 
+                            dataKey="date" 
+                            className="text-xs"
+                            tick={{ fontSize: 12 }}
+                          />
+                          <YAxis 
+                            className="text-xs"
+                            tick={{ fontSize: 12 }}
+                            label={{ value: 'Pollution Level', angle: -90, position: 'insideLeft' }}
+                          />
+                          <Tooltip
+                            contentStyle={{
+                              backgroundColor: 'hsl(var(--card))',
+                              border: '1px solid hsl(var(--border))',
+                              borderRadius: '8px',
+                            }}
+                            formatter={(value: any, name: string) => [
+                              name === 'pollution_level' ? `${value.toFixed(1)}` : `${value.toFixed(1)}%`,
+                              name === 'pollution_level' ? 'Pollution Level' : 'Confidence'
+                            ]}
+                          />
+                          <Legend />
+                          <Area
+                            type="monotone"
+                            dataKey="pollution_level"
+                            stroke="hsl(var(--primary))"
+                            fill="hsl(var(--primary))"
+                            fillOpacity={0.3}
+                            strokeWidth={2}
+                            name="Pollution Level"
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="confidence"
+                            stroke="hsl(var(--secondary))"
+                            strokeWidth={2}
+                            strokeDasharray="5 5"
+                            name="Confidence %"
+                            dot={false}
+                          />
+                        </AreaChart>
+                      </ResponsiveContainer>
                     </div>
                   </CardContent>
                 </Card>
@@ -794,79 +747,49 @@ export default function PredictionsPage() {
             </motion.div>
           )}
 
-          {/* Trend Chart */}
-          <motion.div 
-            variants={fadeInUp}
-            initial="initial"
-            animate="animate"
-          >
-            <Card>
-              <CardHeader>
-                <CardTitle>Pollution Trend Analysis</CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  30-day pollution level forecast for {areas.find(a => a.id === selectedArea)?.name}
-                </p>
-              </CardHeader>
-              <CardContent>
-                <div className="h-80">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={chartData}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis 
-                        dataKey="day" 
-                        tick={{ fontSize: 12 }}
-                        interval="preserveStartEnd"
-                      />
-                      <YAxis 
-                        tick={{ fontSize: 12 }}
-                        label={{ value: 'Pollution Level', angle: -90, position: 'insideLeft' }}
-                      />
-                      <Tooltip 
-                        labelFormatter={(label, payload) => {
-                          const data = payload?.[0]?.payload;
-                          return data ? `${label} (${data.date})` : label;
-                        }}
-                        formatter={(value, name) => [
-                          `${Number(value).toFixed(1)} units`,
-                          name === 'predicted' ? 'Predicted' : 'Historical'
-                        ]}
-                      />
-                      <Legend />
-                      <Line 
-                        type="monotone" 
-                        dataKey="actual" 
-                        stroke="#8884d8" 
-                        strokeWidth={2}
-                        dot={{ r: 3 }}
-                        connectNulls={false}
-                        name="Historical Data"
-                      />
-                      <Line 
-                        type="monotone" 
-                        dataKey="predicted" 
-                        stroke="#82ca9d" 
-                        strokeWidth={2}
-                        strokeDasharray="5 5"
-                        dot={{ r: 3 }}
-                        name="LSTM Prediction"
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
+          {/* Loading State */}
+          {loading && !predictions && (
+            <motion.div
+              variants={fadeInUp}
+              initial="hidden"
+              animate="show"
+              className="flex items-center justify-center py-12"
+            >
+              <Card className="glass-card p-8">
+                <div className="text-center">
+                  <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
+                  <h3 className="text-lg font-semibold mb-2">Generating Predictions</h3>
+                  <p className="text-muted-foreground">
+                    Processing environmental data and running LSTM model...
+                  </p>
                 </div>
-              </CardContent>
-            </Card>
-          </motion.div>
+              </Card>
+            </motion.div>
+          )}
 
-        </PageTransition>
-      </MainLayout>
-    );
-  } catch (error) {
-    console.error("PredictionsPage render error:", error);
-    return (
-      <div className="p-8 text-center">
-        <h1 className="text-2xl font-bold text-red-600 mb-4">Render Error</h1>
-        <p>Error: {error instanceof Error ? error.message : 'Unknown error'}</p>
-      </div>
-    );
-  }
+          {/* No Model State */}
+          {modelInfo?.status !== 'loaded' && !loading && (
+            <motion.div
+              variants={fadeInUp}
+              initial="hidden"
+              animate="show"
+              className="flex items-center justify-center py-12"
+            >
+              <Card className="glass-card p-8 text-center">
+                <Brain className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                <h3 className="text-lg font-semibold mb-2">Model Not Ready</h3>
+                <p className="text-muted-foreground mb-4">
+                  The LSTM model needs to be trained before generating predictions.
+                </p>
+                <Button onClick={() => setTrainingDialogOpen(true)}>
+                  <Brain className="h-4 w-4 mr-2" />
+                  Train Model
+                </Button>
+              </Card>
+            </motion.div>
+          )}
+        </div>
+      </PageTransition>
+    </MainLayout>
+  );
 }

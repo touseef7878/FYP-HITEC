@@ -1,5 +1,4 @@
-import { ReactNode } from "react";
-import { motion } from "framer-motion";
+import { ReactNode, memo } from "react";
 import { Sidebar } from "./Sidebar";
 import { SidebarProvider, useSidebarContext } from "@/hooks/useSidebar";
 import { cn } from "@/lib/utils";
@@ -8,7 +7,7 @@ interface MainLayoutProps {
   children: ReactNode;
 }
 
-function MainContent({ children }: MainLayoutProps) {
+const MainContent = memo(({ children }: MainLayoutProps) => {
   const { isCollapsed } = useSidebarContext();
   
   return (
@@ -16,25 +15,26 @@ function MainContent({ children }: MainLayoutProps) {
       <Sidebar />
       
       {/* Main Content */}
-      <motion.main
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.3 }}
+      <main
         className={cn(
           "pt-16 lg:pt-0 min-h-screen transition-all duration-300",
           isCollapsed ? "lg:ml-[80px]" : "lg:ml-[280px]"
         )}
       >
         {children}
-      </motion.main>
+      </main>
     </div>
   );
-}
+});
 
-export function MainLayout({ children }: MainLayoutProps) {
+MainContent.displayName = 'MainContent';
+
+export const MainLayout = memo(({ children }: MainLayoutProps) => {
   return (
     <SidebarProvider>
       <MainContent>{children}</MainContent>
     </SidebarProvider>
   );
-}
+});
+
+MainLayout.displayName = 'MainLayout';

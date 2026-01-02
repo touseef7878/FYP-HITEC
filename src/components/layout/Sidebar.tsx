@@ -1,5 +1,6 @@
 import { NavLink, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
+import { memo, useCallback, useMemo } from "react";
 import {
   Home,
   Upload,
@@ -33,55 +34,77 @@ const navItems = [
   { path: "/settings", label: "Settings", icon: Settings },
 ];
 
-export function Sidebar() {
+export const Sidebar = memo(() => {
   const { isCollapsed, setIsCollapsed, isMobileOpen, setIsMobileOpen } = useSidebarContext();
   const { theme, toggleTheme } = useTheme();
   const location = useLocation();
 
-  const sidebarVariants = {
+  // Memoize the mobile close handler to prevent unnecessary re-renders
+  const handleMobileClose = useCallback(() => {
+    setIsMobileOpen(false);
+  }, [setIsMobileOpen]);
+
+  // Memoize the collapse toggle handler
+  const handleCollapseToggle = useCallback(() => {
+    setIsCollapsed(!isCollapsed);
+  }, [isCollapsed, setIsCollapsed]);
+
+  // Memoize the mobile menu toggle handler
+  const handleMobileToggle = useCallback(() => {
+    setIsMobileOpen(!isMobileOpen);
+  }, [isMobileOpen, setIsMobileOpen]);
+
+  // Memoize sidebar variants to prevent recreation on every render
+  const sidebarVariants = useMemo(() => ({
     expanded: { width: 280 },
     collapsed: { width: 80 },
-  };
+  }), []);
 
-  const NavItem = ({ path, label, icon: Icon }: typeof navItems[0]) => {
-    const isActive = location.pathname === path;
-    
-    return (
-      <NavLink to={path} onClick={() => setIsMobileOpen(false)}>
-        <motion.div
-          whileHover={{ x: 4 }}
-          whileTap={{ scale: 0.98 }}
+  // Memoize current path to prevent unnecessary re-renders
+  const currentPath = location.pathname;
+
+// Memoized NavItem component to prevent unnecessary re-renders
+const NavItem = memo(({ path, label, icon: Icon, isActive, isCollapsed, onMobileClose }: {
+  path: string;
+  label: string;
+  icon: any;
+  isActive: boolean;
+  isCollapsed: boolean;
+  onMobileClose: () => void;
+}) => {
+  return (
+    <NavLink to={path} onClick={onMobileClose}>
+      <motion.div
+        whileHover={{ x: 4 }}
+        whileTap={{ scale: 0.98 }}
+        className={cn(
+          "flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-300",
+          "hover:bg-accent/10 group cursor-pointer",
+          isActive && "bg-primary/10 text-primary border-r-2 border-primary"
+        )}
+      >
+        <Icon
           className={cn(
-            "flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-300",
-            "hover:bg-accent/10 group cursor-pointer",
-            isActive && "bg-primary/10 text-primary border-r-2 border-primary"
+            "h-5 w-5 flex-shrink-0 transition-colors",
+            isActive ? "text-primary" : "text-muted-foreground group-hover:text-primary"
           )}
-        >
-          <Icon
+        />
+        {!isCollapsed && (
+          <span
             className={cn(
-              "h-5 w-5 flex-shrink-0 transition-colors",
-              isActive ? "text-primary" : "text-muted-foreground group-hover:text-primary"
+              "text-sm font-medium whitespace-nowrap overflow-hidden",
+              isActive ? "text-primary" : "text-foreground"
             )}
-          />
-          <AnimatePresence>
-            {!isCollapsed && (
-              <motion.span
-                initial={{ opacity: 0, width: 0 }}
-                animate={{ opacity: 1, width: "auto" }}
-                exit={{ opacity: 0, width: 0 }}
-                className={cn(
-                  "text-sm font-medium whitespace-nowrap overflow-hidden",
-                  isActive ? "text-primary" : "text-foreground"
-                )}
-              >
-                {label}
-              </motion.span>
-            )}
-          </AnimatePresence>
-        </motion.div>
-      </NavLink>
-    );
-  };
+          >
+            {label}
+          </span>
+        )}
+      </motion.div>
+    </NavLink>
+  );
+});
+
+NavItem.displayName = 'NavItem';
 
   return (
     <>
@@ -90,7 +113,7 @@ export function Sidebar() {
         variant="ghost"
         size="icon"
         className="fixed top-4 left-4 z-50 lg:hidden"
-        onClick={() => setIsMobileOpen(!isMobileOpen)}
+        onClick={handleMobileToggle}
       >
         {isMobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
       </Button>
@@ -103,7 +126,7 @@ export function Sidebar() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 bg-background/80 backdrop-blur-sm z-40 lg:hidden"
-            onClick={() => setIsMobileOpen(false)}
+            onClick={handleMobileClose}
           />
         )}
       </AnimatePresence>
@@ -115,43 +138,39 @@ export function Sidebar() {
         variants={sidebarVariants}
         className={cn(
           "fixed left-0 top-0 h-screen bg-sidebar border-r border-sidebar-border z-40",
-          "flex flex-col transition-all duration-300",
+          "flex flex-col",
           "lg:translate-x-0",
           isMobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         )}
+        style={{ transition: 'width 0.3s ease-in-out' }}
       >
         {/* Logo Section */}
         <div className="flex items-center gap-3 px-4 py-6 border-b border-sidebar-border">
-          <motion.div
-            animate={{ rotate: [0, 5, -5, 0] }}
-            transition={{ duration: 3, repeat: Infinity, repeatDelay: 2 }}
-            className="flex-shrink-0"
-          >
+          <div className="flex-shrink-0">
             <img src={logoImg} alt="OceanGuard AI" className="w-10 h-10 rounded-xl" />
-          </motion.div>
-          <AnimatePresence>
-            {!isCollapsed && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="overflow-hidden"
-              >
-                <h1 className="font-bold text-lg whitespace-nowrap gradient-text">
-                  OceanGuard AI
-                </h1>
-                <p className="text-xs text-muted-foreground whitespace-nowrap">
-                  Marine Plastic Detection
-                </p>
-              </motion.div>
-            )}
-          </AnimatePresence>
+          </div>
+          {!isCollapsed && (
+            <div className="overflow-hidden">
+              <h1 className="font-bold text-lg whitespace-nowrap gradient-text">
+                OceanGuard AI
+              </h1>
+              <p className="text-xs text-muted-foreground whitespace-nowrap">
+                Marine Plastic Detection
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Navigation */}
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {navItems.map((item) => (
-            <NavItem key={item.path} {...item} />
+            <NavItem 
+              key={item.path} 
+              {...item} 
+              isActive={currentPath === item.path}
+              isCollapsed={isCollapsed}
+              onMobileClose={handleMobileClose}
+            />
           ))}
         </nav>
 
@@ -171,18 +190,11 @@ export function Sidebar() {
             ) : (
               <Sun className="h-5 w-5" />
             )}
-            <AnimatePresence>
-              {!isCollapsed && (
-                <motion.span
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="text-sm"
-                >
-                  {theme === "light" ? "Dark Mode" : "Light Mode"}
-                </motion.span>
-              )}
-            </AnimatePresence>
+            {!isCollapsed && (
+              <span className="text-sm">
+                {theme === "light" ? "Dark Mode" : "Light Mode"}
+              </span>
+            )}
           </Button>
 
           {/* Collapse Toggle (Desktop) */}
@@ -190,7 +202,7 @@ export function Sidebar() {
             variant="ghost"
             size="icon"
             className="w-full hidden lg:flex justify-center"
-            onClick={() => setIsCollapsed(!isCollapsed)}
+            onClick={handleCollapseToggle}
           >
             {isCollapsed ? (
               <ChevronRight className="h-5 w-5" />
@@ -202,4 +214,5 @@ export function Sidebar() {
       </motion.aside>
     </>
   );
-}
+});
+Sidebar.displayName = 'Sidebar';

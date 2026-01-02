@@ -18,6 +18,8 @@ import {
   BarChart3,
   Waves,
   Wind,
+  Download,
+  Database,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -67,8 +69,8 @@ interface PredictionData {
   confidence: number;
 }
 
-interface AreaPrediction {
-  area: string;
+interface RegionPrediction {
+  region: string;
   predictions: PredictionData[];
   summary: {
     current_level: number;
@@ -78,10 +80,11 @@ interface AreaPrediction {
     average_confidence: number;
   };
   model_info: any;
+  data_source: string;
 }
 
-interface AreaAnalysis {
-  area: string;
+interface RegionAnalysis {
+  region: string;
   statistics: {
     average_pollution: number;
     max_pollution: number;
@@ -94,17 +97,32 @@ interface AreaAnalysis {
     trend: string;
     recent_trend: string;
   };
+  data_source: string;
 }
 
-interface ModelInfo {
-  status: string;
-  model_exists: boolean;
-  config: any;
-  model_size_mb: number;
+interface DataStatus {
+  region: string;
+  dataset_cached: boolean;
+  model_trained: boolean;
+  dataset_info?: {
+    total_records: number;
+    date_range: {
+      start: string;
+      end: string;
+    };
+    features: string[];
+  };
 }
 
-// Marine areas configuration
-const areas = [
+interface RegionInfo {
+  id: string;
+  name: string;
+  dataset_cached: boolean;
+  dataset_info?: any;
+}
+
+// Marine regions configuration
+const regions = [
   { 
     id: "pacific", 
     name: "Pacific Ocean", 
@@ -135,11 +153,12 @@ export default function PredictionsPage() {
   const { toast } = useToast();
   
   // State management
-  const [selectedArea, setSelectedArea] = useState("pacific");
+  const [selectedRegion, setSelectedRegion] = useState("pacific");
   const [predictionHorizon, setPredictionHorizon] = useState(7);
-  const [predictions, setPredictions] = useState<AreaPrediction | null>(null);
-  const [areaAnalyses, setAreaAnalyses] = useState<Record<string, AreaAnalysis>>({});
-  const [modelInfo, setModelInfo] = useState<ModelInfo | null>(null);
+  const [predictions, setPredictions] = useState<RegionPrediction | null>(null);
+  const [regionAnalyses, setRegionAnalyses] = useState<Record<string, RegionAnalysis>>({});
+  const [regionStatuses, setRegionStatuses] = useState<Record<string, DataStatus>>({});
+  const [availableRegions, setAvailableRegions] = useState<RegionInfo[]>([]);
   
   // Loading states
   const [loading, setLoading] = useState(false);
@@ -150,122 +169,136 @@ export default function PredictionsPage() {
   const [isTraining, setIsTraining] = useState(false);
   const [trainingDialogOpen, setTrainingDialogOpen] = useState(false);
   const [trainingEpochs, setTrainingEpochs] = useState([50]);
-  const [selectedTrainingAreas, setSelectedTrainingAreas] = useState<string[]>(['pacific', 'atlantic', 'indian', 'mediterranean']);
 
-  // Fetch model info on component mount
+  // Fetch initial data on component mount
   useEffect(() => {
-    fetchModelInfo();
-    // Fetch analysis for all areas on page load
-    areas.forEach(area => {
-      fetchAreaAnalysis(area.id);
+    loadAvailableRegions();
+    // Load status for all regions
+    regions.forEach(region => {
+      loadRegionStatus(region.id);
     });
+    
+    // Load region analyses with a small delay to ensure status is loaded first
+    setTimeout(() => {
+      regions.forEach(region => {
+        loadRegionAnalysis(region.id);
+      });
+    }, 1000);
   }, []);
 
-  // Fetch predictions when area or horizon changes
-  useEffect(() => {
-    if (selectedArea && modelInfo?.status === 'loaded') {
-      fetchPredictions(selectedArea, predictionHorizon);
-    }
-  }, [selectedArea, predictionHorizon, modelInfo]);
+  // Only fetch predictions manually - no automatic fetching
 
-  const fetchModelInfo = async () => {
+  const loadAvailableRegions = async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/prediction/model-info`);
+      const response = await fetch(`${API_BASE}/api/data/regions`);
       const data = await response.json();
       
       if (data.success) {
-        setModelInfo(data.model_info);
+        setAvailableRegions(data.regions);
       } else {
         toast({
-          title: "Model Info Error",
-          description: "Failed to fetch model information",
+          title: "Error",
+          description: "Failed to load available regions",
           variant: "destructive",
         });
       }
     } catch (error) {
-      console.error("Error fetching model info:", error);
+      console.error("Error loading regions:", error);
       toast({
         title: "Connection Error",
-        description: "Failed to connect to prediction service",
+        description: "Failed to connect to the server",
         variant: "destructive",
       });
     }
   };
 
-  const fetchPredictions = async (area: string, daysAhead: number) => {
-    setLoading(true);
+  const loadRegionStatus = async (region: string) => {
     try {
-      const response = await fetch(`${API_BASE}/api/prediction/predict`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ area, days_ahead: daysAhead })
-      });
-      
+      const response = await fetch(`${API_BASE}/api/data/status/${region}`);
       const data = await response.json();
       
       if (data.success) {
-        setPredictions(data);
-        toast({
-          title: "Predictions Generated",
-          description: `Successfully generated ${daysAhead}-day forecast for ${area}`,
-        });
-      } else {
-        throw new Error(data.detail || 'Prediction failed');
-      }
-    } catch (error) {
-      console.error("Error fetching predictions:", error);
-      toast({
-        title: "Prediction Error",
-        description: error instanceof Error ? error.message : "Failed to generate predictions",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchAreaAnalysis = async (area: string) => {
-    try {
-      const response = await fetch(`${API_BASE}/api/prediction/analyze`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ area, historical_days: 365 })
-      });
-      
-      const data = await response.json();
-      
-      if (data.success) {
-        setAreaAnalyses(prev => ({
+        setRegionStatuses(prev => ({
           ...prev,
-          [area]: data
+          [region]: data
         }));
       }
     } catch (error) {
-      console.error(`Error fetching analysis for ${area}:`, error);
+      console.error(`Error loading status for ${region}:`, error);
     }
   };
 
-  const handleTraining = async () => {
+  const handleFetchData = async (region: string) => {
+    setFetchingData(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/data/fetch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ region })
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        if (data.message === 'already_cached') {
+          toast({
+            title: "✅ Data Ready",
+            description: `Using cached environmental data for ${region} (${data.dataset_info.total_records} records)`,
+          });
+        } else {
+          toast({
+            title: "🎉 Real Data Fetched!",
+            description: `Cached ${data.dataset_info.total_records} real environmental records for ${region} in ${data.fetch_duration_seconds.toFixed(1)}s`,
+          });
+        }
+        // Reload region status
+        await loadRegionStatus(region);
+        await loadAvailableRegions();
+      } else {
+        throw new Error(data.message || 'Failed to fetch data');
+      }
+    } catch (error) {
+      console.error("Error fetching data:", error);
+      toast({
+        title: "Data Fetch Error",
+        description: error instanceof Error ? error.message : "Failed to fetch environmental data. You can still train with synthetic data.",
+        variant: "destructive",
+      });
+    } finally {
+      setFetchingData(false);
+    }
+  };
+
+  const handleTraining = async (region: string) => {
     setIsTraining(true);
     try {
-      const response = await fetch(`${API_BASE}/api/prediction/train`, {
+      const response = await fetch(`${API_BASE}/api/train`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          epochs: trainingEpochs[0],
-          areas: selectedTrainingAreas
+          region,
+          epochs: trainingEpochs[0]
         })
       });
       
       const data = await response.json();
       
       if (data.success) {
+        const result = data.training_result;
+        const regionsInfo = result.regions_used;
+        
         toast({
-          title: "Training Completed",
-          description: `Model trained successfully on ${data.total_samples} samples`,
+          title: "🎉 Multi-Region Training Completed!",
+          description: `Model trained with ${result.training_samples} samples from ${regionsInfo.real_data.length} real + ${regionsInfo.synthetic_data.length} synthetic regions`,
         });
-        setTrainingDialogOpen(false);
-        fetchModelInfo(); // Refresh model info
+        
+        // Reload region status for all regions and wait for completion
+        await Promise.all(regions.map(r => loadRegionStatus(r.id)));
+        
+        // Also reload region analyses after status is updated
+        setTimeout(async () => {
+          await Promise.all(regions.map(r => loadRegionAnalysis(r.id)));
+        }, 500); // Small delay to ensure status is updated first
       } else {
         throw new Error(data.detail || 'Training failed');
       }
@@ -278,6 +311,136 @@ export default function PredictionsPage() {
       });
     } finally {
       setIsTraining(false);
+    }
+  };
+
+  const fetchPredictions = async (region: string, daysAhead: number) => {
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/predict`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ region, days_ahead: daysAhead })
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        setPredictions(data);
+        toast({
+          title: "Predictions Generated",
+          description: `Successfully generated ${daysAhead}-day forecast for ${region} using ${data.data_source}`,
+        });
+      } else {
+        throw new Error(data.detail || 'Prediction failed');
+      }
+    } catch (error) {
+      console.error("Error fetching predictions:", error);
+      
+      // Check if the error is due to no trained model
+      const errorMessage = error instanceof Error ? error.message : "Failed to generate predictions";
+      
+      if (errorMessage.includes("No trained model") || errorMessage.includes("model not found")) {
+        toast({
+          title: "No Model Available",
+          description: `Please train a model first by clicking "Train Model" button. You can train with real data (after fetching) or synthetic data.`,
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Prediction Error",
+          description: errorMessage,
+          variant: "destructive",
+        });
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadRegionAnalysis = async (region: string) => {
+    try {
+      // Only load analysis if region has cached data
+      const regionStatus = regionStatuses[region];
+      if (!regionStatus?.dataset_cached) {
+        // Set a default analysis for regions without cached data
+        setRegionAnalyses(prev => ({
+          ...prev,
+          [region]: {
+            region,
+            statistics: {
+              average_pollution: 50,
+              max_pollution: 100,
+              min_pollution: 0,
+              trend_slope: 0,
+              recent_change_percent: 0
+            },
+            risk_assessment: {
+              level: "Unknown",
+              trend: "Stable",
+              recent_trend: "Stable"
+            },
+            data_source: "no_data"
+          }
+        }));
+        return;
+      }
+
+      const response = await fetch(`${API_BASE}/api/analyze?region=${region}&historical_days=365`, {
+        method: 'POST'
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        setRegionAnalyses(prev => ({
+          ...prev,
+          [region]: data
+        }));
+      } else {
+        // Set default analysis on failure
+        setRegionAnalyses(prev => ({
+          ...prev,
+          [region]: {
+            region,
+            statistics: {
+              average_pollution: 50,
+              max_pollution: 100,
+              min_pollution: 0,
+              trend_slope: 0,
+              recent_change_percent: 0
+            },
+            risk_assessment: {
+              level: "Unknown",
+              trend: "Stable",
+              recent_trend: "Stable"
+            },
+            data_source: "error"
+          }
+        }));
+      }
+    } catch (error) {
+      console.error(`Error fetching analysis for ${region}:`, error);
+      // Set default analysis on error
+      setRegionAnalyses(prev => ({
+        ...prev,
+        [region]: {
+          region,
+          statistics: {
+            average_pollution: 50,
+            max_pollution: 100,
+            min_pollution: 0,
+            trend_slope: 0,
+            recent_change_percent: 0
+          },
+          risk_assessment: {
+            level: "Unknown",
+            trend: "Stable",
+            recent_trend: "Stable"
+          },
+          data_source: "error"
+        }
+      }));
     }
   };
 
@@ -305,6 +468,11 @@ export default function PredictionsPage() {
     day: index + 1
   })) || [];
 
+  const currentRegionStatus = regionStatuses[selectedRegion];
+  
+  // Check if any region has a trained model (for multi-region training)
+  const hasAnyTrainedModel = Object.values(regionStatuses).some(status => status?.model_trained);
+
   return (
     <MainLayout>
       <PageTransition>
@@ -319,68 +487,73 @@ export default function PredictionsPage() {
             <motion.div variants={fadeInUp} className="text-center mb-6">
               <h1 className="section-header mb-2 flex items-center justify-center gap-3">
                 <Brain className="h-8 w-8 text-primary" />
-                Environmental & Marine Trend Prediction
+                Marine Pollution Prediction - Refactored System
               </h1>
               <p className="text-muted-foreground max-w-2xl mx-auto">
-                Advanced LSTM-based forecasting system using real environmental data from multiple sources 
-                including NOAA Climate Data, World Air Quality Index, and marine observations.
+                Advanced LSTM-based forecasting using cached environmental data. 
+                Fetch data once, train models, and generate fast predictions without API delays.
               </p>
             </motion.div>
 
-            {/* Model Status Card */}
+            {/* System Status Card */}
             <motion.div variants={fadeInUp}>
               <Card className="glass-card mb-6">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Zap className="h-5 w-5" />
-                    LSTM Model Status
+                    🚀 Simple Marine Pollution Prediction System
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="grid sm:grid-cols-1 lg:grid-cols-3 gap-4">
                     <div className="flex items-center gap-2">
-                      {modelInfo?.status === 'loaded' ? (
-                        <CheckCircle className="h-5 w-5 text-success" />
-                      ) : (
-                        <XCircle className="h-5 w-5 text-destructive" />
-                      )}
-                      <span className="text-sm">
-                        Status: {modelInfo?.status === 'loaded' ? 'Ready' : 'Not Loaded'}
-                      </span>
+                      <Download className="h-5 w-5 text-primary" />
+                      <div>
+                        <span className="text-sm font-medium">Step 1: Fetch Real Data</span>
+                        <p className="text-xs text-muted-foreground">Get environmental data from APIs (optional)</p>
+                      </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <BarChart3 className="h-5 w-5 text-muted-foreground" />
-                      <span className="text-sm">
-                        Size: {modelInfo?.model_size_mb || 0} MB
-                      </span>
+                      <Brain className="h-5 w-5 text-success" />
+                      <div>
+                        <span className="text-sm font-medium">Step 2: Train Model</span>
+                        <p className="text-xs text-muted-foreground">Uses real data if available, or synthetic data</p>
+                      </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Activity className="h-5 w-5 text-muted-foreground" />
-                      <span className="text-sm">
-                        Features: {modelInfo?.config?.n_features || 8}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Calendar className="h-5 w-5 text-muted-foreground" />
-                      <span className="text-sm">
-                        Sequence: {modelInfo?.config?.sequence_length || 30} days
-                      </span>
+                      <Play className="h-5 w-5 text-purple-500" />
+                      <div>
+                        <span className="text-sm font-medium">Step 3: Predict</span>
+                        <p className="text-xs text-muted-foreground">Generate pollution forecasts</p>
+                      </div>
                     </div>
                   </div>
                   
-                  {modelInfo?.config?.last_trained && (
-                    <div className="mt-4 p-3 bg-muted/50 rounded-lg">
-                      <p className="text-sm text-muted-foreground">
-                        Last trained: {new Date(modelInfo.config.last_trained).toLocaleString()}
-                      </p>
-                      {modelInfo.config.validation_mae && (
-                        <p className="text-sm text-muted-foreground">
-                          Validation MAE: {modelInfo.config.validation_mae.toFixed(4)} | 
-                          RMSE: {modelInfo.config.validation_rmse.toFixed(4)}
+                  <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                    <div className="flex items-start gap-2">
+                      <Database className="h-4 w-4 text-blue-600 mt-0.5" />
+                      <div className="text-sm">
+                        <p className="font-medium text-blue-900 dark:text-blue-100">💡 How it works:</p>
+                        <p className="text-blue-700 dark:text-blue-300">
+                          <strong>Fetch Data:</strong> Gets real environmental data for the selected region and caches it.<br/>
+                          <strong>Train Model:</strong> Uses ALL regions - real cached data where available + synthetic data for empty regions.<br/>
+                          <strong>Predict:</strong> Uses the trained multi-region model to forecast pollution trends.
                         </p>
-                      )}
+                        <p className="text-blue-600 dark:text-blue-400 mt-2 text-xs">
+                          🌍 Training combines data from all 4 regions: Pacific, Atlantic, Indian, Mediterranean
+                        </p>
+                      </div>
                     </div>
-                  )}
+                  </div>
+                  
+                  <div className="mt-3 p-2 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200 dark:border-green-800">
+                    <div className="flex items-center gap-2">
+                      <RefreshCw className="h-3 w-3 text-green-600" />
+                      <p className="text-xs text-green-700 dark:text-green-300">
+                        ✨ <strong>Fresh Start:</strong> Cache cleared on page load - click "Fetch Data" to get latest environmental data from APIs
+                      </p>
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
             </motion.div>
@@ -402,23 +575,28 @@ export default function PredictionsPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {/* Area Selection */}
+                  <div className="grid sm:grid-cols-1 lg:grid-cols-3 gap-4">
+                    {/* Region Selection */}
                     <div className="space-y-2">
                       <Label>Marine Region</Label>
-                      <Select value={selectedArea} onValueChange={setSelectedArea}>
+                      <Select value={selectedRegion} onValueChange={setSelectedRegion}>
                         <SelectTrigger>
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {areas.map((area) => (
-                            <SelectItem key={area.id} value={area.id}>
-                              <div className="flex items-center gap-2">
-                                <MapPin className="h-4 w-4" />
-                                {area.name}
-                              </div>
-                            </SelectItem>
-                          ))}
+                          {regions.map((region) => {
+                            const status = regionStatuses[region.id];
+                            return (
+                              <SelectItem key={region.id} value={region.id}>
+                                <div className="flex items-center gap-2">
+                                  <MapPin className="h-4 w-4" />
+                                  {region.name}
+                                  {status?.dataset_cached && <CheckCircle className="h-3 w-3 text-success" />}
+                                  {status?.model_trained && <Brain className="h-3 w-3 text-primary" />}
+                                </div>
+                              </SelectItem>
+                            );
+                          })}
                         </SelectContent>
                       </Select>
                     </div>
@@ -443,94 +621,140 @@ export default function PredictionsPage() {
                       </Select>
                     </div>
 
-                    {/* Action Buttons */}
+                    {/* Training Epochs */}
                     <div className="space-y-2">
-                      <Label>Actions</Label>
-                      <Button
-                        onClick={() => fetchPredictions(selectedArea, predictionHorizon)}
-                        disabled={loading || modelInfo?.status !== 'loaded'}
-                        className="w-full"
-                      >
-                        {loading ? (
-                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                        ) : (
-                          <Play className="h-4 w-4 mr-2" />
-                        )}
-                        Run Prediction
-                      </Button>
+                      <Label>Training Epochs: {trainingEpochs[0]}</Label>
+                      <Slider
+                        value={trainingEpochs}
+                        onValueChange={setTrainingEpochs}
+                        min={10}
+                        max={100}
+                        step={10}
+                        className="mt-2"
+                      />
                     </div>
+                  </div>
 
-                    {/* Training Button */}
-                    <div className="space-y-2">
-                      <Label>Model Training</Label>
-                      <Dialog open={trainingDialogOpen} onOpenChange={setTrainingDialogOpen}>
-                        <DialogTrigger asChild>
-                          <Button variant="outline" className="w-full">
-                            <Brain className="h-4 w-4 mr-2" />
-                            Train Model
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent>
-                          <DialogHeader>
-                            <DialogTitle>Train LSTM Model</DialogTitle>
-                            <DialogDescription>
-                              Configure training parameters for the environmental prediction model.
-                            </DialogDescription>
-                          </DialogHeader>
-                          
-                          <div className="space-y-4">
-                            <div>
-                              <Label>Training Epochs: {trainingEpochs[0]}</Label>
-                              <Slider
-                                value={trainingEpochs}
-                                onValueChange={setTrainingEpochs}
-                                min={10}
-                                max={200}
-                                step={10}
-                                className="mt-2"
-                              />
+                  {/* Action Buttons - Simple 3-Step Workflow */}
+                  <div className="mt-6">
+                    <h3 className="text-lg font-semibold mb-4">🚀 Simple 3-Step Workflow</h3>
+                    <div className="grid sm:grid-cols-1 lg:grid-cols-3 gap-4">
+                      
+                      {/* Step 1: Fetch Data */}
+                      <Card className="p-4">
+                        <div className="text-center">
+                          <div className="mb-3">
+                            <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-2">
+                              <span className="text-xl font-bold text-primary">1</span>
                             </div>
-                            
-                            <div>
-                              <Label>Training Areas</Label>
-                              <div className="grid grid-cols-2 gap-2 mt-2">
-                                {areas.map((area) => (
-                                  <div key={area.id} className="flex items-center space-x-2">
-                                    <Checkbox
-                                      id={area.id}
-                                      checked={selectedTrainingAreas.includes(area.id)}
-                                      onCheckedChange={(checked) => {
-                                        if (checked) {
-                                          setSelectedTrainingAreas([...selectedTrainingAreas, area.id]);
-                                        } else {
-                                          setSelectedTrainingAreas(selectedTrainingAreas.filter(a => a !== area.id));
-                                        }
-                                      }}
-                                    />
-                                    <Label htmlFor={area.id} className="text-sm">
-                                      {area.name}
-                                    </Label>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
+                            <h4 className="font-semibold">Fetch Real Data</h4>
+                            <p className="text-sm text-muted-foreground">Get environmental data from APIs</p>
                           </div>
                           
-                          <DialogFooter>
-                            <Button
-                              onClick={handleTraining}
-                              disabled={isTraining || selectedTrainingAreas.length === 0}
-                            >
-                              {isTraining ? (
+                          <Button
+                            onClick={() => handleFetchData(selectedRegion)}
+                            disabled={fetchingData}
+                            className="w-full"
+                            size="lg"
+                          >
+                            {fetchingData ? (
+                              <>
                                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                              ) : (
+                                Fetching...
+                              </>
+                            ) : (
+                              <>
+                                <Download className="h-4 w-4 mr-2" />
+                                Fetch Data
+                              </>
+                            )}
+                          </Button>
+                          
+                          {currentRegionStatus?.dataset_info && (
+                            <div className="mt-2 text-xs text-muted-foreground">
+                              ✅ {currentRegionStatus.dataset_info.total_records} records cached
+                            </div>
+                          )}
+                        </div>
+                      </Card>
+
+                      {/* Step 2: Train Model */}
+                      <Card className="p-4">
+                        <div className="text-center">
+                          <div className="mb-3">
+                            <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-2">
+                              <span className="text-xl font-bold text-primary">2</span>
+                            </div>
+                            <h4 className="font-semibold">Train Model</h4>
+                            <p className="text-sm text-muted-foreground">Train LSTM from cached + synthetic data</p>
+                          </div>
+                          
+                          <Button
+                            onClick={() => handleTraining(selectedRegion)}
+                            disabled={isTraining}
+                            className="w-full"
+                            size="lg"
+                          >
+                            {isTraining ? (
+                              <>
+                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                Training...
+                              </>
+                            ) : (
+                              <>
                                 <Brain className="h-4 w-4 mr-2" />
-                              )}
-                              {isTraining ? 'Training...' : 'Start Training'}
-                            </Button>
-                          </DialogFooter>
-                        </DialogContent>
-                      </Dialog>
+                                Train Model
+                              </>
+                            )}
+                          </Button>
+                          
+                          <div className="mt-2 text-xs text-muted-foreground">
+                            {currentRegionStatus?.model_trained ? (
+                              <>✅ Model Ready - {trainingEpochs[0]} epochs</>
+                            ) : (
+                              <>{trainingEpochs[0]} epochs</>
+                            )}
+                          </div>
+                        </div>
+                      </Card>
+
+                      {/* Step 3: Predict */}
+                      <Card className="p-4">
+                        <div className="text-center">
+                          <div className="mb-3">
+                            <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-2">
+                              <span className="text-xl font-bold text-primary">3</span>
+                            </div>
+                            <h4 className="font-semibold">Generate Predictions</h4>
+                            <p className="text-sm text-muted-foreground">Get pollution forecasts</p>
+                          </div>
+                          
+                          <Button
+                            onClick={() => fetchPredictions(selectedRegion, predictionHorizon)}
+                            disabled={loading}
+                            className="w-full"
+                            size="lg"
+                          >
+                            {loading ? (
+                              <>
+                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                Predicting...
+                              </>
+                            ) : (
+                              <>
+                                <Play className="h-4 w-4 mr-2" />
+                                Predict {predictionHorizon} Days
+                              </>
+                            )}
+                          </Button>
+                          
+                          {predictions && (
+                            <div className="mt-2 text-xs text-muted-foreground">
+                              Last: {predictions.summary.risk_level} Risk
+                            </div>
+                          )}
+                        </div>
+                      </Card>
                     </div>
                   </div>
                 </CardContent>
@@ -538,7 +762,7 @@ export default function PredictionsPage() {
             </motion.div>
           </motion.div>
 
-          {/* Area Overview Cards */}
+          {/* Region Overview Cards */}
           <motion.div
             variants={staggerContainer}
             initial="hidden"
@@ -546,22 +770,27 @@ export default function PredictionsPage() {
             className="mb-8"
           >
             <motion.div variants={fadeInUp} className="mb-4">
-              <h2 className="text-xl font-semibold">Marine Area Overview</h2>
-              <p className="text-muted-foreground">Current pollution status across all monitored regions</p>
+              <h2 className="text-xl font-semibold">Marine Region Overview</h2>
+              <p className="text-muted-foreground">Current status and pollution analysis across all monitored regions</p>
             </motion.div>
             
             <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {areas.map((area) => {
-                const analysis = areaAnalyses[area.id];
+              {regions.map((region) => {
+                const analysis = regionAnalyses[region.id];
+                const status = regionStatuses[region.id];
                 return (
-                  <motion.div key={area.id} variants={fadeInUp}>
+                  <motion.div key={region.id} variants={fadeInUp}>
                     <Card className={`glass-card hover-lift cursor-pointer transition-all ${
-                      selectedArea === area.id ? 'ring-2 ring-primary' : ''
-                    }`} onClick={() => setSelectedArea(area.id)}>
+                      selectedRegion === region.id ? 'ring-2 ring-primary' : ''
+                    }`} onClick={() => setSelectedRegion(region.id)}>
                       <CardHeader className="pb-3">
                         <CardTitle className="text-base flex items-center gap-2">
                           <Waves className="h-4 w-4" />
-                          {area.name}
+                          {region.name}
+                          <div className="flex gap-1 ml-auto">
+                            {status?.dataset_cached && <CheckCircle className="h-3 w-3 text-success" />}
+                            {status?.model_trained && <Brain className="h-3 w-3 text-primary" />}
+                          </div>
                         </CardTitle>
                       </CardHeader>
                       <CardContent>
@@ -587,6 +816,9 @@ export default function PredictionsPage() {
                                   {analysis.risk_assessment.recent_trend}
                                 </span>
                               </div>
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-2">
+                              Data: {analysis.data_source}
                             </div>
                           </div>
                         ) : (
@@ -679,6 +911,9 @@ export default function PredictionsPage() {
                       <p className="text-sm text-muted-foreground">
                         {(predictions.summary.average_confidence * 100).toFixed(1)}% confidence
                       </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Source: {predictions.data_source}
+                      </p>
                     </CardContent>
                   </Card>
                 </motion.div>
@@ -690,7 +925,7 @@ export default function PredictionsPage() {
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <BarChart3 className="h-5 w-5" />
-                      Pollution Trend Forecast - {areas.find(a => a.id === selectedArea)?.name}
+                      Pollution Trend Forecast - {regions.find(r => r.id === selectedRegion)?.name}
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
@@ -760,15 +995,15 @@ export default function PredictionsPage() {
                   <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
                   <h3 className="text-lg font-semibold mb-2">Generating Predictions</h3>
                   <p className="text-muted-foreground">
-                    Processing environmental data and running LSTM model...
+                    Processing cached environmental data and running LSTM model...
                   </p>
                 </div>
               </Card>
             </motion.div>
           )}
 
-          {/* No Model State */}
-          {modelInfo?.status !== 'loaded' && !loading && (
+          {/* No Data/Model State */}
+          {!currentRegionStatus?.dataset_cached && !loading && !fetchingData && (
             <motion.div
               variants={fadeInUp}
               initial="hidden"
@@ -776,12 +1011,33 @@ export default function PredictionsPage() {
               className="flex items-center justify-center py-12"
             >
               <Card className="glass-card p-8 text-center">
-                <Brain className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                <h3 className="text-lg font-semibold mb-2">Model Not Ready</h3>
+                <Download className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                <h3 className="text-lg font-semibold mb-2">No Data Cached</h3>
                 <p className="text-muted-foreground mb-4">
-                  The LSTM model needs to be trained before generating predictions.
+                  Environmental data needs to be fetched and cached before training or predictions.
                 </p>
-                <Button onClick={() => setTrainingDialogOpen(true)}>
+                <Button onClick={() => handleFetchData(selectedRegion)} disabled={fetchingData}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Fetch Data for {regions.find(r => r.id === selectedRegion)?.name}
+                </Button>
+              </Card>
+            </motion.div>
+          )}
+
+          {!hasAnyTrainedModel && !loading && !isTraining && Object.keys(regionStatuses).length > 0 && !predictions && (
+            <motion.div
+              variants={fadeInUp}
+              initial="hidden"
+              animate="show"
+              className="flex items-center justify-center py-8"
+            >
+              <Card className="glass-card p-6 text-center max-w-md">
+                <Brain className="h-8 w-8 mx-auto mb-3 text-muted-foreground" />
+                <h3 className="text-base font-semibold mb-2">Ready to Train Model</h3>
+                <p className="text-sm text-muted-foreground mb-3">
+                  Train an LSTM model to generate accurate pollution predictions. You can use real data (if fetched) or synthetic data.
+                </p>
+                <Button onClick={() => handleTraining(selectedRegion)} size="sm">
                   <Brain className="h-4 w-4 mr-2" />
                   Train Model
                 </Button>

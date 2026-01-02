@@ -1,0 +1,32 @@
+{
+  "sequence_length": 30,
+  "n_features": 10,
+  "lstm_units": [
+    64,
+    32
+  ],
+  "dropout_rate": 0.2,
+  "learning_rate": 0.001,
+  "batch_size": 32,
+  "epochs": 20,
+  "validation_split": 0.2,
+  "feature_names": [
+    "temperature",
+    "humidity",
+    "pressure",
+    "wind_speed",
+    "aqi",
+    "pm25",
+    "ocean_temp",
+    "precipitation",
+    "salinity",
+    "chlorophyll"
+  ],
+  "target_name": "pollution_level",
+  "created_at": null,
+  "last_trained": "2026-01-02T18:40:01.716846",
+  "training_samples": 2894,
+  "validation_mae": 7.378107165720259,
+  "validation_rmse": 9.28088070445813,
+  "region": "indian"
+}

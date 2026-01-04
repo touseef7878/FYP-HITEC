@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Sun, Moon, Trash2, Info, Monitor, Cpu } from "lucide-react";
+import { Sun, Moon, Trash2, Info, Monitor, Cpu, Download, Upload, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
@@ -9,17 +9,109 @@ import { PageTransition } from "@/components/layout/PageTransition";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { useTheme } from "@/hooks/useTheme";
 import { useToast } from "@/hooks/use-toast";
+import { dataService } from "@/lib/dataService";
+import { useState } from "react";
 
 export default function SettingsPage() {
   const { theme, toggleTheme } = useTheme();
   const { toast } = useToast();
+  const [isClearing, setIsClearing] = useState(false);
 
-  const handleClearHistory = () => {
-    toast({
-      title: "History Cleared",
-      description: "All detection history has been removed.",
-    });
+  const handleClearHistory = async () => {
+    setIsClearing(true);
+    
+    try {
+      dataService.clearAllData();
+      
+      toast({
+        title: "All Data Cleared",
+        description: "Detection history, analytics, and reports have been removed.",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to clear data. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsClearing(false);
+    }
   };
+
+  const handleExportData = () => {
+    try {
+      const data = dataService.exportData();
+      const blob = new Blob([data], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `oceanguard-data-${new Date().toISOString().split('T')[0]}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+      
+      toast({
+        title: "Data Exported",
+        description: "Your data has been exported successfully.",
+      });
+    } catch (error) {
+      toast({
+        title: "Export Failed",
+        description: "Failed to export data. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleImportData = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          try {
+            const data = e.target?.result as string;
+            const success = dataService.importData(data);
+            
+            if (success) {
+              toast({
+                title: "Data Imported",
+                description: "Your data has been imported successfully.",
+              });
+              // Refresh the page to show imported data
+              window.location.reload();
+            } else {
+              throw new Error('Import failed');
+            }
+          } catch (error) {
+            toast({
+              title: "Import Failed",
+              description: "Failed to import data. Please check the file format.",
+              variant: "destructive",
+            });
+          }
+        };
+        reader.readAsText(file);
+      }
+    };
+    input.click();
+  };
+
+  const getDataStats = () => {
+    const history = dataService.getHistory();
+    const analytics = dataService.getAnalytics();
+    const hotspots = dataService.getHotspots();
+    
+    return {
+      detections: history.length,
+      totalObjects: analytics.stats.totalDetections,
+      hotspots: hotspots.length,
+    };
+  };
+
+  const stats = getDataStats();
 
   return (
     <MainLayout>
@@ -133,33 +225,80 @@ export default function SettingsPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3 }}
           >
-            <Card className="glass-card">
+            <Card className="glass-card mb-6">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-destructive">
-                  <Trash2 className="h-5 w-5" />
+                <CardTitle className="flex items-center gap-2">
+                  <Trash2 className="h-5 w-5 text-primary" />
                   Data Management
                 </CardTitle>
                 <CardDescription>
                   Manage your detection history and stored data
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="p-4 bg-destructive/10 rounded-lg border border-destructive/20">
-                  <h4 className="font-medium text-destructive mb-2">
-                    Clear Detection History
-                  </h4>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    This will permanently delete all your detection history and
-                    cannot be undone.
-                  </p>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={handleClearHistory}
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Clear All History
-                  </Button>
+              <CardContent className="space-y-6">
+                {/* Data Statistics */}
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="text-center p-3 bg-muted/30 rounded-lg">
+                    <div className="text-2xl font-bold text-primary">{stats.detections}</div>
+                    <div className="text-xs text-muted-foreground">Detections</div>
+                  </div>
+                  <div className="text-center p-3 bg-muted/30 rounded-lg">
+                    <div className="text-2xl font-bold text-primary">{stats.totalObjects}</div>
+                    <div className="text-xs text-muted-foreground">Objects Found</div>
+                  </div>
+                  <div className="text-center p-3 bg-muted/30 rounded-lg">
+                    <div className="text-2xl font-bold text-primary">{stats.hotspots}</div>
+                    <div className="text-xs text-muted-foreground">Hotspots</div>
+                  </div>
+                </div>
+
+                <Separator />
+
+                {/* Data Actions */}
+                <div className="space-y-3">
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleExportData}
+                      className="flex-1"
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      Export Data
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleImportData}
+                      className="flex-1"
+                    >
+                      <Upload className="h-4 w-4 mr-2" />
+                      Import Data
+                    </Button>
+                  </div>
+                  
+                  <div className="p-4 bg-destructive/10 rounded-lg border border-destructive/20">
+                    <h4 className="font-medium text-destructive mb-2">
+                      Clear All Data
+                    </h4>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      This will permanently delete all your detection history, analytics, 
+                      and reports. This action cannot be undone.
+                    </p>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={handleClearHistory}
+                      disabled={isClearing}
+                    >
+                      {isClearing ? (
+                        <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4 mr-2" />
+                      )}
+                      {isClearing ? "Clearing..." : "Clear All Data"}
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>

@@ -1,37 +1,109 @@
-# Logs
-logs
-*.log
+# ===================================
+# MARINE PLASTIC DETECTION PLATFORM
+# Comprehensive .gitignore
+# ===================================
+
+# ===================================
+# NODE.JS / FRONTEND
+# ===================================
+
+# Dependencies
+node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
+# Build outputs
+dist/
+dist-ssr/
+build/
+out/
+.next/
+.nuxt/
+.vuepress/dist/
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+*.lcov
+
+# nyc test coverage
+.nyc_output
+
+# Grunt intermediate storage
+.grunt
+
+# Bower dependency directory
+bower_components
+
+# node-waf configuration
+.lock-wscript
+
+# Compiled binary addons
+build/Release
+
+# Dependency directories
+jspm_packages/
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# dotenv environment variables file
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# parcel-bundler cache
+.cache
+.parcel-cache
+
+# Vite
 *.local
+.vite
 
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
-.DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+# Rollup
+.rollup.cache
 
-# Python
+# ===================================
+# PYTHON / BACKEND
+# ===================================
+
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
+
+# C extensions
 *.so
+
+# Distribution / packaging
 .Python
 build/
 develop-eggs/
-dist/
 downloads/
 eggs/
 .eggs/
@@ -41,29 +113,536 @@ parts/
 sdist/
 var/
 wheels/
+share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+.pybuilder/
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# poetry
+poetry.lock
+
+# pdm
+.pdm.toml
+
+# PEP 582
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
 
 # Virtual environments
-venv/
+.env
+.venv
 env/
+venv/
 ENV/
+env.bak/
+venv.bak/
 
-# Model weights (add your own)
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# ===================================
+# AI/ML SPECIFIC FILES
+# ===================================
+
+# Model files and weights
+*.pt
+*.pth
+*.ckpt
+*.h5
+*.hdf5
+*.pb
+*.onnx
+*.tflite
+*.mlmodel
+*.pkl
+*.joblib
+*.model
+*.weights
+
+# Keep README files in model directories
+!*/README.md
+!README.md
+
+# Training data and datasets
+datasets/
+data/
+training_data/
+test_data/
+validation_data/
+*.csv
+*.json
+*.parquet
+*.feather
+
+# Keep sample or small datasets
+!sample_data/
+!examples/
+!demo_data/
+
+# Model outputs and predictions
+predictions/
+outputs/
+results/
+experiments/
+runs/
+logs/
+tensorboard_logs/
+wandb/
+
+# Jupyter notebook checkpoints
+.ipynb_checkpoints/
+
+# MLflow
+mlruns/
+mlartifacts/
+
+# DVC (Data Version Control)
+.dvc/
+*.dvc
+
+# ===================================
+# BACKEND SPECIFIC
+# ===================================
+
+# FastAPI / Uvicorn
+*.db
+*.sqlite
+*.sqlite3
+
+# Uploaded files and processed media
+backend/uploads/
+backend/processed_videos/
+backend/temp/
+backend/cache/
+backend/data_cache/
+backend/static/uploads/
+
+# Keep directory structure
+!backend/uploads/.gitkeep
+!backend/processed_videos/.gitkeep
+!backend/temp/.gitkeep
+!backend/cache/.gitkeep
+!backend/data_cache/.gitkeep
+
+# Model weights and checkpoints
+backend/models/*.pt
+backend/models/*.pth
+backend/models/*.h5
 backend/weights/*.pt
+backend/weights/*.pth
+
+# Keep model directory structure
+!backend/models/.gitkeep
+!backend/weights/.gitkeep
+!backend/models/README.md
 !backend/weights/README.md
 
-# Temporary files
-/tmp/
+# API keys and secrets
+backend/.env
+backend/.env.local
+backend/.env.production
+backend/config/secrets.py
+backend/config/api_keys.py
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+backend/database.db
+
+# Log files
+backend/logs/
+backend/*.log
+
+# ===================================
+# EDITOR AND IDE FILES
+# ===================================
+
+# Visual Studio Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/*.code-snippets
+
+# Local History for Visual Studio Code
+.history/
+
+# Built Visual Studio Code Extensions
+*.vsix
+
+# JetBrains IDEs
+.idea/
+*.swp
+*.swo
+*~
+
+# Sublime Text
+*.tmlanguage.cache
+*.tmPreferences.cache
+*.stTheme.cache
+*.sublime-workspace
+*.sublime-project
+
+# Atom
+.atom/
+
+# Vim
+[._]*.s[a-v][a-z]
+[._]*.sw[a-p]
+[._]s[a-rt-v][a-z]
+[._]ss[a-gi-z]
+[._]sw[a-p]
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# ===================================
+# OPERATING SYSTEM FILES
+# ===================================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
 *.tmp
 *.temp
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
 
-# Development artifacts
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# ===================================
+# TEMPORARY AND CACHE FILES
+# ===================================
+
+# General temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+*.swp
+*.swo
+*.bak
+*.backup
+*.orig
+
+# Cache directories
+.cache/
+cache/
+.parcel-cache/
+.eslintcache
+.stylelintcache
+
+# ===================================
+# DEPLOYMENT AND DOCKER
+# ===================================
+
+# Docker
+.dockerignore
+docker-compose.override.yml
+.docker/
+
+# Kubernetes
+*.kubeconfig
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+
+# ===================================
+# SECURITY AND SENSITIVE FILES
+# ===================================
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.staging
+
+# API keys and secrets
+secrets/
+config/secrets.*
+*.key
+*.pem
+*.p12
+*.pfx
+*.crt
+*.cer
+*.der
+
+# Authentication
+auth.json
+credentials.json
+service-account.json
+.gcp/
+.aws/
+
+# ===================================
+# PROJECT SPECIFIC FILES
+# ===================================
+
+# Custom files you want to hide
+Project.pdf
+prompt.txt
+*.pdf
+*.doc
+*.docx
+
+# Research and documentation drafts
+drafts/
+research/
+notes/
+*.draft
+
+# Test files and debugging
 test_*.py
 *_test.py
 debug_*
+debug.log
+test_output/
 
-#Custom file that i wanna hide
-Project.pdf
-prompt.txt
+# Backup files
+*.backup
+backup/
+backups/
+
+# Archive files
+*.zip
+*.tar
+*.tar.gz
+*.rar
+*.7z
+
+# ===================================
+# LARGE FILES AND MEDIA
+# ===================================
+
+# Large media files (adjust extensions as needed)
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.wmv
+*.flv
+*.webm
+*.m4v
+
+# Large image files
+*.tiff
+*.tif
+*.bmp
+*.raw
+*.cr2
+*.nef
+*.orf
+*.sr2
+
+# Keep small sample files
+!samples/
+!examples/
+!demo/
+!assets/
+
+# Audio files
+*.wav
+*.flac
+*.aac
+*.ogg
+*.wma
+*.m4a
+
+# Keep small audio samples
+!samples/*.mp3
+!examples/*.mp3
+!demo/*.mp3
+
+# ===================================
+# LOGS AND MONITORING
+# ===================================
+
+# Application logs
+logs/
+*.log
+*.log.*
+log/
+application.log
+error.log
+access.log
+debug.log
+
+# Monitoring and metrics
+metrics/
+monitoring/
+grafana/
+prometheus/
+
+# ===================================
+# TESTING
+# ===================================
+
+# Test results
+test-results/
+coverage/
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+
+# Screenshot tests
+screenshots/
+visual-regression/
+
+# ===================================
+# PACKAGE MANAGERS
+# ===================================
+
+# npm
+package-lock.json
+npm-shrinkwrap.json
+
+# Yarn
+yarn.lock
+.yarn/
+.pnp.*
+
+# pnpm
+pnpm-lock.yaml
+
+# Bower
+bower_components/
+
+# ===================================
+# END OF .GITIGNORE
+# ===================================

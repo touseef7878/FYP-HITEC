@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import {
@@ -10,6 +10,9 @@ import {
   ChevronRight,
   Clock,
   Package,
+  FileX,
+  Trash2,
+  Eye,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -24,73 +27,111 @@ import {
 } from "@/components/ui/select";
 import { PageTransition, staggerContainer, fadeInUp } from "@/components/layout/PageTransition";
 import { MainLayout } from "@/components/layout/MainLayout";
-
-// Sample history data
-const historyData = [
-  {
-    id: "det_001",
-    filename: "pacific_sample_001.jpg",
-    type: "image",
-    date: "2024-01-15",
-    time: "14:32",
-    objects: 47,
-    confidence: 94.5,
-    classes: ["Plastic Bottle", "Plastic Bag", "Fishing Net"],
-  },
-  {
-    id: "det_002",
-    filename: "underwater_video_001.mp4",
-    type: "video",
-    date: "2024-01-14",
-    time: "09:15",
-    objects: 128,
-    confidence: 92.1,
-    classes: ["Styrofoam", "Plastic Cap", "Other"],
-  },
-  {
-    id: "det_003",
-    filename: "beach_debris_002.jpg",
-    type: "image",
-    date: "2024-01-13",
-    time: "16:45",
-    objects: 23,
-    confidence: 97.2,
-    classes: ["Plastic Bottle", "Plastic Cap"],
-  },
-  {
-    id: "det_004",
-    filename: "ocean_surface_003.jpg",
-    type: "image",
-    date: "2024-01-12",
-    time: "11:20",
-    objects: 56,
-    confidence: 91.8,
-    classes: ["Fishing Net", "Plastic Bag"],
-  },
-  {
-    id: "det_005",
-    filename: "dive_footage_002.mp4",
-    type: "video",
-    date: "2024-01-11",
-    time: "08:00",
-    objects: 89,
-    confidence: 93.4,
-    classes: ["Plastic Bottle", "Styrofoam", "Other"],
-  },
-];
+import { dataService, HistoryItem } from "@/lib/dataService";
+import { useToast } from "@/hooks/use-toast";
 
 export default function HistoryPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState("all");
+  const [historyData, setHistoryData] = useState<HistoryItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const { toast } = useToast();
+
+  // Load history data
+  useEffect(() => {
+    const loadHistoryData = () => {
+      try {
+        const history = dataService.getHistory();
+        setHistoryData(history);
+      } catch (error) {
+        console.error('Error loading history data:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadHistoryData();
+  }, []);
 
   const filteredData = historyData.filter((item) => {
     const matchesSearch = item.filename
       .toLowerCase()
       .includes(searchQuery.toLowerCase());
     const matchesType = typeFilter === "all" || item.type === typeFilter;
-    return matchesSearch && matchesType;
+    
+    let matchesDate = true;
+    if (dateFilter !== "all") {
+      const itemDate = new Date(item.date);
+      const now = new Date();
+      
+      switch (dateFilter) {
+        case "today":
+          matchesDate = itemDate.toDateString() === now.toDateString();
+          break;
+        case "week":
+          const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          matchesDate = itemDate >= weekAgo;
+          break;
+        case "month":
+          const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+          matchesDate = itemDate >= monthAgo;
+          break;
+      }
+    }
+    
+    return matchesSearch && matchesType && matchesDate;
   });
+
+  const handleViewResult = (item: HistoryItem) => {
+    // Store the result in sessionStorage and navigate to results page
+    sessionStorage.setItem('detectionResults', JSON.stringify([item.result]));
+    // The Link component will handle navigation
+  };
+
+  const handleDeleteItem = (itemId: string) => {
+    const updatedHistory = historyData.filter(item => item.id !== itemId);
+    setHistoryData(updatedHistory);
+    localStorage.setItem('detectionHistory', JSON.stringify(updatedHistory));
+    
+    toast({
+      title: "Item Deleted",
+      description: "Detection result has been removed from history",
+    });
+  };
+
+  const handleClearAll = () => {
+    setHistoryData([]);
+    localStorage.removeItem('detectionHistory');
+    
+    toast({
+      title: "History Cleared",
+      description: "All detection history has been cleared",
+    });
+  };
+
+  if (isLoading) {
+    return (
+      <MainLayout>
+        <PageTransition className="page-container">
+          <div className="max-w-5xl mx-auto">
+            <div className="mb-8">
+              <h1 className="section-header">Detection History</h1>
+              <p className="text-muted-foreground">
+                Browse and manage your past detection results
+              </p>
+            </div>
+            <Card className="glass-card">
+              <CardContent className="py-12 text-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+                <p className="text-muted-foreground">Loading history...</p>
+              </CardContent>
+            </Card>
+          </div>
+        </PageTransition>
+      </MainLayout>
+    );
+  }
 
   return (
     <MainLayout>
@@ -145,16 +186,85 @@ export default function HistoryPage() {
             </CardContent>
           </Card>
 
-          {/* History Timeline */}
-          <motion.div
-            variants={staggerContainer}
-            initial="hidden"
-            animate="show"
-            className="space-y-4"
-          >
-            {filteredData.map((item, index) => (
-              <motion.div key={item.id} variants={fadeInUp}>
-                <Link to={`/results`}>
+          {/* Filters */}
+          <Card className="glass-card mb-6">
+            <CardContent className="py-4">
+              <div className="flex flex-col sm:flex-row gap-4">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search by filename..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <Select value={typeFilter} onValueChange={setTypeFilter}>
+                    <SelectTrigger className="w-[130px]">
+                      <Filter className="h-4 w-4 mr-2" />
+                      <SelectValue placeholder="Type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Types</SelectItem>
+                      <SelectItem value="image">Images</SelectItem>
+                      <SelectItem value="video">Videos</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select value={dateFilter} onValueChange={setDateFilter}>
+                    <SelectTrigger className="w-[130px]">
+                      <Calendar className="h-4 w-4 mr-2" />
+                      <SelectValue placeholder="Date" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Time</SelectItem>
+                      <SelectItem value="today">Today</SelectItem>
+                      <SelectItem value="week">This Week</SelectItem>
+                      <SelectItem value="month">This Month</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {historyData.length > 0 && (
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={handleClearAll}
+                      className="text-destructive hover:text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Clear All
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {filteredData.length === 0 && !isLoading && (
+            <Card className="glass-card">
+              <CardContent className="py-12 text-center">
+                <FileX className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <h3 className="text-lg font-medium mb-2">No Detection History</h3>
+                <p className="text-muted-foreground mb-4">
+                  {searchQuery || typeFilter !== "all" || dateFilter !== "all"
+                    ? "No results found for your search criteria" 
+                    : "You haven't performed any detections yet"}
+                </p>
+                <Button asChild>
+                  <Link to="/upload">Start Your First Detection</Link>
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
+          {filteredData.length > 0 && (
+            <motion.div
+              variants={staggerContainer}
+              initial="hidden"
+              animate="show"
+              className="space-y-4"
+            >
+              {filteredData.map((item, index) => (
+                <motion.div key={item.id} variants={fadeInUp}>
                   <Card className="glass-card hover-lift cursor-pointer group">
                     <CardContent className="py-4">
                       <div className="flex items-center gap-4">
@@ -184,7 +294,7 @@ export default function HistoryPage() {
                               <Package className="h-3.5 w-3.5" />
                               {item.objects} objects
                             </span>
-                            <span>{item.confidence}% confidence</span>
+                            <span>{item.confidence.toFixed(1)}% confidence</span>
                           </div>
                           <div className="flex flex-wrap gap-1 mt-2">
                             {item.classes.map((cls, i) => (
@@ -199,22 +309,37 @@ export default function HistoryPage() {
                           </div>
                         </div>
 
-                        {/* Arrow */}
-                        <ChevronRight className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors flex-shrink-0" />
+                        {/* Actions */}
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleViewResult(item)}
+                            title="View Results"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          <Link to="/results" onClick={() => handleViewResult(item)}>
+                            <Button variant="ghost" size="icon" title="Open Results">
+                              <ChevronRight className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
+                            </Button>
+                          </Link>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleDeleteItem(item.id)}
+                            className="text-destructive hover:text-destructive"
+                            title="Delete"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
                     </CardContent>
                   </Card>
-                </Link>
-              </motion.div>
-            ))}
-          </motion.div>
-
-          {filteredData.length === 0 && (
-            <Card className="glass-card">
-              <CardContent className="py-12 text-center">
-                <p className="text-muted-foreground">No results found</p>
-              </CardContent>
-            </Card>
+                </motion.div>
+              ))}
+            </motion.div>
           )}
         </div>
       </PageTransition>

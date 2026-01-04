@@ -1,55 +1,86 @@
 import { motion } from "framer-motion";
-import { MapPin, Layers, Info } from "lucide-react";
+import { useState, useEffect } from "react";
+import { MapPin, Layers, Info, Database, RefreshCw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { PageTransition } from "@/components/layout/PageTransition";
 import { MainLayout } from "@/components/layout/MainLayout";
-
-// Sample pollution hotspots data
-const hotspots = [
-  {
-    name: "Great Pacific Garbage Patch",
-    location: "North Pacific Ocean",
-    coordinates: "37°N 145°W",
-    intensity: "Critical",
-    plasticDensity: "1.8M pieces/km²",
-    color: "bg-destructive",
-  },
-  {
-    name: "Southeast Asian Waters",
-    location: "South China Sea",
-    coordinates: "15°N 115°E",
-    intensity: "High",
-    plasticDensity: "580K pieces/km²",
-    color: "bg-warning",
-  },
-  {
-    name: "Mediterranean Pollution Zone",
-    location: "Mediterranean Sea",
-    coordinates: "36°N 18°E",
-    intensity: "Moderate",
-    plasticDensity: "247K pieces/km²",
-    color: "bg-chart-5",
-  },
-  {
-    name: "Indian Ocean Gyre",
-    location: "Indian Ocean",
-    coordinates: "25°S 75°E",
-    intensity: "High",
-    plasticDensity: "412K pieces/km²",
-    color: "bg-warning",
-  },
-];
+import { dataService, Hotspot } from "@/lib/dataService";
+import { useToast } from "@/hooks/use-toast";
 
 export default function HeatmapPage() {
+  const [hotspots, setHotspots] = useState<Hotspot[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const { toast } = useToast();
+
+  const loadHotspotData = () => {
+    try {
+      const hotspotsData = dataService.getHotspots();
+      setHotspots(hotspotsData);
+    } catch (error) {
+      console.error('Error loading hotspot data:', error);
+      toast({
+        title: "Error Loading Data",
+        description: "Failed to load hotspot data",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadHotspotData();
+  }, []);
+
+  const handleRefresh = () => {
+    setIsLoading(true);
+    loadHotspotData();
+    toast({
+      title: "Data Refreshed",
+      description: "Hotspot data has been updated",
+    });
+  };
+
+  const criticalZones = hotspots.filter(spot => spot.intensity === "Critical").length;
+  const highRiskZones = hotspots.filter(spot => spot.intensity === "High").length;
+  const moderateZones = hotspots.filter(spot => spot.intensity === "Moderate").length;
+
+  if (isLoading) {
+    return (
+      <MainLayout>
+        <PageTransition className="page-container">
+          <div className="mb-8">
+            <h1 className="section-header">Pollution Heatmap</h1>
+            <p className="text-muted-foreground">
+              Interactive visualization of marine plastic pollution zones worldwide
+            </p>
+          </div>
+          <Card className="glass-card">
+            <CardContent className="py-12 text-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+              <p className="text-muted-foreground">Loading heatmap data...</p>
+            </CardContent>
+          </Card>
+        </PageTransition>
+      </MainLayout>
+    );
+  }
   return (
     <MainLayout>
       <PageTransition className="page-container">
-        <div className="mb-8">
-          <h1 className="section-header">Pollution Heatmap</h1>
-          <p className="text-muted-foreground">
-            Interactive visualization of marine plastic pollution zones worldwide
-          </p>
+        <div className="mb-8 flex items-center justify-between">
+          <div>
+            <h1 className="section-header">Pollution Heatmap</h1>
+            <p className="text-muted-foreground">
+              Interactive visualization of marine plastic pollution zones worldwide
+            </p>
+          </div>
+          <Button onClick={handleRefresh} variant="outline">
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh
+          </Button>
         </div>
 
         <div className="grid lg:grid-cols-3 gap-6">
@@ -122,34 +153,45 @@ export default function HeatmapPage() {
                   Major Hotspots
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3">
-                {hotspots.map((spot, index) => (
-                  <motion.div
-                    key={index}
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: index * 0.1 }}
-                    className="p-3 bg-muted/30 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer"
-                  >
-                    <div className="flex items-start justify-between mb-2">
-                      <h4 className="font-medium text-sm">{spot.name}</h4>
-                      <Badge
-                        className={`${spot.color} text-white text-xs`}
-                      >
-                        {spot.intensity}
-                      </Badge>
-                    </div>
-                    <p className="text-xs text-muted-foreground mb-1">
-                      {spot.location}
+              <CardContent>
+                {hotspots.length === 0 ? (
+                  <div className="py-8 text-center">
+                    <Database className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                    <p className="text-sm text-muted-foreground">
+                      No hotspot data available
                     </p>
-                    <div className="flex justify-between text-xs">
-                      <span className="text-muted-foreground">
-                        {spot.coordinates}
-                      </span>
-                      <span className="font-medium">{spot.plasticDensity}</span>
-                    </div>
-                  </motion.div>
-                ))}
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {hotspots.map((spot, index) => (
+                      <motion.div
+                        key={index}
+                        initial={{ opacity: 0, x: 20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: index * 0.1 }}
+                        className="p-3 bg-muted/30 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer"
+                      >
+                        <div className="flex items-start justify-between mb-2">
+                          <h4 className="font-medium text-sm">{spot.name}</h4>
+                          <Badge
+                            className={`${spot.color} text-white text-xs`}
+                          >
+                            {spot.intensity}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground mb-1">
+                          {spot.location}
+                        </p>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-muted-foreground">
+                            {spot.coordinates}
+                          </span>
+                          <span className="font-medium">{spot.plasticDensity}</span>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -164,15 +206,19 @@ export default function HeatmapPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Critical Zones</span>
-                  <span className="font-medium text-destructive">1</span>
+                  <span className="font-medium text-destructive">{criticalZones}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">High Risk Zones</span>
-                  <span className="font-medium text-warning">2</span>
+                  <span className="font-medium text-warning">{highRiskZones}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Moderate Zones</span>
+                  <span className="font-medium text-chart-5">{moderateZones}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Data Points</span>
-                  <span className="font-medium">12,847</span>
+                  <span className="font-medium">{hotspots.length > 0 ? "12,847" : "0"}</span>
                 </div>
               </CardContent>
             </Card>

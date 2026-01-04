@@ -11,6 +11,7 @@ import {
   ImageIcon,
   Play,
   Video,
+  Save,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,50 +20,18 @@ import { PageTransition, staggerContainer, fadeInUp } from "@/components/layout/
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
+import { dataService, DetectionResult } from "@/lib/dataService";
 
 // Backend API URL - change this if your backend runs on a different port
 const API_URL = "http://localhost:8000";
 
-interface DetectionResult {
-  success: boolean;
-  filename: string;
-  totalDetections: number;
-  detections: {
-    class: string;
-    confidence: number;
-    bbox: { x1: number; y1: number; x2: number; y2: number };
-  }[];
-  summary: {
-    class: string;
-    count: number;
-    avgConfidence: number;
-  }[];
-  annotatedImage?: string;
-  originalImage?: string;
-  annotatedVideo?: string;
-  originalVideo?: string;
-  annotatedVideoUrl?: string;  // New URL-based field
-  originalVideoUrl?: string;   // New URL-based field
-  totalFrames?: number;
-  processedFrames?: number;
-  fps?: number;
-  duration?: number;
-  resolution?: string;
-}
-
-// Sample fallback data
-const sampleResult: DetectionResult = {
-  success: true,
-  filename: "sample_image.jpg",
-  totalDetections: 47,
+// Empty fallback data structure
+const emptyResult: DetectionResult = {
+  success: false,
+  filename: "",
+  totalDetections: 0,
   detections: [],
-  summary: [
-    { class: "Plastic Bottle", count: 12, avgConfidence: 96.2 },
-    { class: "Plastic Bag", count: 8, avgConfidence: 92.1 },
-    { class: "Fishing Net", count: 5, avgConfidence: 89.7 },
-    { class: "Styrofoam", count: 7, avgConfidence: 94.5 },
-    { class: "Plastic Cap", count: 15, avgConfidence: 97.3 },
-  ],
+  summary: [],
   annotatedImage: "",
   originalImage: "",
 };
@@ -88,6 +57,13 @@ export default function ResultsPage() {
         const parsed = JSON.parse(storedResults);
         setResults(parsed);
         
+        // Save results to data service for history and analytics
+        parsed.forEach((result: DetectionResult) => {
+          if (result.success && result.totalDetections > 0) {
+            dataService.saveDetectionResult(result);
+          }
+        });
+        
         // Show completion notification for videos
         const hasVideo = parsed.some((r: DetectionResult) => r.annotatedVideo || r.annotatedVideoUrl);
         if (hasVideo) {
@@ -97,16 +73,23 @@ export default function ResultsPage() {
             duration: 5000,
           });
         }
+
+        // Show success notification for data saving
+        toast({
+          title: "✅ Results Saved",
+          description: "Detection results have been saved to your history and analytics",
+          duration: 3000,
+        });
       } catch (error) {
         console.error("Error parsing results:", error);
-        setResults([sampleResult]);
+        setResults([emptyResult]);
       }
     } else {
-      setResults([sampleResult]);
+      setResults([emptyResult]);
     }
   }, [toast]);
 
-  const currentResult = results[activeIndex] || sampleResult;
+  const currentResult = results[activeIndex] || emptyResult;
   const totalObjects = currentResult.totalDetections;
   const avgConfidence = currentResult.summary.length > 0
     ? Math.round(

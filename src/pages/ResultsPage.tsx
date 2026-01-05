@@ -55,11 +55,12 @@ export default function ResultsPage() {
     if (storedResults) {
       try {
         const parsed = JSON.parse(storedResults);
+        console.log("🔍 Debug - Loaded results:", parsed); // Debug log
         setResults(parsed);
         
         // Save results to data service for history and analytics
         parsed.forEach((result: DetectionResult) => {
-          if (result.success && result.totalDetections > 0) {
+          if (result.success) { // Save all successful results, even with 0 detections
             dataService.saveDetectionResult(result);
           }
         });
@@ -67,6 +68,7 @@ export default function ResultsPage() {
         // Show completion notification for videos
         const hasVideo = parsed.some((r: DetectionResult) => r.annotatedVideo || r.annotatedVideoUrl);
         if (hasVideo) {
+          console.log("🎬 Debug - Video detected in results"); // Debug log
           toast({
             title: "🎬 Video Processing Complete!",
             description: "Your annotated video with frame-by-frame detections is ready to view",
@@ -85,6 +87,7 @@ export default function ResultsPage() {
         setResults([emptyResult]);
       }
     } else {
+      console.log("⚠️ Debug - No stored results found"); // Debug log
       setResults([emptyResult]);
     }
   }, [toast]);
@@ -98,7 +101,12 @@ export default function ResultsPage() {
       )
     : 0;
 
-  const isVideo = !!(currentResult.annotatedVideo || currentResult.annotatedVideoUrl);
+  const isVideo = !!(currentResult.annotatedVideo || currentResult.annotatedVideoUrl || currentResult.totalFrames);
+  
+  // Debug logging
+  console.log("🔍 Debug - Current result:", currentResult);
+  console.log("🔍 Debug - Is video:", isVideo);
+  console.log("🔍 Debug - Has annotatedVideoUrl:", !!currentResult.annotatedVideoUrl);
 
   const handleDownload = () => {
     if (currentResult.annotatedImage) {
@@ -106,22 +114,39 @@ export default function ResultsPage() {
       link.href = currentResult.annotatedImage;
       link.download = `detected_${currentResult.filename}`;
       link.click();
+      
+      toast({
+        title: "Download Started",
+        description: `Downloading image: detected_${currentResult.filename}`,
+      });
     } else if (currentResult.annotatedVideoUrl) {
       const link = document.createElement("a");
       link.href = `${API_URL}${currentResult.annotatedVideoUrl}`;
       link.download = `detected_${currentResult.filename}`;
       link.click();
+      
+      toast({
+        title: "📥 Video Download Started",
+        description: `Downloading processed video: detected_${currentResult.filename}`,
+        duration: 4000,
+      });
     } else if (currentResult.annotatedVideo) {
       const link = document.createElement("a");
       link.href = currentResult.annotatedVideo;
       link.download = `detected_${currentResult.filename}`;
       link.click();
+      
+      toast({
+        title: "Download Started",
+        description: `Downloading video: detected_${currentResult.filename}`,
+      });
+    } else {
+      toast({
+        title: "Download Not Available",
+        description: "No processed media available for download",
+        variant: "destructive",
+      });
     }
-    
-    toast({
-      title: "Download Started",
-      description: `Downloading ${isVideo ? 'video' : 'image'}: detected_${currentResult.filename}`,
-    });
   };
 
   return (
@@ -157,7 +182,7 @@ export default function ResultsPage() {
                 <Share2 className="h-4 w-4 mr-2" />
                 Share
               </Button>
-              <Button size="sm" onClick={handleDownload} disabled={!currentResult.annotatedImage && !currentResult.annotatedVideo && !currentResult.annotatedVideoUrl}>
+              <Button size="sm" onClick={handleDownload} disabled={!currentResult.annotatedImage && !currentResult.annotatedVideo && !currentResult.annotatedVideoUrl && !isVideo}>
                 <Download className="h-4 w-4 mr-2" />
                 Download {isVideo ? 'Video' : 'Image'}
               </Button>
@@ -183,6 +208,47 @@ export default function ResultsPage() {
           )}
 
           <div className="grid lg:grid-cols-3 gap-6">
+            {/* File Saving Status - Show for videos */}
+            {isVideo && currentResult.annotatedVideoUrl && (
+              <div className="lg:col-span-3 mb-4">
+                <Card className="glass-card border-success/20 bg-success/5">
+                  <CardContent className="pt-6">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-xl bg-success/10 flex items-center justify-center">
+                        <Save className="h-6 w-6 text-success" />
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="font-semibold text-success">💾 Video Saved Successfully!</h3>
+                        <p className="text-sm text-muted-foreground">
+                          Processed video saved to: <code className="bg-muted px-1 rounded text-xs">backend/processed_videos/</code>
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          📁 File: processed_{currentResult.videoId}.mp4
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => window.open(`${API_URL}${currentResult.annotatedVideoUrl}`, '_blank')}
+                        >
+                          <Play className="h-3 w-3 mr-1" />
+                          View Video
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={handleDownload}
+                        >
+                          <Download className="h-3 w-3 mr-1" />
+                          Download
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
             {/* Image Comparison */}
             <div className="lg:col-span-2">
               <Card className="glass-card overflow-hidden">
@@ -198,7 +264,8 @@ export default function ResultsPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-0">
-                  {currentResult.annotatedImage || currentResult.annotatedVideo || currentResult.annotatedVideoUrl ? (
+                  {/* Always show video/image content if we have any media or if it's a video result */}
+                  {currentResult.annotatedImage || currentResult.annotatedVideo || currentResult.annotatedVideoUrl || isVideo ? (
                     <Tabs defaultValue="after" className="w-full">
                       <div className="px-4 pt-2">
                         <TabsList className="grid w-full grid-cols-2">
@@ -226,6 +293,13 @@ export default function ResultsPage() {
                               controls
                               className="w-full h-full object-contain"
                             />
+                          ) : isVideo ? (
+                            <div className="flex items-center justify-center h-full">
+                              <div className="text-center">
+                                <Video className="h-12 w-12 text-muted-foreground mx-auto mb-2" />
+                                <p className="text-sm text-muted-foreground">Original video not available</p>
+                              </div>
+                            </div>
                           ) : (
                             <div className="flex items-center justify-center h-full">
                               <ImageIcon className="h-12 w-12 text-muted-foreground" />
@@ -242,17 +316,54 @@ export default function ResultsPage() {
                               className="w-full h-full object-contain"
                             />
                           ) : currentResult.annotatedVideoUrl ? (
-                            <video
-                              src={`${API_URL}${currentResult.annotatedVideoUrl}`}
-                              controls
-                              className="w-full h-full object-contain"
-                            />
+                            <div className="space-y-4">
+                              <video
+                                src={`${API_URL}${currentResult.annotatedVideoUrl}`}
+                                controls
+                                className="w-full h-full object-contain"
+                              />
+                              <div className="px-4 pb-4">
+                                <div className="flex items-center justify-between text-sm">
+                                  <span className="text-muted-foreground">Processed Video:</span>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => window.open(`${API_URL}${currentResult.annotatedVideoUrl}`, '_blank')}
+                                  >
+                                    <Play className="h-3 w-3 mr-1" />
+                                    Open in New Tab
+                                  </Button>
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  📁 Saved to: backend/processed_videos/
+                                </p>
+                              </div>
+                            </div>
                           ) : currentResult.annotatedVideo ? (
                             <video
                               src={currentResult.annotatedVideo}
                               controls
                               className="w-full h-full object-contain"
                             />
+                          ) : isVideo ? (
+                            <div className="flex items-center justify-center h-full">
+                              <div className="text-center">
+                                <CheckCircle className="h-12 w-12 text-success mx-auto mb-2" />
+                                <p className="text-lg font-semibold">Video Processed Successfully</p>
+                                <p className="text-sm text-muted-foreground">
+                                  {totalObjects} objects detected in {currentResult.totalFrames} frames
+                                </p>
+                                {currentResult.annotatedVideoUrl && (
+                                  <Button
+                                    className="mt-3"
+                                    onClick={() => window.open(`${API_URL}${currentResult.annotatedVideoUrl}`, '_blank')}
+                                  >
+                                    <Play className="h-4 w-4 mr-2" />
+                                    View Processed Video
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
                           ) : null}
                         </div>
                       </TabsContent>

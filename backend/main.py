@@ -1110,6 +1110,12 @@ async def detect_video(file: UploadFile = File(...), confidence: float = 0.25):
         shutil.move(temp_output_path, final_output_path)
         temp_output_path = None  # Prevent cleanup of moved file
         
+        # Log successful save with clear message
+        logger.info(f"💾 Processed video saved successfully!")
+        logger.info(f"   📁 Local path: {final_output_path}")
+        logger.info(f"   🌐 Access URL: /processed-video/{processed_filename}")
+        logger.info(f"   📊 File size: {os.path.getsize(final_output_path) / (1024*1024):.1f} MB")
+        
         # Prepare enhanced summary
         summary = []
         for class_name, data in class_counts.items():

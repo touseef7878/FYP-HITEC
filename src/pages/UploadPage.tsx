@@ -315,7 +315,9 @@ export default function UploadPage() {
           addLog(`✓ Video processed: ${result.totalDetections} objects detected in ${result.totalFrames} frames`);
           addLog(`📊 Video stats: ${result.duration}s duration, ${result.fps} FPS, ${result.resolution}`);
           if (result.annotatedVideoUrl) {
-            addLog(`🎬 Processed video available at: ${API_URL}${result.annotatedVideoUrl}`);
+            addLog(`💾 Processed video saved to: backend/processed_videos/`);
+            addLog(`🌐 Video accessible at: ${API_URL}${result.annotatedVideoUrl}`);
+            addLog(`📁 Local file: processed_${result.videoId}.mp4`);
           }
         } else {
           addLog(`✓ Image processed: ${result.totalDetections} objects detected`);
@@ -351,7 +353,13 @@ export default function UploadPage() {
 
     if (results.length > 0) {
       const totalDetections = results.reduce((sum, r) => sum + r.totalDetections, 0);
+      const videoCount = results.filter(r => r.annotatedVideoUrl).length;
+      
       addLog(`🎉 All files processed! Total detections: ${totalDetections}`);
+      if (videoCount > 0) {
+        addLog(`💾 ${videoCount} processed video(s) saved to: backend/processed_videos/`);
+        addLog(`📂 You can find your files in the project's backend/processed_videos/ folder`);
+      }
       
       // Store results in sessionStorage to pass to results page
       sessionStorage.setItem("detectionResults", JSON.stringify(results));
@@ -364,7 +372,7 @@ export default function UploadPage() {
       // Show completion notification
       toast({
         title: "🎉 Detection Complete!",
-        description: `Successfully processed ${results.length} file(s) with ${totalDetections} total detections`,
+        description: `Successfully processed ${results.length} file(s) with ${totalDetections} total detections. Files saved to backend/processed_videos/`,
         duration: 5000,
       });
 
@@ -374,7 +382,15 @@ export default function UploadPage() {
         const videoResult = results.find(r => r.annotatedVideoUrl);
         if (videoResult?.annotatedVideoUrl) {
           addLog(`🎬 Direct video link: ${API_URL}${videoResult.annotatedVideoUrl}`);
+          addLog(`💾 Video file saved in: backend/processed_videos/ folder`);
         }
+        
+        // Show file saving notification
+        toast({
+          title: "💾 Video Saved Successfully!",
+          description: "Processed video saved to backend/processed_videos/ folder and ready for download",
+          duration: 6000,
+        });
         
         toast({
           title: "🎬 Video Processing Complete!",
@@ -642,21 +658,40 @@ export default function UploadPage() {
                               const videoResults = results.filter((r: any) => r.annotatedVideoUrl);
                               if (videoResults.length > 0) {
                                 return (
-                                  <div className="mt-3 p-3 bg-muted/30 rounded-lg">
-                                    <p className="text-sm font-medium mb-2">🎬 Processed Videos:</p>
-                                    {videoResults.map((result: any, index: number) => (
-                                      <div key={index} className="flex items-center justify-between text-sm">
-                                        <span className="truncate mr-2">{result.filename}</span>
-                                        <Button
-                                          size="sm"
-                                          variant="outline"
-                                          onClick={() => window.open(`${API_URL}${result.annotatedVideoUrl}`, '_blank')}
-                                        >
-                                          <Play className="h-3 w-3 mr-1" />
-                                          View
-                                        </Button>
+                                  <div className="mt-3 space-y-3">
+                                    {/* File Saving Status */}
+                                    <div className="p-3 bg-success/10 border border-success/20 rounded-lg">
+                                      <div className="flex items-center gap-2 text-success text-sm font-medium mb-2">
+                                        <CheckCircle className="h-4 w-4" />
+                                        💾 Files Saved Successfully
                                       </div>
-                                    ))}
+                                      <p className="text-xs text-muted-foreground">
+                                        Processed videos saved to: <code className="bg-muted px-1 rounded">backend/processed_videos/</code>
+                                      </p>
+                                    </div>
+                                    
+                                    {/* Video Access */}
+                                    <div className="p-3 bg-muted/30 rounded-lg">
+                                      <p className="text-sm font-medium mb-2">🎬 Processed Videos:</p>
+                                      {videoResults.map((result: any, index: number) => (
+                                        <div key={index} className="flex items-center justify-between text-sm mb-2 last:mb-0">
+                                          <div className="flex-1 min-w-0">
+                                            <p className="truncate mr-2 font-medium">{result.filename}</p>
+                                            <p className="text-xs text-muted-foreground">
+                                              📁 processed_{result.videoId}.mp4
+                                            </p>
+                                          </div>
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => window.open(`${API_URL}${result.annotatedVideoUrl}`, '_blank')}
+                                          >
+                                            <Play className="h-3 w-3 mr-1" />
+                                            View
+                                          </Button>
+                                        </div>
+                                      ))}
+                                    </div>
                                   </div>
                                 );
                               }

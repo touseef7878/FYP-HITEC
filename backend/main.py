@@ -23,6 +23,7 @@ from dotenv import load_dotenv
 import tempfile
 import uuid
 import asyncio
+import shutil
 from pydantic import BaseModel
 
 # Load environment variables
@@ -185,17 +186,35 @@ async def favicon():
         return FileResponse(favicon_path, media_type="image/png")
     return JSONResponse({"error": "Favicon not found"}, status_code=404)
 
-# Load YOLO model - place your weights in backend/weights/best.pt
+# Load YOLO model - supports YOLOv8, YOLOv11, YOLOv12n models
 WEIGHTS_PATH = os.path.join(os.path.dirname(__file__), "weights", "best.pt")
 model = None
 
 def load_yolo_model():
     global model
-    if os.path.exists(WEIGHTS_PATH):
-        model = YOLO(WEIGHTS_PATH)
-        logger.info(f"✅ YOLO Model loaded from {WEIGHTS_PATH}")
-    else:
-        logger.info(f"⚠️ No YOLO weights found at {WEIGHTS_PATH}")
+    try:
+        if os.path.exists(WEIGHTS_PATH):
+            # Load custom trained model
+            model = YOLO(WEIGHTS_PATH)
+            logger.info(f"✅ Custom YOLO Model loaded from {WEIGHTS_PATH}")
+            logger.info(f"   Model type: {model.model_name if hasattr(model, 'model_name') else 'Custom'}")
+            logger.info(f"   Classes: {list(model.names.values()) if model.names else 'Unknown'}")
+        else:
+            # Fallback to YOLOv12n pretrained model for general object detection
+            logger.info(f"⚠️ No custom weights found at {WEIGHTS_PATH}")
+            logger.info("🔄 Loading YOLOv12n pretrained model as fallback...")
+            try:
+                model = YOLO("yolo12n.pt")  # This will download YOLOv12n if not available
+                logger.info("✅ YOLOv12n pretrained model loaded successfully")
+                logger.info(f"   Classes: {list(model.names.values())[:10]}... (showing first 10)")
+            except Exception as e:
+                logger.warning(f"Could not load YOLOv12n: {e}")
+                logger.info("🔄 Falling back to YOLOv8n...")
+                model = YOLO("yolov8n.pt")  # Final fallback
+                logger.info("✅ YOLOv8n pretrained model loaded as final fallback")
+    except Exception as e:
+        logger.error(f"❌ Failed to load any YOLO model: {e}")
+        model = None
 
 def clear_all_cache():
     """Clear all cached data and models on server startup for fresh data"""
@@ -232,13 +251,26 @@ async def startup():
 
 @app.get("/health")
 async def health_check():
+    model_info = {}
+    if model is not None:
+        model_info = {
+            "loaded": True,
+            "classes": list(model.names.values()) if model.names else [],
+            "num_classes": len(model.names) if model.names else 0,
+            "model_type": getattr(model, 'model_name', 'Custom/Unknown')
+        }
+    else:
+        model_info = {"loaded": False}
+    
     return {
         "status": "healthy",
         "yolo_model_loaded": model is not None,
+        "model_info": model_info,
         "data_cache_ready": True,
         "lstm_model_ready": True,
         "cache_directory": data_cache_service.cache_dir,
-        "models_directory": data_cache_service.models_dir
+        "models_directory": data_cache_service.models_dir,
+        "processed_videos_directory": processed_videos_path
     }
 
 # ============================================================================
@@ -846,6 +878,314 @@ async def detect_objects(file: UploadFile = File(...), confidence: float = 0.25)
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/detect-video")
+async def detect_video(file: UploadFile = File(...), confidence: float = 0.25):
+    if model is None:
+        raise HTTPException(
+            status_code=503, 
+            detail="Model not loaded. Please place your weights at backend/weights/best.pt and restart the server."
+        )
+    
+    # Validate file type
+    if not file.content_type or not file.content_type.startswith('video/'):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid file type: {file.content_type}. Only video files are supported."
+        )
+    
+    # Validate confidence parameter
+    if not 0.01 <= confidence <= 1.0:
+        raise HTTPException(
+            status_code=400,
+            detail="Confidence must be between 0.01 and 1.0"
+        )
+    
+    temp_input_path = None
+    temp_output_path = None
+    
+    try:
+        logger.info(f"🎬 Starting video detection for: {file.filename}")
+        logger.info(f"   File type: {file.content_type}")
+        logger.info(f"   Confidence threshold: {confidence}")
+        
+        # Create temporary files
+        temp_input_fd, temp_input_path = tempfile.mkstemp(suffix='.mp4')
+        temp_output_fd, temp_output_path = tempfile.mkstemp(suffix='.mp4')
+        
+        # Close file descriptors (we'll use paths directly)
+        os.close(temp_input_fd)
+        os.close(temp_output_fd)
+        
+        # Write uploaded video to temp file
+        contents = await file.read()
+        file_size_mb = len(contents) / (1024 * 1024)
+        logger.info(f"   File size: {file_size_mb:.1f} MB")
+        
+        with open(temp_input_path, 'wb') as f:
+            f.write(contents)
+        
+        # Open video with OpenCV
+        cap = cv2.VideoCapture(temp_input_path)
+        if not cap.isOpened():
+            raise HTTPException(status_code=400, detail="Could not open video file. Please ensure it's a valid video format.")
+        
+        # Get video properties
+        fps = int(cap.get(cv2.CAP_PROP_FPS))
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        duration = total_frames / fps if fps > 0 else 0
+        
+        logger.info(f"📹 Video properties:")
+        logger.info(f"   Resolution: {width}x{height}")
+        logger.info(f"   FPS: {fps}")
+        logger.info(f"   Total frames: {total_frames}")
+        logger.info(f"   Duration: {duration:.1f}s")
+        
+        # Validate video properties
+        if fps <= 0 or width <= 0 or height <= 0 or total_frames <= 0:
+            raise HTTPException(status_code=400, detail="Invalid video properties detected")
+        
+        # Setup video writer with better codec settings
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        out = cv2.VideoWriter(temp_output_path, fourcc, fps, (width, height))
+        
+        if not out.isOpened():
+            raise HTTPException(status_code=500, detail="Failed to create output video writer")
+        
+        # Initialize processing variables
+        frame_count = 0
+        total_detections = 0
+        all_detections = []
+        class_counts = {}
+        colors = {}
+        frames_with_detections = 0
+        
+        logger.info("🔍 Starting frame-by-frame detection...")
+        
+        # Process video frame by frame
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            
+            frame_count += 1
+            
+            # Run YOLO inference on frame
+            try:
+                results = model(frame, conf=confidence, verbose=False)[0]
+            except Exception as e:
+                logger.warning(f"Detection failed on frame {frame_count}: {e}")
+                # Write original frame if detection fails
+                out.write(frame)
+                continue
+            
+            # Process detections for this frame
+            frame_detections = []
+            frame_detection_count = 0
+            
+            if results.boxes is not None and len(results.boxes) > 0:
+                frames_with_detections += 1
+                
+                for box in results.boxes:
+                    class_id = int(box.cls[0])
+                    class_name = results.names[class_id]
+                    conf = float(box.conf[0])
+                    bbox = box.xyxy[0].tolist()
+                    
+                    detection = {
+                        "frame": frame_count,
+                        "timestamp": round((frame_count - 1) / fps, 2),
+                        "class": class_name,
+                        "confidence": round(conf * 100, 1),
+                        "bbox": {
+                            "x1": int(bbox[0]),
+                            "y1": int(bbox[1]),
+                            "x2": int(bbox[2]),
+                            "y2": int(bbox[3])
+                        }
+                    }
+                    
+                    frame_detections.append(detection)
+                    all_detections.append(detection)
+                    total_detections += 1
+                    frame_detection_count += 1
+                    
+                    # Count by class
+                    if class_name not in class_counts:
+                        class_counts[class_name] = {"count": 0, "total_confidence": 0, "frames": set()}
+                    class_counts[class_name]["count"] += 1
+                    class_counts[class_name]["total_confidence"] += conf * 100
+                    class_counts[class_name]["frames"].add(frame_count)
+                    
+                    # Generate consistent color for each class
+                    if class_name not in colors:
+                        hash_val = hash(class_name)
+                        colors[class_name] = (
+                            (hash_val & 0xFF),
+                            ((hash_val >> 8) & 0xFF),
+                            ((hash_val >> 16) & 0xFF)
+                        )
+            
+            # Draw bounding boxes on frame
+            annotated_frame = frame.copy()
+            
+            # Add frame info overlay
+            frame_info = f"Frame {frame_count}/{total_frames} | {frame_detection_count} detections"
+            cv2.putText(
+                annotated_frame,
+                frame_info,
+                (10, 25),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (255, 255, 255),
+                2
+            )
+            cv2.putText(
+                annotated_frame,
+                frame_info,
+                (10, 25),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (0, 0, 0),
+                1
+            )
+            
+            # Draw detections
+            for det in frame_detections:
+                class_name = det["class"]
+                color = colors[class_name]
+                bbox = det["bbox"]
+                
+                # Draw rectangle with thicker border for better visibility
+                cv2.rectangle(
+                    annotated_frame,
+                    (bbox["x1"], bbox["y1"]),
+                    (bbox["x2"], bbox["y2"]),
+                    color,
+                    3
+                )
+                
+                # Draw label background
+                label = f"{class_name} {det['confidence']}%"
+                (label_w, label_h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+                cv2.rectangle(
+                    annotated_frame,
+                    (bbox["x1"], bbox["y1"] - label_h - 15),
+                    (bbox["x1"] + label_w + 10, bbox["y1"]),
+                    color,
+                    -1
+                )
+                
+                # Draw label text with better visibility
+                cv2.putText(
+                    annotated_frame,
+                    label,
+                    (bbox["x1"] + 5, bbox["y1"] - 8),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6,
+                    (255, 255, 255),
+                    2
+                )
+            
+            # Write annotated frame to output video
+            out.write(annotated_frame)
+            
+            # Log progress every 50 frames or at significant milestones
+            if frame_count % 50 == 0 or frame_count == total_frames:
+                progress = (frame_count / total_frames) * 100
+                logger.info(f"   Progress: {frame_count}/{total_frames} frames ({progress:.1f}%) | Detections: {total_detections}")
+        
+        # Release resources
+        cap.release()
+        out.release()
+        
+        # Generate unique filename for processed video
+        video_id = str(uuid.uuid4())
+        processed_filename = f"processed_{video_id}.mp4"
+        final_output_path = os.path.join(processed_videos_path, processed_filename)
+        
+        # Move processed video to final location
+        shutil.move(temp_output_path, final_output_path)
+        temp_output_path = None  # Prevent cleanup of moved file
+        
+        # Prepare enhanced summary
+        summary = []
+        for class_name, data in class_counts.items():
+            avg_conf = data["total_confidence"] / data["count"]
+            frames_appeared = len(data["frames"])
+            summary.append({
+                "class": class_name,
+                "count": data["count"],
+                "avgConfidence": round(avg_conf, 1),
+                "framesAppeared": frames_appeared,
+                "appearanceRate": round((frames_appeared / total_frames) * 100, 1)
+            })
+        
+        # Sort by count descending
+        summary.sort(key=lambda x: x["count"], reverse=True)
+        
+        # Convert original video to base64 for small videos (< 10MB)
+        original_video_base64 = None
+        if len(contents) < 10 * 1024 * 1024:  # 10MB limit
+            original_video_base64 = base64.b64encode(contents).decode()
+        
+        # Calculate processing statistics
+        detection_rate = (frames_with_detections / total_frames) * 100 if total_frames > 0 else 0
+        avg_detections_per_frame = total_detections / total_frames if total_frames > 0 else 0
+        
+        logger.info(f"✅ Video processing complete!")
+        logger.info(f"   Processed: {frame_count} frames")
+        logger.info(f"   Total detections: {total_detections}")
+        logger.info(f"   Frames with detections: {frames_with_detections} ({detection_rate:.1f}%)")
+        logger.info(f"   Average detections per frame: {avg_detections_per_frame:.2f}")
+        logger.info(f"   Unique classes detected: {len(class_counts)}")
+        
+        return JSONResponse({
+            "success": True,
+            "filename": file.filename,
+            "totalDetections": total_detections,
+            "totalFrames": frame_count,
+            "processedFrames": frame_count,
+            "framesWithDetections": frames_with_detections,
+            "detectionRate": round(detection_rate, 1),
+            "avgDetectionsPerFrame": round(avg_detections_per_frame, 2),
+            "fps": fps,
+            "duration": round(duration, 2),
+            "resolution": f"{width}x{height}",
+            "fileSizeMB": round(file_size_mb, 1),
+            "detections": all_detections,
+            "summary": summary,
+            "annotatedVideoUrl": f"/processed-video/{processed_filename}",
+            "originalVideoUrl": f"/processed-video/{processed_filename}" if original_video_base64 is None else None,
+            "originalVideo": f"data:video/mp4;base64,{original_video_base64}" if original_video_base64 else None,
+            "videoId": video_id,
+            "processingStats": {
+                "uniqueClasses": len(class_counts),
+                "detectionRate": round(detection_rate, 1),
+                "avgDetectionsPerFrame": round(avg_detections_per_frame, 2),
+                "framesWithDetections": frames_with_detections
+            }
+        })
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Video processing error: {e}")
+        raise HTTPException(status_code=500, detail=f"Video processing failed: {str(e)}")
+    finally:
+        # Cleanup temporary files
+        if temp_input_path and os.path.exists(temp_input_path):
+            try:
+                os.unlink(temp_input_path)
+            except Exception as e:
+                logger.warning(f"Could not cleanup temp input file: {e}")
+        if temp_output_path and os.path.exists(temp_output_path):
+            try:
+                os.unlink(temp_output_path)
+            except Exception as e:
+                logger.warning(f"Could not cleanup temp output file: {e}")
 
 if __name__ == "__main__":
     import uvicorn

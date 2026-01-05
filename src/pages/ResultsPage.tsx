@@ -344,6 +344,18 @@ export default function ResultsPage() {
                           <span>{currentResult.processedFrames}</span>
                         </div>
                         <div className="flex justify-between">
+                          <span className="text-muted-foreground">Frames w/ Detections</span>
+                          <span>{currentResult.framesWithDetections || 'N/A'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Detection Rate</span>
+                          <span>{currentResult.detectionRate || 0}%</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Avg/Frame</span>
+                          <span>{currentResult.avgDetectionsPerFrame || 0}</span>
+                        </div>
+                        <div className="flex justify-between">
                           <span className="text-muted-foreground">Duration</span>
                           <span>{currentResult.duration}s</span>
                         </div>
@@ -355,6 +367,12 @@ export default function ResultsPage() {
                           <span className="text-muted-foreground">FPS</span>
                           <span>{currentResult.fps}</span>
                         </div>
+                        {currentResult.fileSizeMB && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">File Size</span>
+                            <span>{currentResult.fileSizeMB} MB</span>
+                          </div>
+                        )}
                       </>
                     )}
                   </CardContent>

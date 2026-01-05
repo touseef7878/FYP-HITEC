@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import {
@@ -11,6 +11,7 @@ import {
   Loader2,
   FileUp,
   Settings,
+  Play,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -77,6 +78,26 @@ export default function UploadPage() {
   const [backendStatus, setBackendStatus] = useState<"unknown" | "online" | "offline">("unknown");
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  // Monitor file completion status
+  useEffect(() => {
+    if (files.length > 0 && isProcessing) {
+      const allComplete = files.every(f => f.status === "complete" || f.status === "error");
+      const hasSuccessful = files.some(f => f.status === "complete");
+      
+      if (allComplete && hasSuccessful && !isComplete) {
+        // Force completion state if all files are done but UI hasn't updated
+        setTimeout(() => {
+          if (isProcessing && !isComplete) {
+            addLog("🔄 Forcing completion state update...");
+            setIsProcessing(false);
+            setIsComplete(true);
+            setProcessingProgress(100);
+          }
+        }, 1000);
+      }
+    }
+  }, [files, isProcessing, isComplete]);
 
   const addLog = (message: string) => {
     setLogs((prev) => [...prev, `[${new Date().toLocaleTimeString()}] ${message}`]);
@@ -293,6 +314,9 @@ export default function UploadPage() {
         if (isVideo) {
           addLog(`✓ Video processed: ${result.totalDetections} objects detected in ${result.totalFrames} frames`);
           addLog(`📊 Video stats: ${result.duration}s duration, ${result.fps} FPS, ${result.resolution}`);
+          if (result.annotatedVideoUrl) {
+            addLog(`🎬 Processed video available at: ${API_URL}${result.annotatedVideoUrl}`);
+          }
         } else {
           addLog(`✓ Image processed: ${result.totalDetections} objects detected`);
         }
@@ -307,6 +331,9 @@ export default function UploadPage() {
         // Update overall progress
         const overallProgress = (processedTime / totalEstimatedTime) * 100;
         setProcessingProgress(Math.min(100, overallProgress));
+        
+        // Debug log
+        addLog(`📊 File ${i + 1}/${files.length} complete. Overall progress: ${Math.round(overallProgress)}%`);
 
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unknown error";
@@ -329,33 +356,41 @@ export default function UploadPage() {
       // Store results in sessionStorage to pass to results page
       sessionStorage.setItem("detectionResults", JSON.stringify(results));
       
-      // Set completion state FIRST
-      setProcessingProgress(100);
-      setIsComplete(true);
+      // IMMEDIATELY set completion state and stop processing
+      setIsProcessing(false); // Stop processing FIRST
+      setProcessingProgress(100); // Set progress to 100%
+      setIsComplete(true); // Set completion state
       
       // Show completion notification
       toast({
         title: "🎉 Detection Complete!",
         description: `Successfully processed ${results.length} file(s) with ${totalDetections} total detections`,
-        duration: 3000,
+        duration: 5000,
       });
 
-      // Show completion popup for videos
+      // Show completion popup for videos with direct access
       const hasVideo = results.some(r => r.annotatedVideo || r.annotatedVideoUrl);
       if (hasVideo) {
+        const videoResult = results.find(r => r.annotatedVideoUrl);
+        if (videoResult?.annotatedVideoUrl) {
+          addLog(`🎬 Direct video link: ${API_URL}${videoResult.annotatedVideoUrl}`);
+        }
+        
         toast({
           title: "🎬 Video Processing Complete!",
-          description: "Your annotated video with frame-by-frame detections is ready to view",
-          duration: 4000,
+          description: "Click 'View Results Now' or wait for automatic redirect",
+          duration: 6000,
         });
       }
 
-      // Navigate to results after showing completion
+      // Navigate to results after showing completion (longer delay to show completion state)
       setTimeout(() => {
-        addLog("🚀 Redirecting to results...");
-        setIsProcessing(false); // Clear processing state just before navigation
+        addLog("🚀 Auto-redirecting to results...");
+        setIsComplete(false); // Clear completion state
+        setProcessingProgress(0); // Reset progress
+        setEstimatedTime(null); // Clear estimated time
         navigate("/results");
-      }, 3000); // Increased delay to show completion state
+      }, 5000); // Increased delay to show completion state longer
     } else {
       setIsProcessing(false);
       setIsComplete(false);
@@ -593,15 +628,67 @@ export default function UploadPage() {
                       className={`h-2 ${isComplete ? 'bg-success/20' : ''}`}
                     />
                     {isComplete && (
-                      <div className="flex items-center gap-2 text-success text-sm">
-                        <CheckCircle className="h-4 w-4" />
-                        All files processed successfully! Redirecting to results...
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 text-success text-sm">
+                          <CheckCircle className="h-4 w-4" />
+                          All files processed successfully! Redirecting to results...
+                        </div>
+                        {/* Show direct video links if available */}
+                        {(() => {
+                          const storedResults = sessionStorage.getItem("detectionResults");
+                          if (storedResults) {
+                            try {
+                              const results = JSON.parse(storedResults);
+                              const videoResults = results.filter((r: any) => r.annotatedVideoUrl);
+                              if (videoResults.length > 0) {
+                                return (
+                                  <div className="mt-3 p-3 bg-muted/30 rounded-lg">
+                                    <p className="text-sm font-medium mb-2">🎬 Processed Videos:</p>
+                                    {videoResults.map((result: any, index: number) => (
+                                      <div key={index} className="flex items-center justify-between text-sm">
+                                        <span className="truncate mr-2">{result.filename}</span>
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          onClick={() => window.open(`${API_URL}${result.annotatedVideoUrl}`, '_blank')}
+                                        >
+                                          <Play className="h-3 w-3 mr-1" />
+                                          View
+                                        </Button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                );
+                              }
+                            } catch (e) {
+                              console.error('Error parsing results:', e);
+                            }
+                          }
+                          return null;
+                        })()}
                       </div>
                     )}
                     {isProcessing && !isComplete && (
-                      <div className="flex items-center gap-2 text-primary text-sm">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Processing files... Please wait
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 text-primary text-sm">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Processing files... Please wait
+                        </div>
+                        {/* Manual completion button if processing seems stuck */}
+                        {processingProgress >= 95 && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              addLog("🔄 Manual completion triggered...");
+                              setIsProcessing(false);
+                              setIsComplete(true);
+                              setProcessingProgress(100);
+                            }}
+                          >
+                            Complete Processing
+                          </Button>
+                        )}
                       </div>
                     )}
                   </CardContent>
@@ -666,6 +753,25 @@ export default function UploadPage() {
                 </>
               )}
             </Button>
+            
+            {/* View Results Button - shows when processing is complete */}
+            {isComplete && (
+              <Button
+                variant="secondary"
+                size="lg"
+                onClick={() => {
+                  setIsProcessing(false);
+                  setIsComplete(false);
+                  setProcessingProgress(0);
+                  setEstimatedTime(null);
+                  navigate("/results");
+                }}
+              >
+                <Play className="mr-2 h-5 w-5" />
+                View Results Now
+              </Button>
+            )}
+            
             <Button
               variant="outline"
               size="lg"

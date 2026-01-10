@@ -12,6 +12,7 @@ import {
   FileUp,
   Settings,
   Play,
+  Eye,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,6 +21,7 @@ import { PageTransition } from "@/components/layout/PageTransition";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 import { Slider } from "@/components/ui/slider";
 import {
   Collapsible,
@@ -56,8 +58,8 @@ interface DetectionResult {
   originalImage?: string;
   annotatedVideo?: string;
   originalVideo?: string;
-  annotatedVideoUrl?: string;  // New URL-based field
-  originalVideoUrl?: string;   // New URL-based field
+  annotatedVideoUrl?: string;
+  originalVideoUrl?: string;
   totalFrames?: number;
   processedFrames?: number;
   fps?: number;
@@ -78,6 +80,7 @@ export default function UploadPage() {
   const [backendStatus, setBackendStatus] = useState<"unknown" | "online" | "offline">("unknown");
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { token } = useAuth();
 
   // Monitor file completion status
   useEffect(() => {
@@ -265,11 +268,19 @@ export default function UploadPage() {
 
         const endpoint = isVideo ? "/detect-video" : "/detect";
         
+        // Check if user is authenticated
+        if (!token) {
+          throw new Error("Not authenticated. Please login first.");
+        }
+        
         const startTime = Date.now();
         const response = await fetch(
           `${API_URL}${endpoint}?confidence=${confidence / 100}`,
           {
             method: "POST",
+            headers: {
+              'Authorization': `Bearer ${token}`,
+            },
             body: formData,
           }
         );
@@ -305,6 +316,20 @@ export default function UploadPage() {
 
         const result = await response.json();
         clearInterval(progressInterval);
+        
+        // Auto-generate analytics after successful detection
+        try {
+          await fetch(`${API_URL}/api/analytics/generate`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+            },
+          });
+          addLog(`📊 Analytics updated automatically`);
+        } catch (analyticsError) {
+          console.warn('Failed to generate analytics:', analyticsError);
+          addLog(`⚠️ Analytics update failed (non-critical)`);
+        }
         
         const actualTime = (Date.now() - startTime) / 1000;
         processedTime += actualTime;
@@ -649,58 +674,6 @@ export default function UploadPage() {
                           <CheckCircle className="h-4 w-4" />
                           All files processed successfully! Redirecting to results...
                         </div>
-                        {/* Show direct video links if available */}
-                        {(() => {
-                          const storedResults = sessionStorage.getItem("detectionResults");
-                          if (storedResults) {
-                            try {
-                              const results = JSON.parse(storedResults);
-                              const videoResults = results.filter((r: any) => r.annotatedVideoUrl);
-                              if (videoResults.length > 0) {
-                                return (
-                                  <div className="mt-3 space-y-3">
-                                    {/* File Saving Status */}
-                                    <div className="p-3 bg-success/10 border border-success/20 rounded-lg">
-                                      <div className="flex items-center gap-2 text-success text-sm font-medium mb-2">
-                                        <CheckCircle className="h-4 w-4" />
-                                        💾 Files Saved Successfully
-                                      </div>
-                                      <p className="text-xs text-muted-foreground">
-                                        Processed videos saved to: <code className="bg-muted px-1 rounded">backend/processed_videos/</code>
-                                      </p>
-                                    </div>
-                                    
-                                    {/* Video Access */}
-                                    <div className="p-3 bg-muted/30 rounded-lg">
-                                      <p className="text-sm font-medium mb-2">🎬 Processed Videos:</p>
-                                      {videoResults.map((result: any, index: number) => (
-                                        <div key={index} className="flex items-center justify-between text-sm mb-2 last:mb-0">
-                                          <div className="flex-1 min-w-0">
-                                            <p className="truncate mr-2 font-medium">{result.filename}</p>
-                                            <p className="text-xs text-muted-foreground">
-                                              📁 processed_{result.videoId}.mp4
-                                            </p>
-                                          </div>
-                                          <Button
-                                            size="sm"
-                                            variant="outline"
-                                            onClick={() => window.open(`${API_URL}${result.annotatedVideoUrl}`, '_blank')}
-                                          >
-                                            <Play className="h-3 w-3 mr-1" />
-                                            View
-                                          </Button>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                );
-                              }
-                            } catch (e) {
-                              console.error('Error parsing results:', e);
-                            }
-                          }
-                          return null;
-                        })()}
                       </div>
                     )}
                     {isProcessing && !isComplete && (
@@ -709,54 +682,8 @@ export default function UploadPage() {
                           <Loader2 className="h-4 w-4 animate-spin" />
                           Processing files... Please wait
                         </div>
-                        {/* Manual completion button if processing seems stuck */}
-                        {processingProgress >= 95 && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              addLog("🔄 Manual completion triggered...");
-                              setIsProcessing(false);
-                              setIsComplete(true);
-                              setProcessingProgress(100);
-                            }}
-                          >
-                            Complete Processing
-                          </Button>
-                        )}
                       </div>
                     )}
-                  </CardContent>
-                </Card>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Processing Logs */}
-          <AnimatePresence>
-            {logs.length > 0 && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                className="mb-6"
-              >
-                <Card className="glass-card">
-                  <CardHeader>
-                    <CardTitle className="text-lg">Processing Logs</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="bg-muted/50 rounded-lg p-4 font-mono text-sm max-h-48 overflow-y-auto">
-                      {logs.map((log, index) => (
-                        <motion.div
-                          key={index}
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          className="text-muted-foreground"
-                        >
-                          {log}
-                        </motion.div>
-                      ))}
-                    </div>
                   </CardContent>
                 </Card>
               </motion.div>
@@ -794,34 +721,28 @@ export default function UploadPage() {
               <Button
                 variant="secondary"
                 size="lg"
-                onClick={() => {
-                  setIsProcessing(false);
-                  setIsComplete(false);
-                  setProcessingProgress(0);
-                  setEstimatedTime(null);
-                  navigate("/results");
-                }}
+                onClick={() => navigate("/results")}
               >
-                <Play className="mr-2 h-5 w-5" />
+                <Eye className="mr-2 h-5 w-5" />
                 View Results Now
               </Button>
             )}
             
-            <Button
-              variant="outline"
-              size="lg"
-              onClick={() => {
-                setFiles([]);
-                setLogs([]);
-                setIsComplete(false);
-                setIsProcessing(false);
-                setProcessingProgress(0);
-                setEstimatedTime(null);
-              }}
-              disabled={isProcessing}
-            >
-              Clear All
-            </Button>
+            {files.length > 0 && !isProcessing && !isComplete && (
+              <Button
+                variant="outline"
+                size="lg"
+                onClick={() => {
+                  setFiles([]);
+                  setLogs([]);
+                  setEstimatedTime(null);
+                  setProcessingProgress(0);
+                }}
+              >
+                <X className="mr-2 h-5 w-5" />
+                Clear All
+              </Button>
+            )}
           </div>
         </div>
       </PageTransition>

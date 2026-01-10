@@ -40,19 +40,25 @@ export default function HistoryPage() {
 
   // Load history data
   useEffect(() => {
-    const loadHistoryData = () => {
+    const loadHistoryData = async () => {
       try {
-        const history = dataService.getHistory();
+        setIsLoading(true);
+        const history = await dataService.getHistory();
         setHistoryData(history);
       } catch (error) {
         console.error('Error loading history data:', error);
+        toast({
+          title: "Error Loading History",
+          description: "Failed to load detection history. Please try again.",
+          variant: "destructive",
+        });
       } finally {
         setIsLoading(false);
       }
     };
 
     loadHistoryData();
-  }, []);
+  }, [toast]);
 
   const filteredData = historyData.filter((item) => {
     const matchesSearch = item.filename
@@ -100,14 +106,23 @@ export default function HistoryPage() {
     });
   };
 
-  const handleClearAll = () => {
-    setHistoryData([]);
-    localStorage.removeItem('detectionHistory');
-    
-    toast({
-      title: "History Cleared",
-      description: "All detection history has been cleared",
-    });
+  const handleClearAll = async () => {
+    try {
+      await dataService.clearAllData();
+      setHistoryData([]);
+      
+      toast({
+        title: "History Cleared",
+        description: "All detection history has been cleared",
+      });
+    } catch (error) {
+      console.error('Error clearing history:', error);
+      toast({
+        title: "Error",
+        description: "Failed to clear history. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   if (isLoading) {
@@ -143,48 +158,6 @@ export default function HistoryPage() {
               Browse and manage your past detection results
             </p>
           </div>
-
-          {/* Filters */}
-          <Card className="glass-card mb-6">
-            <CardContent className="py-4">
-              <div className="flex flex-col sm:flex-row gap-4">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search by filename..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <Select value={typeFilter} onValueChange={setTypeFilter}>
-                    <SelectTrigger className="w-[130px]">
-                      <Filter className="h-4 w-4 mr-2" />
-                      <SelectValue placeholder="Type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Types</SelectItem>
-                      <SelectItem value="image">Images</SelectItem>
-                      <SelectItem value="video">Videos</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Select value={dateFilter} onValueChange={setDateFilter}>
-                    <SelectTrigger className="w-[130px]">
-                      <Calendar className="h-4 w-4 mr-2" />
-                      <SelectValue placeholder="Date" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Time</SelectItem>
-                      <SelectItem value="today">Today</SelectItem>
-                      <SelectItem value="week">This Week</SelectItem>
-                      <SelectItem value="month">This Month</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
 
           {/* Filters */}
           <Card className="glass-card mb-6">

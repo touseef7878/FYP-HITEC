@@ -35,19 +35,78 @@ import {
 export default function DashboardPage() {
   const [analyticsData, setAnalyticsData] = useState<AnalyticsData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
   const { toast } = useToast();
 
-  const loadAnalyticsData = () => {
+  // Monitor network status
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      toast({
+        title: "Connection Restored",
+        description: "Refreshing analytics data...",
+      });
+      loadAnalyticsData();
+    };
+    
+    const handleOffline = () => {
+      setIsOnline(false);
+      toast({
+        title: "Connection Lost",
+        description: "Using cached data. Some features may be limited.",
+        variant: "destructive",
+      });
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [toast]);
+
+  const loadAnalyticsData = async () => {
     try {
-      const data = dataService.getAnalytics();
+      // Always generate fresh analytics first
+      await dataService.generateAnalytics();
+      const data = await dataService.getAnalytics();
       setAnalyticsData(data);
     } catch (error) {
       console.error('Error loading analytics data:', error);
-      toast({
-        title: "Error Loading Data",
-        description: "Failed to load analytics data",
-        variant: "destructive",
-      });
+      
+      // Handle different error types
+      if (error instanceof Error) {
+        if (error.message === 'Authentication expired') {
+          toast({
+            title: "Session Expired",
+            description: "Please log in again to continue",
+            variant: "destructive",
+          });
+          return; // Don't show generic error if redirecting to login
+        }
+      }
+      
+      // For network errors or other issues, try to load cached data
+      try {
+        const cachedData = await dataService.getAnalytics();
+        setAnalyticsData(cachedData);
+        
+        // Show a warning toast about using cached data
+        toast({
+          title: "Using Cached Data",
+          description: "Unable to fetch latest data. Showing cached analytics.",
+          variant: "default",
+        });
+      } catch (fallbackError) {
+        console.error('Fallback data loading failed:', fallbackError);
+        toast({
+          title: "Error Loading Data",
+          description: "Failed to load analytics data. Please try refreshing the page.",
+          variant: "destructive",
+        });
+      }
     } finally {
       setIsLoading(false);
     }
@@ -55,11 +114,21 @@ export default function DashboardPage() {
 
   useEffect(() => {
     loadAnalyticsData();
+    
+    // Set up auto-refresh every 30 seconds, but only when online
+    const interval = setInterval(() => {
+      if (navigator.onLine) {
+        loadAnalyticsData();
+      }
+    }, 30000);
+
+    // Cleanup interval on component unmount
+    return () => clearInterval(interval);
   }, []);
 
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     setIsLoading(true);
-    loadAnalyticsData();
+    await loadAnalyticsData();
     toast({
       title: "Data Refreshed",
       description: "Analytics data has been updated",
@@ -158,10 +227,16 @@ export default function DashboardPage() {
             <h1 className="section-header">Analytics Dashboard</h1>
             <p className="text-muted-foreground">
               Real-time insights from marine plastic detection analysis
+              {!isOnline && (
+                <span className="ml-2 inline-flex items-center gap-1 text-warning">
+                  <div className="w-2 h-2 rounded-full bg-warning animate-pulse" />
+                  Offline - Using cached data
+                </span>
+              )}
             </p>
           </div>
-          <Button onClick={handleRefresh} variant="outline">
-            <RefreshCw className="h-4 w-4 mr-2" />
+          <Button onClick={handleRefresh} variant="outline" disabled={isLoading}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
         </div>

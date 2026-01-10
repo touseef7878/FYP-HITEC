@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Sun, Moon, Trash2, Info, Monitor, Cpu, Download, Upload, RefreshCw } from "lucide-react";
+import { Sun, Moon, Trash2, Info, Monitor, Cpu, Download, Upload, RefreshCw, LogOut, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
@@ -9,19 +9,50 @@ import { PageTransition } from "@/components/layout/PageTransition";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { useTheme } from "@/hooks/useTheme";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 import { dataService } from "@/lib/dataService";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 
 export default function SettingsPage() {
   const { theme, toggleTheme } = useTheme();
   const { toast } = useToast();
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [isClearing, setIsClearing] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [stats, setStats] = useState({
+    detections: 0,
+    totalObjects: 0,
+    hotspots: 0,
+  });
+
+  // Load data stats
+  useEffect(() => {
+    const loadStats = async () => {
+      try {
+        const history = await dataService.getHistory();
+        const analytics = await dataService.getAnalytics();
+        const hotspots = dataService.getHotspots();
+        
+        setStats({
+          detections: history.length,
+          totalObjects: analytics.stats.totalDetections,
+          hotspots: hotspots.length,
+        });
+      } catch (error) {
+        console.error('Error loading stats:', error);
+      }
+    };
+
+    loadStats();
+  }, []);
 
   const handleClearHistory = async () => {
     setIsClearing(true);
     
     try {
-      dataService.clearAllData();
+      await dataService.clearAllData();
       
       toast({
         title: "All Data Cleared",
@@ -38,9 +69,9 @@ export default function SettingsPage() {
     }
   };
 
-  const handleExportData = () => {
+  const handleExportData = async () => {
     try {
-      const data = dataService.exportData();
+      const data = await dataService.exportData();
       const blob = new Blob([data], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -99,19 +130,21 @@ export default function SettingsPage() {
     input.click();
   };
 
-  const getDataStats = () => {
-    const history = dataService.getHistory();
-    const analytics = dataService.getAnalytics();
-    const hotspots = dataService.getHotspots();
-    
-    return {
-      detections: history.length,
-      totalObjects: analytics.stats.totalDetections,
-      hotspots: hotspots.length,
-    };
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+    try {
+      await logout();
+      navigate('/auth');
+    } catch (error) {
+      toast({
+        title: "Logout Failed",
+        description: "Failed to logout. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoggingOut(false);
+    }
   };
-
-  const stats = getDataStats();
 
   return (
     <MainLayout>
@@ -123,6 +156,49 @@ export default function SettingsPage() {
               Customize your experience and manage preferences
             </p>
           </div>
+
+          {/* Account Section */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.05 }}
+          >
+            <Card className="glass-card mb-6">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <User className="h-5 w-5 text-primary" />
+                  Account
+                </CardTitle>
+                <CardDescription>
+                  Manage your account settings
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between p-4 bg-muted/30 rounded-lg">
+                  <div>
+                    <p className="font-medium">{user?.username}</p>
+                    <p className="text-sm text-muted-foreground">{user?.email || 'No email set'}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Role: <span className="font-medium text-primary">{user?.role}</span>
+                    </p>
+                  </div>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={handleLogout}
+                    disabled={isLoggingOut}
+                  >
+                    {isLoggingOut ? (
+                      <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <LogOut className="h-4 w-4 mr-2" />
+                    )}
+                    {isLoggingOut ? "Logging out..." : "Logout"}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
 
           {/* Appearance */}
           <motion.div

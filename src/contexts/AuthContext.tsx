@@ -1,0 +1,325 @@
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { useToast } from '@/hooks/use-toast';
+
+interface User {
+  id: number;
+  username: string;
+  email: string;
+  role: 'USER' | 'ADMIN';
+  created_at: string;
+  last_login?: string;
+  is_active: boolean;
+  profile_data: Record<string, any>;
+}
+
+interface AuthContextType {
+  user: User | null;
+  token: string | null;
+  isLoading: boolean;
+  isAuthenticated: boolean;
+  isAdmin: boolean;
+  login: (username: string, password: string) => Promise<boolean>;
+  register: (username: string, email: string, password: string) => Promise<boolean>;
+  logout: () => void;
+  updateProfile: (profileData: Record<string, any>) => Promise<boolean>;
+  refreshUser: () => Promise<void>;
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+const API_URL = 'http://localhost:8000';
+
+interface AuthProviderProps {
+  children: ReactNode;
+}
+
+export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
+  const [user, setUser] = useState<User | null>(null);
+  const [token, setToken] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const { toast } = useToast();
+
+  // Initialize auth state from localStorage
+  useEffect(() => {
+    const initAuth = async () => {
+      try {
+        const storedToken = localStorage.getItem('auth_token');
+        const storedUser = localStorage.getItem('auth_user');
+
+        if (storedToken && storedUser) {
+          setToken(storedToken);
+          setUser(JSON.parse(storedUser));
+          
+          // Verify token is still valid
+          await refreshUser();
+        }
+      } catch (error) {
+        console.error('Auth initialization failed:', error);
+        // Clear invalid data
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('auth_user');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    initAuth();
+  }, []);
+
+  const login = async (username: string, password: string): Promise<boolean> => {
+    try {
+      setIsLoading(true);
+      
+      const response = await fetch(`${API_URL}/api/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ username, password }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Login failed');
+      }
+
+      const data = await response.json();
+      
+      // Store auth data
+      setToken(data.access_token);
+      setUser(data.user);
+      localStorage.setItem('auth_token', data.access_token);
+      localStorage.setItem('auth_user', JSON.stringify(data.user));
+
+      toast({
+        title: "Welcome back!",
+        description: `Logged in as ${data.user.username}`,
+      });
+
+      return true;
+    } catch (error) {
+      console.error('Login failed:', error);
+      toast({
+        title: "Login failed",
+        description: error instanceof Error ? error.message : "Please check your credentials",
+        variant: "destructive",
+      });
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const register = async (username: string, email: string, password: string): Promise<boolean> => {
+    try {
+      setIsLoading(true);
+      
+      const response = await fetch(`${API_URL}/api/auth/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ username, email, password }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Registration failed');
+      }
+
+      const data = await response.json();
+      
+      // Store auth data
+      setToken(data.access_token);
+      setUser(data.user);
+      localStorage.setItem('auth_token', data.access_token);
+      localStorage.setItem('auth_user', JSON.stringify(data.user));
+
+      toast({
+        title: "Welcome!",
+        description: `Account created successfully for ${data.user.username}`,
+      });
+
+      return true;
+    } catch (error) {
+      console.error('Registration failed:', error);
+      toast({
+        title: "Registration failed",
+        description: error instanceof Error ? error.message : "Please try again",
+        variant: "destructive",
+      });
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const logout = async () => {
+    try {
+      if (token) {
+        // Call logout endpoint to revoke token
+        await fetch(`${API_URL}/api/auth/logout`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        });
+      }
+    } catch (error) {
+      console.error('Logout API call failed:', error);
+    } finally {
+      // Clear local state regardless of API call success
+      setUser(null);
+      setToken(null);
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('auth_user');
+      
+      // Clear all user-specific data to prevent mixed data between users
+      localStorage.removeItem('detectionHistory');
+      localStorage.removeItem('analyticsData');
+      localStorage.removeItem('pollutionHotspots');
+      localStorage.removeItem('generatedReports');
+      sessionStorage.removeItem('detectionResults');
+      
+      toast({
+        title: "Logged out",
+        description: "You have been logged out successfully",
+      });
+    }
+  };
+
+  const updateProfile = async (profileData: Record<string, any>): Promise<boolean> => {
+    try {
+      if (!token) return false;
+
+      const response = await fetch(`${API_URL}/api/user/profile`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ profile_data: profileData }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Profile update failed');
+      }
+
+      // Refresh user data
+      await refreshUser();
+
+      toast({
+        title: "Profile updated",
+        description: "Your profile has been updated successfully",
+      });
+
+      return true;
+    } catch (error) {
+      console.error('Profile update failed:', error);
+      toast({
+        title: "Update failed",
+        description: "Failed to update profile",
+        variant: "destructive",
+      });
+      return false;
+    }
+  };
+
+  const refreshUser = async (): Promise<void> => {
+    try {
+      if (!token) return;
+
+      const response = await fetch(`${API_URL}/api/auth/me`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          // Token is invalid/expired, logout user
+          await logout();
+          return;
+        }
+        throw new Error('Token validation failed');
+      }
+
+      const userData = await response.json();
+      setUser(userData);
+      localStorage.setItem('auth_user', JSON.stringify(userData));
+    } catch (error) {
+      console.error('User refresh failed:', error);
+      // Token is invalid, logout
+      await logout();
+    }
+  };
+
+  const value: AuthContextType = {
+    user,
+    token,
+    isLoading,
+    isAuthenticated: !!user && !!token,
+    isAdmin: user?.role === 'ADMIN',
+    login,
+    register,
+    logout,
+    updateProfile,
+    refreshUser,
+  };
+
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+export const useAuth = (): AuthContextType => {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+};
+
+// Higher-order component for protected routes
+export const withAuth = <P extends object>(
+  Component: React.ComponentType<P>,
+  requireAdmin = false
+) => {
+  return (props: P) => {
+    const { isAuthenticated, isAdmin, isLoading } = useAuth();
+
+    if (isLoading) {
+      return (
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+        </div>
+      );
+    }
+
+    if (!isAuthenticated) {
+      return (
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="text-center">
+            <h2 className="text-2xl font-bold mb-4">Authentication Required</h2>
+            <p className="text-gray-600">Please log in to access this page.</p>
+          </div>
+        </div>
+      );
+    }
+
+    if (requireAdmin && !isAdmin) {
+      return (
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="text-center">
+            <h2 className="text-2xl font-bold mb-4">Access Denied</h2>
+            <p className="text-gray-600">Admin privileges required.</p>
+          </div>
+        </div>
+      );
+    }
+
+    return <Component {...props} />;
+  };
+};

@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Frontend Integration Test</title>
+    <script>
+        // Test frontend integration scenarios
+        async function testFrontendIntegration() {
+            console.log('🔍 Testing Frontend Integration...');
+            
+            const baseUrl = 'http://localhost:8000';
+            
+            try {
+                // Test 1: Login
+                console.log('1. Testing Login...');
+                const loginResponse = await fetch(`${baseUrl}/api/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        username: 'admin',
+                        password: 'admin123'
+                    })
+                });
+                
+                if (loginResponse.ok) {
+                    const loginData = await loginResponse.json();
+                    const token = loginData.access_token;
+                    console.log('✅ Login successful');
+                    
+                    // Test 2: Analytics API
+                    console.log('2. Testing Analytics API...');
+                    const analyticsResponse = await fetch(`${baseUrl}/api/analytics?days=30`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    
+                    if (analyticsResponse.ok) {
+                        const analyticsData = await analyticsResponse.json();
+                        console.log('✅ Analytics API working:', analyticsData.analytics.stats);
+                    } else {
+                        console.error('❌ Analytics API failed:', analyticsResponse.status);
+                    }
+                    
+                    // Test 3: Generate Analytics
+                    console.log('3. Testing Generate Analytics...');
+                    const generateResponse = await fetch(`${baseUrl}/api/analytics/generate`, {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    
+                    if (generateResponse.ok) {
+                        console.log('✅ Generate Analytics working');
+                    } else {
+                        console.error('❌ Generate Analytics failed:', generateResponse.status);
+                    }
+                    
+                    // Test 4: Report Generation
+                    console.log('4. Testing Report Generation...');
+                    const reportTypes = ['detection', 'prediction', 'both'];
+                    
+                    for (const reportType of reportTypes) {
+                        const reportResponse = await fetch(`${baseUrl}/api/reports/generate`, {
+                            method: 'POST',
+                            headers: { 
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${token}` 
+                            },
+                            body: JSON.stringify({
+                                report_type: reportType,
+                                title: `Test ${reportType} Report`,
+                                date_range_days: 30
+                            })
+                        });
+                        
+                        if (reportResponse.ok) {
+                            const reportData = await reportResponse.json();
+                            console.log(`✅ ${reportType} report generated:`, reportData.report.id);
+                        } else {
+                            const errorData = await reportResponse.json();
+                            console.error(`❌ ${reportType} report failed:`, errorData.detail);
+                        }
+                    }
+                    
+                    // Test 5: Get Reports List
+                    console.log('5. Testing Reports List...');
+                    const reportsResponse = await fetch(`${baseUrl}/api/reports`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    
+                    if (reportsResponse.ok) {
+                        const reportsData = await reportsResponse.json();
+                        console.log('✅ Reports list working:', reportsData.reports.length, 'reports');
+                    } else {
+                        console.error('❌ Reports list failed:', reportsResponse.status);
+                    }
+                    
+                } else {
+                    console.error('❌ Login failed:', loginResponse.status);
+                }
+                
+            } catch (error) {
+                console.error('❌ Test error:', error);
+            }
+            
+            console.log('🏁 Frontend integration test completed');
+        }
+        
+        // Auto-refresh simulation test
+        function testAutoRefresh() {
+            console.log('🔄 Testing Auto-Refresh Simulation...');
+            
+            let refreshCount = 0;
+            const maxRefreshes = 3;
+            
+            const interval = setInterval(async () => {
+                refreshCount++;
+                console.log(`Refresh ${refreshCount}/${maxRefreshes}...`);
+                
+                try {
+                    const response = await fetch('http://localhost:8000/api/analytics?days=30', {
+                        headers: { 'Authorization': `Bearer ${localStorage.getItem('test_token')}` }
+                    });
+                    
+                    if (response.ok) {
+                        console.log('✅ Auto-refresh successful');
+                    } else {
+                        console.log('⚠️ Auto-refresh failed (expected if not logged in)');
+                    }
+                } catch (error) {
+                    console.log('⚠️ Auto-refresh error (expected):', error.message);
+                }
+                
+                if (refreshCount >= maxRefreshes) {
+                    clearInterval(interval);
+                    console.log('🔄 Auto-refresh test completed');
+                }
+            }, 2000); // Every 2 seconds for testing
+        }
+        
+        // Run tests when page loads
+        window.onload = function() {
+            testFrontendIntegration();
+            setTimeout(testAutoRefresh, 5000); // Start auto-refresh test after 5 seconds
+        };
+    </script>
+</head>
+<body>
+    <h1>Frontend Integration Test</h1>
+    <p>Check the browser console for test results...</p>
+    <p>This page tests:</p>
+    <ul>
+        <li>✅ API Authentication</li>
+        <li>✅ Analytics Data Loading</li>
+        <li>✅ Analytics Generation</li>
+        <li>✅ Report Generation (All Types)</li>
+        <li>✅ Reports List</li>
+        <li>✅ Auto-Refresh Simulation</li>
+    </ul>
+</body>
+</html>

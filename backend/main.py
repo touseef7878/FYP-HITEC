@@ -183,6 +183,21 @@ processed_videos_path = os.path.join(os.path.dirname(__file__), "processed_video
 os.makedirs(processed_videos_path, exist_ok=True)
 app.mount("/processed-video", StaticFiles(directory=processed_videos_path), name="processed_videos")
 
+# Root endpoint
+@app.get("/")
+async def root():
+    """Root endpoint - API information"""
+    return {
+        "message": "Marine Plastic Detection API",
+        "version": "1.0.0",
+        "status": "running",
+        "endpoints": {
+            "health": "/health",
+            "docs": "/docs",
+            "api": "/api/*"
+        }
+    }
+
 # Favicon endpoint
 @app.get("/favicon.ico")
 async def favicon():
@@ -2625,7 +2640,7 @@ async def get_report(
 @app.get("/api/history")
 async def get_user_history(
     limit: int = 100,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_active_user)
 ):
     """Get user's detection history"""
     try:

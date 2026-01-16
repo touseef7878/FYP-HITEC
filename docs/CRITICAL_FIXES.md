@@ -72,11 +72,12 @@ sessionStorage.removeItem('detectionResults');
 
 ## Verification
 
-### Test Script
-Created `test_fixes.py` to verify both fixes:
-1. **User Isolation Test**: Verifies that different users see only their own detection history
-2. **LSTM Report Test**: Verifies that LSTM reports generate correctly after predictions
-3. **Detection Report Test**: Verifies that detection reports still work properly
+### Test Scripts
+Created comprehensive test scripts in `scripts/` directory:
+1. **test_fixes.py**: Verifies user isolation and LSTM report generation
+2. **test_api_endpoints.py**: Tests all major API functionality
+3. **test_lstm_report_fix.py**: Complete LSTM workflow test
+4. **quick_lstm_test.py**: Quick validation after server restart
 
 ### Running Tests
 ```bash
@@ -85,7 +86,7 @@ cd backend
 python main.py
 
 # In another terminal, run tests
-python test_fixes.py
+python scripts/test_fixes.py
 ```
 
 ## Production Readiness Checklist ✅
@@ -125,12 +126,11 @@ python test_fixes.py
    - Enhanced logout function to clear all user-specific localStorage
    - Prevents mixed user data in browser storage
 
-3. **test_fixes.py** (New)
-   - Comprehensive test suite to verify both fixes
-   - Tests user isolation and LSTM report generation
-
-4. **CRITICAL_FIXES_SUMMARY.md** (New)
-   - This documentation file
+3. **scripts/** (New Directory)
+   - test_fixes.py: Comprehensive test suite
+   - test_api_endpoints.py: API endpoint testing
+   - test_lstm_report_fix.py: Complete LSTM workflow test
+   - quick_lstm_test.py: Quick validation test
 
 ## Conclusion
 

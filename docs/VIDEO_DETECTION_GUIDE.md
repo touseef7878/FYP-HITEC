@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Marine Plastic Detection platform now supports **frame-by-frame video detection** using YOLOv12n model. This feature processes videos to detect marine plastic debris and other objects in real-time, providing detailed analytics and annotated output videos.
+The Marine Plastic Detection platform supports **frame-by-frame video detection** using YOLOv12n model. This feature processes videos to detect marine plastic debris and other objects in real-time, providing detailed analytics and annotated output videos.
 
 ## ✨ Features
 
@@ -117,9 +117,6 @@ Process video for object detection
 }
 ```
 
-### GET `/processed-video/{filename}`
-Download processed video files
-
 ## 🔍 Troubleshooting
 
 ### Common Issues
@@ -161,49 +158,6 @@ Download processed video files
 - Ensure good lighting in videos
 - Use stable camera footage
 
-## 📝 Example Usage
-
-### Python API Client
-```python
-import requests
-
-# Upload and process video
-with open('marine_video.mp4', 'rb') as video_file:
-    files = {'file': ('marine_video.mp4', video_file, 'video/mp4')}
-    params = {'confidence': 0.25}
-    
-    response = requests.post(
-        'http://localhost:8000/detect-video',
-        files=files,
-        params=params
-    )
-    
-    if response.status_code == 200:
-        result = response.json()
-        print(f"Detected {result['totalDetections']} objects")
-        print(f"Processed {result['totalFrames']} frames")
-        print(f"Detection rate: {result['detectionRate']}%")
-    else:
-        print(f"Error: {response.text}")
-```
-
-### JavaScript/Frontend
-```javascript
-const formData = new FormData();
-formData.append('file', videoFile);
-
-const response = await fetch(
-  'http://localhost:8000/detect-video?confidence=0.25',
-  {
-    method: 'POST',
-    body: formData
-  }
-);
-
-const result = await response.json();
-console.log('Detection results:', result);
-```
-
 ## 🎯 Best Practices
 
 ### Video Quality
@@ -223,23 +177,6 @@ console.log('Detection results:', result);
 3. Process longer videos once settings are optimized
 4. Review results and download annotated videos
 5. Use analytics for insights and reporting
-
-## 🔮 Future Enhancements
-
-- **Real-time streaming**: Live video stream processing
-- **Batch processing**: Multiple video processing
-- **Custom models**: Support for custom YOLO models
-- **Cloud processing**: Distributed video processing
-- **Advanced analytics**: Temporal tracking, object trajectories
-- **Export formats**: Multiple output video formats
-
-## 📞 Support
-
-For issues or questions:
-1. Check the troubleshooting section above
-2. Review backend logs for detailed error messages
-3. Ensure all dependencies are installed correctly
-4. Test with sample videos first
 
 ---
 

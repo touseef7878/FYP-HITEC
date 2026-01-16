@@ -1,13 +1,14 @@
 # 🌊 Marine Detection System - AI-Powered Ocean Protection Platform
 
-A comprehensive, production-ready web application for marine plastic pollution detection and environmental trend analysis. Features advanced YOLO object detection, LSTM-based pollution prediction, and a complete user management system with admin dashboard.
+A comprehensive, production-ready full-stack web application for marine plastic pollution detection and environmental trend analysis. Features advanced YOLOv12n object detection, LSTM-based pollution prediction, and a complete user management system with admin dashboard.
 
 ## 🎯 System Overview
 
 **Scale**: Designed for 1-5 concurrent users  
-**Deployment**: Local machine deployment with no cloud dependencies  
+**Deployment**: Local/cloud deployment with no external dependencies  
 **Database**: SQLite with complete data persistence  
-**Authentication**: JWT-based with role-based access control  
+**Authentication**: JWT-based with role-based access control (USER/ADMIN)  
+**Tech Stack**: React 18 + TypeScript + FastAPI + TensorFlow + YOLOv12n  
 
 ### Core Modules
 
@@ -110,261 +111,142 @@ predictions, reports, analytics_data, logs, sessions
 -- Full ACID compliance
 ```
 
-## 🚀 Installation & Setup
+## 🚀 Quick Start
 
 ### Prerequisites
 - **Python 3.8+** with pip
 - **Node.js 16+** with npm
 - **YOLOv12n model weights** (`best.pt` file)
 
-### Step 1: Database Initialization
+### Installation (5 minutes)
+
 ```bash
+# 1. Clone repository
+git clone <your-repo-url>
+cd marine-detection-system
+
+# 2. Backend setup
 cd backend
-python init_db.py
-```
-**Output**: Creates SQLite database with default accounts:
-- Admin: `username='admin'`, `password='admin123'`
-- Demo User: `username='demo_user'`, `password='user123'`
-
-### Step 2: Backend Setup
-```bash
-# Install dependencies
 pip install -r requirements.txt
+python init_db.py
+# Place your best.pt file in backend/weights/
 
-# Add your YOLO model (required)
-mkdir -p weights
-cp /path/to/your/best.pt weights/best.pt
-
-# Start backend server
-python main.py
-```
-**Backend runs on**: http://localhost:8000
-
-### Step 3: Frontend Setup
-```bash
-# Install dependencies (no errors!)
+# 3. Frontend setup
+cd ..
 npm install
 
-# Start development server
+# 4. Start servers (use 2 terminals)
+# Terminal 1:
+cd backend && python main.py
+
+# Terminal 2:
 npm run dev
 ```
-**Frontend runs on**: http://localhost:8080
 
-**Note**: If you encounter any peer dependency warnings, they are safe to ignore. The application is fully tested and functional with React 18.
-
-### Step 4: Access the Application
-- **Main App**: http://localhost:8080
-- **API Documentation**: http://localhost:8000/docs
+### Access Application
+- **Frontend**: http://localhost:8080
+- **API Docs**: http://localhost:8000/docs
 - **Health Check**: http://localhost:8000/health
+
+### Default Credentials
+- **Admin**: `admin` / `admin123`
+- **Demo User**: `demo_user` / `user123`
+
+📖 **Detailed Installation**: See [`docs/INSTALLATION.md`](docs/INSTALLATION.md)
 
 ## 📖 Usage Guide
 
-### For Regular Users
+### 👤 For Regular Users
 
-1. **Registration/Login**
-   - Visit http://localhost:8080/auth
-   - Register new account or use demo credentials
-   - Access protected features after authentication
+**1. Authentication**
+- Register new account or login at `/auth`
+- Access protected features after authentication
 
-2. **Image/Video Detection**
-   - Navigate to Upload page
-   - Drag-drop or select files
-   - Adjust confidence threshold (default: 0.25)
-   - View real-time processing progress
-   - Analyze results with interactive tools
+**2. Detection**
+- Upload images/videos on Upload page
+- Adjust confidence threshold (10-90%)
+- View real-time processing with progress tracking
+- Analyze results with interactive visualizations
 
-3. **View Detection History**
-   - Access History page for past detections
-   - Filter by date, file type, or detection count
-   - Download annotated results
-   - Delete unwanted records
+**3. History & Analytics**
+- View past detections with filtering
+- Track detection trends over time
+- Export data and download annotated results
 
-4. **Analytics Dashboard**
-   - View personal detection statistics
-   - Analyze confidence score distributions
-   - Track detection trends over time
-   - Export data for external analysis
+**4. LSTM Predictions**
+- Select marine region (Pacific, Atlantic, Indian, Mediterranean)
+- Generate 7-90 day pollution forecasts
+- View trend analysis with confidence intervals
 
-5. **Pollution Predictions**
-   - Select marine region (Pacific, Atlantic, etc.)
-   - Choose prediction timeframe (7-90 days)
-   - View trend analysis with confidence intervals
-   - Download prediction reports
+**5. Reports**
+- Generate PDF reports with custom date ranges
+- Download comprehensive detection summaries
 
-6. **Generate Reports**
-   - Create custom PDF reports
-   - Select date ranges and data types
-   - Download comprehensive summaries
-   - Share results with stakeholders
+### 👑 For Administrators
 
-### For Administrators
+**Admin Dashboard** (`/admin`)
+- System statistics and monitoring
+- User management (view, deactivate, roles)
+- System maintenance (backup, cache, optimization)
+- Activity logs and storage analytics
 
-1. **Admin Dashboard Access**
-   - Login with admin credentials
-   - Navigate to `/admin` route
-   - View system-wide statistics
+📖 **Detailed Guides**: See [`docs/`](docs/) directory
 
-2. **User Management**
-   - View all registered users
-   - Deactivate problematic accounts
-   - Monitor user activity logs
-   - Manage user roles and permissions
+## � API Endpoints
 
-3. **System Maintenance**
-   - **Database Backup**: Create automatic backups
-   - **Cache Management**: Clear application cache
-   - **Database Optimization**: Run VACUUM and ANALYZE
-   - **Log Management**: Clean old log entries
-   - **Storage Analytics**: Monitor disk usage
+### Core Endpoints
+- **Authentication**: `/api/auth/*` - Register, login, profile
+- **Detection**: `/detect`, `/detect-video` - Image/video processing
+- **History**: `/api/history` - Detection history
+- **Analytics**: `/api/analytics` - User statistics
+- **LSTM**: `/api/data/*`, `/api/train`, `/api/predict` - Predictions
+- **Reports**: `/api/reports/*` - Report generation
+- **Admin**: `/api/admin/*` - System management
 
-4. **Data Management**
-   - Export system data (JSON format)
-   - Monitor detection statistics
-   - Analyze system performance metrics
-   - Generate administrative reports
-
-## 🔧 API Endpoints
-
-### Authentication
-```bash
-POST /api/auth/register    # User registration
-POST /api/auth/login       # User login
-POST /api/auth/logout      # User logout
-GET  /api/auth/me          # Get current user profile
-```
-
-### Detection
-```bash
-POST /detect               # Image detection
-POST /detect-video         # Video detection
-GET  /api/user/detections  # User's detection history
-DELETE /api/user/detections/{id}  # Delete detection
-```
-
-### LSTM Predictions
-```bash
-GET  /api/data/regions     # Available regions
-POST /api/data/fetch       # Fetch environmental data
-POST /api/train            # Train LSTM model
-POST /api/predict          # Generate predictions
-GET  /api/train/status/{region}  # Training status
-```
-
-### Admin Endpoints
-```bash
-GET  /api/admin/stats      # System statistics
-GET  /api/admin/activity   # Recent activity
-GET  /api/admin/users      # All users
-POST /api/admin/system/{action}  # System actions
-GET  /api/admin/logs       # System logs
-```
-
-### User Management
-```bash
-PUT  /api/user/profile     # Update profile
-POST /api/user/change-password  # Change password
-```
-
-### Reports
-```bash
-POST /api/reports/generate # Generate report
-GET  /api/reports/{id}/download  # Download report
-```
-
-## 🎯 Model Information
-
-### YOLOv12n Detection Classes
-The system detects 22 marine object classes:
-```
-Animals: crab, eel, fish, shells, starfish
-Plants: marine vegetation
-Equipment: ROV (underwater vehicles)
-Trash: bags, bottles, containers, cups, nets, pipes, 
-       ropes, wrappers, tarps, clothing, cans, 
-       branches, unknown debris, wreckage
-```
-
-### LSTM Prediction Features
-- **Input Features**: 10 environmental parameters
-- **Sequence Length**: 30 days of historical data
-- **Regions Supported**: 4 major ocean areas
-- **Prediction Accuracy**: 94%+ validation accuracy
-- **Training Data**: Real + synthetic environmental data
-- **Update Frequency**: Configurable retraining schedule
+📖 **Complete API Reference**: See [`docs/API_DOCUMENTATION.md`](docs/API_DOCUMENTATION.md)
 
 ## 📊 System Specifications
 
-### Performance Metrics
-- **Concurrent Users**: 1-5 users supported
-- **Detection Speed**: ~2-5 seconds per image
+### Performance
+- **Concurrent Users**: 1-5 users
+- **Detection Speed**: 2-5 seconds per image
 - **Video Processing**: Real-time frame analysis
-- **Database Size**: Scales with usage (starts ~120KB)
-- **Storage**: Local file system with automatic cleanup
-- **Memory Usage**: ~500MB-1GB depending on model size
+- **Memory Usage**: 500MB-1GB (model dependent)
 
-### Security Features
+### Security
 - **Password Hashing**: SHA-256 with salt
-- **JWT Tokens**: 24-hour expiration with refresh
-- **Session Management**: Automatic cleanup of expired sessions
+- **JWT Tokens**: 24-hour expiration
+- **Session Management**: Automatic cleanup
 - **Input Validation**: Comprehensive request validation
-- **File Upload Security**: Type and size validation
 - **SQL Injection Protection**: Parameterized queries
 
-## 🔍 Troubleshooting
+### Database Schema
+- **10 Optimized Tables**: users, detections, detection_results, videos, images, predictions, reports, analytics_data, logs, sessions
+- **13 Performance Indexes**: Automatic cleanup and optimization
+- **ACID Compliance**: Full transaction support
 
-### Common Issues
+## 🧪 Testing
 
-1. **Backend Won't Start**
-   ```bash
-   # Check if database exists
-   ls backend/marine_detection.db
-   
-   # If missing, run initialization
-   cd backend && python init_db.py
-   ```
+The application includes comprehensive testing capabilities through the admin dashboard and API health checks.
 
-2. **YOLO Model Not Found**
-   ```bash
-   # Ensure model file exists
-   ls backend/weights/best.pt
-   
-   # Check file permissions
-   chmod 644 backend/weights/best.pt
-   ```
+**Health Check**: http://localhost:8000/health
 
-3. **Frontend Build Errors**
-   ```bash
-   # Clear node modules and reinstall
-   rm -rf node_modules package-lock.json
-   npm install
-   ```
+**API Documentation**: http://localhost:8000/docs (includes interactive testing)
 
-4. **Authentication Issues**
-   ```bash
-   # Reset database with fresh accounts
-   cd backend && python init_db.py
-   ```
+## � Project Structure
 
-### Performance Optimization
+```
+marine-detection-system/
+├── 📂 backend/           # FastAPI backend + ML models
+├── 📂 docs/              # Complete documentation
+├── 📂 public/            # Static assets
+├── 📂 scripts/           # Testing & utility scripts
+├── 📂 src/               # React frontend source
+├── 📄 README.md          # This file
+└── 📄 PROJECT_STRUCTURE.md  # Detailed structure guide
+```
 
-1. **Database Maintenance**
-   ```bash
-   # Use admin dashboard or direct SQL
-   sqlite3 backend/marine_detection.db "VACUUM; ANALYZE;"
-   ```
-
-2. **Cache Management**
-   ```bash
-   # Clear LSTM training cache
-   rm -rf backend/data_cache/*.csv
-   rm -rf backend/models/*.h5
-   ```
-
-3. **Log Cleanup**
-   ```bash
-   # Automatic via admin dashboard
-   # Or manual: DELETE FROM logs WHERE timestamp < date('now', '-30 days')
-   ```
+📖 **Detailed Structure**: See [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md)
 
 ## 🤝 Development Team
 
@@ -380,15 +262,29 @@ This project is developed for academic research and marine conservation purposes
 
 ---
 
-## 🌟 Key Achievements
+## 🌟 Key Features
 
-✅ **Complete Full-Stack Application** with authentication  
-✅ **Production-Ready Database** with 10 optimized tables  
-✅ **Advanced ML Integration** (YOLO + LSTM)  
-✅ **Responsive UI/UX** with dark/light themes  
-✅ **Comprehensive Admin Panel** with system management  
-✅ **Real-time Processing** with progress tracking  
-✅ **Multi-format Export** capabilities  
-✅ **Scalable Architecture** for future enhancements  
+✅ Complete full-stack application with authentication  
+✅ Production-ready database with 10 optimized tables  
+✅ Advanced ML integration (YOLO + LSTM)  
+✅ Responsive UI/UX with dark/light themes  
+✅ Comprehensive admin panel  
+✅ Real-time processing with progress tracking  
+✅ Multi-format export capabilities  
+✅ Scalable architecture  
 
 **Ready for deployment and real-world marine conservation use! 🌊**
+
+## 🎯 AI Models
+
+### YOLOv12n Object Detection
+- **22 Marine Classes**: Animals (crab, eel, fish, shells, starfish), Plants (marine vegetation), Equipment (ROV), Trash (bags, bottles, containers, nets, ropes, etc.)
+- **Detection Speed**: Real-time processing
+- **Confidence Threshold**: Adjustable 0.01-1.0
+
+### LSTM Pollution Prediction
+- **Input Features**: 10 environmental parameters
+- **Sequence Length**: 30 days historical data
+- **Regions**: Pacific, Atlantic, Indian, Mediterranean
+- **Accuracy**: 94%+ validation accuracy
+- **Prediction Range**: 7-90 days ahead

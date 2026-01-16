@@ -6,7 +6,7 @@ This guide ensures a smooth, error-free installation for anyone cloning this rep
 
 Before you begin, ensure you have:
 
-- **Python 3.8+** installed ([Download](https://www.python.org/downloads/))
+- **Python 3.8+** installed ([Download](https://python.org/downloads/))
 - **Node.js 16+** installed ([Download](https://nodejs.org/))
 - **Git** installed ([Download](https://git-scm.com/))
 - **YOLOv12n model weights** file (`best.pt`)
@@ -17,7 +17,7 @@ Before you begin, ensure you have:
 
 ```bash
 git clone <your-repository-url>
-cd oceanscan-ai-main
+cd marine-detection-system
 ```
 
 ### 2. Backend Setup
@@ -204,7 +204,7 @@ After installation, verify everything works:
 ```bash
 # Full installation from scratch
 git clone <repo-url>
-cd oceanscan-ai-main
+cd marine-detection-system
 cd backend && pip install -r requirements.txt && python init_db.py && cd ..
 npm install
 

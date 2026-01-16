@@ -548,13 +548,17 @@ async def get_training_status(region: str):
 # ============================================================================
 
 @app.post("/api/predict")
-async def predict_pollution_trends(request: PredictionRequest):
+async def predict_pollution_trends(
+    request: PredictionRequest,
+    current_user: dict = Depends(get_current_user)
+):
     """
     Generate pollution predictions using ONLY cached data
     NEVER calls external APIs
     """
     try:
-        logger.info(f"🔮 Prediction request for {request.region}, {request.days_ahead} days ahead")
+        user_id = current_user['user_id']
+        logger.info(f"🔮 Prediction request for {request.region}, {request.days_ahead} days ahead by user {user_id}")
         
         # Validate region
         if request.region not in data_cache_service.regions:
@@ -613,6 +617,44 @@ async def predict_pollution_trends(request: PredictionRequest):
                 risk_level = "High"
             else:
                 risk_level = "Critical"
+            
+            # Save predictions to database for report generation
+            import json
+            saved_count = 0
+            for pred in predictions:
+                try:
+                    # Get input features from recent data
+                    input_features = {
+                        'temperature': float(recent_df['temperature'].iloc[-1]) if 'temperature' in recent_df.columns else 0,
+                        'humidity': float(recent_df['humidity'].iloc[-1]) if 'humidity' in recent_df.columns else 0,
+                        'aqi': float(recent_df['aqi'].iloc[-1]) if 'aqi' in recent_df.columns else 0,
+                        'days_ahead': request.days_ahead
+                    }
+                    
+                    # Calculate confidence interval
+                    confidence_lower = pred.get('confidence_lower', pred['pollution_level'] * 0.9)
+                    confidence_upper = pred.get('confidence_upper', pred['pollution_level'] * 1.1)
+                    
+                    prediction_id = db.save_prediction(
+                        user_id=user_id,
+                        region=request.region,
+                        prediction_date=pred['date'],
+                        predicted_pollution_level=pred['pollution_level'],
+                        confidence_interval=(confidence_lower, confidence_upper),
+                        model_version=prediction_result['model_info'].get('model_version', '1.0'),
+                        input_features=input_features
+                    )
+                    
+                    if prediction_id:
+                        saved_count += 1
+                        logger.info(f"✅ Saved prediction {saved_count}/{len(predictions)}: ID={prediction_id}, date={pred['date']}, level={pred['pollution_level']:.2f}")
+                    else:
+                        logger.error(f"❌ Failed to save prediction for date {pred['date']}")
+                        
+                except Exception as e:
+                    logger.error(f"❌ Exception saving prediction to database: {e}", exc_info=True)
+            
+            logger.info(f"✅ Successfully saved {saved_count}/{len(predictions)} predictions to database for user {user_id}")
             
             return {
                 "success": True,
@@ -2217,20 +2259,25 @@ async def generate_report(
         
         if request.report_type in ['detection', 'both']:
             detections = db.get_user_detections(user_id, days=request.date_range_days)
+            logger.info(f"📊 Found {len(detections)} detections for user {user_id} in last {request.date_range_days} days")
         
         if request.report_type in ['prediction', 'both']:
             predictions = db.get_user_predictions(user_id, days=request.date_range_days)
+            logger.info(f"📊 Found {len(predictions)} predictions for user {user_id} in last {request.date_range_days} days")
         
         # Only fail if specifically requesting a type with no data
         # Allow 'both' to work if either type has data
         if request.report_type == 'detection' and not detections:
+            logger.warning(f"❌ No detection data for user {user_id}")
             raise HTTPException(status_code=400, detail="No detection data available. Please perform some detections first.")
         
         if request.report_type == 'prediction' and not predictions:
+            logger.warning(f"❌ No prediction data for user {user_id} in last {request.date_range_days} days")
             raise HTTPException(status_code=400, detail="No prediction data available. Please generate some LSTM predictions first.")
         
         # For 'both' type, we need at least one type of data
         if request.report_type == 'both' and not detections and not predictions:
+            logger.warning(f"❌ No data at all for user {user_id}")
             raise HTTPException(status_code=400, detail="No data available. Please perform detections or generate predictions first.")
         
         # Generate report title
@@ -2645,73 +2692,99 @@ async def get_user_history(
     """Get user's detection history"""
     try:
         user_id = current_user['user_id']
+        logger.info(f"📋 Fetching history for user {user_id}, limit={limit}")
+        
         detections = db.get_user_detections(user_id, limit=limit)
+        logger.info(f"📋 Found {len(detections)} detections")
+        
+        # If no detections, return empty list
+        if not detections:
+            return {"success": True, "history": []}
         
         # Convert to frontend format
         history = []
         for detection in detections:
-            # Calculate average confidence from detection results
-            detection_results = db.get_detection_results(detection['id'], user_id)
-            avg_confidence = 0
-            classes = []
-            
-            if detection_results:
-                confidences = [r['confidence'] * 100 for r in detection_results]
-                avg_confidence = sum(confidences) / len(confidences) if confidences else 0
-                classes = list(set([r['class_name'] for r in detection_results]))
-            
-            # Parse metadata
-            metadata = detection.get('metadata', {})
-            if isinstance(metadata, str):
-                try:
-                    import json
-                    metadata = json.loads(metadata)
-                except:
-                    metadata = {}
-            
-            history_item = {
-                "id": str(detection['id']),
-                "filename": detection.get('filename', 'Unknown'),
-                "type": detection.get('file_type', 'image'),
-                "date": detection.get('created_at', '').split('T')[0] if detection.get('created_at') else '',
-                "time": detection.get('created_at', '').split('T')[1][:8] if detection.get('created_at') else '',
-                "objects": detection.get('total_detections', 0),
-                "confidence": round(avg_confidence, 1),
-                "classes": classes,
-                "upload_date": detection.get('created_at', ''),
-                "file_type": detection.get('file_type', 'image'),
-                "total_detections": detection.get('total_detections', 0),
-                "avg_confidence": round(avg_confidence, 1),
-                "result": {
-                    "success": True,
+            try:
+                # Calculate average confidence from detection results
+                detection_results = db.get_detection_results(detection['id'], user_id)
+                avg_confidence = 0
+                classes = []
+                
+                if detection_results:
+                    confidences = [r['confidence'] * 100 for r in detection_results]
+                    avg_confidence = sum(confidences) / len(confidences) if confidences else 0
+                    classes = list(set([r['class_name'] for r in detection_results]))
+                
+                # Parse metadata
+                metadata = detection.get('metadata', {})
+                if isinstance(metadata, str):
+                    try:
+                        import json
+                        metadata = json.loads(metadata)
+                    except:
+                        metadata = {}
+                
+                # Safely parse date and time
+                created_at = detection.get('created_at', '')
+                date_str = ''
+                time_str = ''
+                
+                if created_at:
+                    if 'T' in created_at:
+                        parts = created_at.split('T')
+                        date_str = parts[0]
+                        time_str = parts[1][:8] if len(parts) > 1 else ''
+                    else:
+                        date_str = created_at[:10] if len(created_at) >= 10 else created_at
+                
+                history_item = {
+                    "id": str(detection['id']),
                     "filename": detection.get('filename', 'Unknown'),
-                    "totalDetections": detection.get('total_detections', 0),
-                    "detections": [
-                        {
-                            "class": r['class_name'],
-                            "confidence": round(r['confidence'] * 100, 1),
-                            "bbox": {
-                                "x1": r['bbox_x1'],
-                                "y1": r['bbox_y1'],
-                                "x2": r['bbox_x2'],
-                                "y2": r['bbox_y2']
-                            },
-                            "frame": r.get('frame_number', 0)
-                        } for r in detection_results
-                    ],
-                    "summary": [
-                        {
-                            "class": class_name,
-                            "count": len([r for r in detection_results if r['class_name'] == class_name]),
-                            "avgConfidence": round(sum([r['confidence'] * 100 for r in detection_results if r['class_name'] == class_name]) / len([r for r in detection_results if r['class_name'] == class_name]), 1) if [r for r in detection_results if r['class_name'] == class_name] else 0
-                        } for class_name in classes
-                    ],
-                    "processingTime": detection.get('processing_time', 0),
-                    "result_id": str(detection['id'])
+                    "type": detection.get('file_type', 'image'),
+                    "date": date_str,
+                    "time": time_str,
+                    "objects": detection.get('total_detections', 0),
+                    "confidence": round(avg_confidence, 1),
+                    "classes": classes,
+                    "upload_date": created_at,
+                    "file_type": detection.get('file_type', 'image'),
+                    "total_detections": detection.get('total_detections', 0),
+                    "avg_confidence": round(avg_confidence, 1),
+                    "result": {
+                        "success": True,
+                        "filename": detection.get('filename', 'Unknown'),
+                        "totalDetections": detection.get('total_detections', 0),
+                        "detections": [
+                            {
+                                "class": r['class_name'],
+                                "confidence": round(r['confidence'] * 100, 1),
+                                "bbox": {
+                                    "x1": r['bbox_x1'],
+                                    "y1": r['bbox_y1'],
+                                    "x2": r['bbox_x2'],
+                                    "y2": r['bbox_y2']
+                                },
+                                "frame": r.get('frame_number', 0)
+                            } for r in detection_results
+                        ],
+                        "summary": [
+                            {
+                                "class": class_name,
+                                "count": len([r for r in detection_results if r['class_name'] == class_name]),
+                                "avgConfidence": round(sum([r['confidence'] * 100 for r in detection_results if r['class_name'] == class_name]) / len([r for r in detection_results if r['class_name'] == class_name]), 1) if [r for r in detection_results if r['class_name'] == class_name] else 0
+                            } for class_name in classes
+                        ],
+                        "processingTime": detection.get('processing_time', 0),
+                        "result_id": str(detection['id'])
+                    }
                 }
-            }
-            
-            history.append(history_item)
+                
+                history.append(history_item)
+                
+            except Exception as e:
+                logger.error(f"Error processing detection {detection.get('id', 'unknown')}: {e}", exc_info=True)
+                # Skip this detection and continue with others
+                continue
         
         return {
             "success": True,
@@ -2719,7 +2792,7 @@ async def get_user_history(
         }
         
     except Exception as e:
-        logger.error(f"Error getting user history: {e}")
+        logger.error(f"Error getting user history: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":

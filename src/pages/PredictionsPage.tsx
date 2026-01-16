@@ -317,9 +317,13 @@ export default function PredictionsPage() {
   const fetchPredictions = async (region: string, daysAhead: number) => {
     setLoading(true);
     try {
+      const token = localStorage.getItem('auth_token');
       const response = await fetch(`${API_BASE}/api/predict`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
         body: JSON.stringify({ region, days_ahead: daysAhead })
       });
       

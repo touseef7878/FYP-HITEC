@@ -10,19 +10,40 @@ export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
   const navigate = useNavigate();
   const location = useLocation();
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isAdmin, isLoading } = useAuth();
 
   // Redirect if already authenticated
   useEffect(() => {
     if (isAuthenticated && !isLoading) {
-      const from = location.state?.from?.pathname || '/dashboard';
-      navigate(from, { replace: true });
+      if (isAdmin) {
+        // Always redirect admins to admin panel
+        navigate('/admin', { replace: true });
+      } else {
+        // For regular users, only redirect if they came from a protected route
+        const from = location.state?.from?.pathname;
+        if (from && from !== '/auth') {
+          navigate(from, { replace: true });
+        } else {
+          // If no specific route, let them stay on auth page or go to home
+          navigate('/', { replace: true });
+        }
+      }
     }
-  }, [isAuthenticated, isLoading, navigate, location]);
+  }, [isAuthenticated, isAdmin, isLoading, navigate, location]);
 
   const handleAuthSuccess = () => {
-    const from = location.state?.from?.pathname || '/dashboard';
-    navigate(from, { replace: true });
+    if (isAdmin) {
+      // Always redirect admins to admin panel
+      navigate('/admin', { replace: true });
+    } else {
+      // For regular users, redirect to where they came from or home
+      const from = location.state?.from?.pathname;
+      if (from && from !== '/auth') {
+        navigate(from, { replace: true });
+      } else {
+        navigate('/', { replace: true });
+      }
+    }
   };
 
   if (isLoading) {

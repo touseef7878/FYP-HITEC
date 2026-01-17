@@ -11,6 +11,7 @@ import {
   FileX,
   Settings,
   ChevronDown,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,6 +19,14 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { PageTransition, staggerContainer, fadeInUp } from "@/components/layout/PageTransition";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { useToast } from "@/hooks/use-toast";
@@ -44,6 +53,9 @@ export default function ReportsPage() {
   const [reportType, setReportType] = useState<string>("detection");
   const [customTitle, setCustomTitle] = useState<string>("");
   const [dateRange, setDateRange] = useState<number>(30);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [reportToDelete, setReportToDelete] = useState<Report | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const { toast } = useToast();
   const { token } = useAuth();
 
@@ -183,6 +195,60 @@ export default function ReportsPage() {
       });
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const handleDeleteReport = (report: Report) => {
+    setReportToDelete(report);
+    setShowDeleteDialog(true);
+  };
+
+  const confirmDeleteReport = async () => {
+    if (!reportToDelete) return;
+    
+    setIsDeleting(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      if (!token) {
+        toast({
+          title: "Authentication Required",
+          description: "Please log in to delete reports",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const response = await fetch(`${API_URL}/api/user/reports/${reportToDelete.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Failed to delete report');
+      }
+
+      // Remove from local state only after successful backend deletion
+      setReports(prev => prev.filter(report => report.id !== reportToDelete.id));
+      
+      toast({
+        title: "Report Deleted",
+        description: `"${reportToDelete.title}" has been permanently deleted`,
+      });
+
+    } catch (error: any) {
+      console.error('Error deleting report:', error);
+      toast({
+        title: "Delete Failed",
+        description: error.message || "Failed to delete report. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteDialog(false);
+      setReportToDelete(null);
     }
   };
 
@@ -441,6 +507,15 @@ export default function ReportsPage() {
                         >
                           <Download className="h-4 w-4" />
                         </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="icon"
+                          onClick={() => handleDeleteReport(report)}
+                          title="Delete Report"
+                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                        >
+                          <FileX className="h-4 w-4" />
+                        </Button>
                       </div>
                     </motion.div>
                   ))}
@@ -449,6 +524,38 @@ export default function ReportsPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Delete Confirmation Dialog */}
+        <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-destructive" />
+                Delete Report
+              </DialogTitle>
+              <DialogDescription>
+                Are you sure you want to delete <strong>"{reportToDelete?.title}"</strong>? 
+                This will permanently remove the report and its PDF file. This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button 
+                variant="outline" 
+                onClick={() => setShowDeleteDialog(false)}
+                disabled={isDeleting}
+              >
+                Cancel
+              </Button>
+              <Button 
+                variant="destructive" 
+                onClick={confirmDeleteReport}
+                disabled={isDeleting}
+              >
+                {isDeleting ? "Deleting..." : "Delete Report"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </PageTransition>
     </MainLayout>
   );

@@ -13,6 +13,7 @@ import {
   FileX,
   Trash2,
   Eye,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -25,6 +26,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { PageTransition, staggerContainer, fadeInUp } from "@/components/layout/PageTransition";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { dataService, HistoryItem } from "@/lib/dataService";
@@ -36,6 +45,10 @@ export default function HistoryPage() {
   const [dateFilter, setDateFilter] = useState("all");
   const [historyData, setHistoryData] = useState<HistoryItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showClearAllDialog, setShowClearAllDialog] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<HistoryItem | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const { toast } = useToast();
 
   // Load history data
@@ -89,33 +102,100 @@ export default function HistoryPage() {
     return matchesSearch && matchesType && matchesDate;
   });
 
-  const handleDeleteItem = (itemId: string) => {
-    const updatedHistory = historyData.filter(item => item.id !== itemId);
-    setHistoryData(updatedHistory);
-    localStorage.setItem('detectionHistory', JSON.stringify(updatedHistory));
-    
-    toast({
-      title: "Item Deleted",
-      description: "Detection result has been removed from history",
-    });
+  const handleDeleteItem = async (item: HistoryItem) => {
+    setItemToDelete(item);
+    setShowDeleteDialog(true);
   };
 
-  const handleClearAll = async () => {
+  const confirmDeleteItem = async () => {
+    if (!itemToDelete) return;
+    
+    setIsDeleting(true);
     try {
-      await dataService.clearAllData();
+      // Call backend API to delete from database
+      const token = localStorage.getItem('auth_token');
+      if (token && itemToDelete.detectionId) {
+        const response = await fetch(`http://localhost:8000/api/user/detections/${itemToDelete.detectionId}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Failed to delete from server');
+        }
+      }
+
+      // Update local state only after successful backend deletion
+      const updatedHistory = historyData.filter(item => item.id !== itemToDelete.id);
+      setHistoryData(updatedHistory);
+      
+      // Update localStorage as backup
+      localStorage.setItem('detectionHistory', JSON.stringify(updatedHistory));
+      
+      toast({
+        title: "Detection Deleted",
+        description: `"${itemToDelete.filename}" has been permanently removed`,
+      });
+
+    } catch (error: any) {
+      console.error('Error deleting item:', error);
+      toast({
+        title: "Delete Failed",
+        description: error.message || "Failed to delete detection. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteDialog(false);
+      setItemToDelete(null);
+    }
+  };
+
+  const handleClearAll = () => {
+    setShowClearAllDialog(true);
+  };
+
+  const confirmClearAll = async () => {
+    try {
+      // Call backend API to clear all history
+      const token = localStorage.getItem('auth_token');
+      if (token) {
+        const response = await fetch('http://localhost:8000/api/user/history/clear', {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Failed to clear history from server');
+        }
+      }
+
+      // Clear local state only after successful backend deletion
       setHistoryData([]);
+      
+      // Clear localStorage
+      localStorage.removeItem('detectionHistory');
       
       toast({
         title: "History Cleared",
-        description: "All detection history has been cleared",
+        description: "All detection history has been permanently removed",
       });
-    } catch (error) {
+
+    } catch (error: any) {
       console.error('Error clearing history:', error);
       toast({
-        title: "Error",
-        description: "Failed to clear history. Please try again.",
+        title: "Clear Failed",
+        description: error.message || "Failed to clear history. Please try again.",
         variant: "destructive",
       });
+    } finally {
+      setShowClearAllDialog(false);
     }
   };
 
@@ -295,7 +375,7 @@ export default function HistoryPage() {
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => handleDeleteItem(item.id)}
+                            onClick={() => handleDeleteItem(item)}
                             className="text-destructive hover:text-destructive"
                             title="Delete"
                           >
@@ -310,6 +390,68 @@ export default function HistoryPage() {
             </motion.div>
           )}
         </div>
+
+        {/* Delete Confirmation Dialog */}
+        <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-destructive" />
+                Delete Detection
+              </DialogTitle>
+              <DialogDescription>
+                Are you sure you want to delete <strong>"{itemToDelete?.filename}"</strong>? 
+                This will permanently remove the detection result and cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button 
+                variant="outline" 
+                onClick={() => setShowDeleteDialog(false)}
+                disabled={isDeleting}
+              >
+                Cancel
+              </Button>
+              <Button 
+                variant="destructive" 
+                onClick={confirmDeleteItem}
+                disabled={isDeleting}
+              >
+                {isDeleting ? "Deleting..." : "Delete"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Clear All Confirmation Dialog */}
+        <Dialog open={showClearAllDialog} onOpenChange={setShowClearAllDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-destructive" />
+                Clear All History
+              </DialogTitle>
+              <DialogDescription>
+                Are you sure you want to clear all detection history? This will permanently 
+                remove <strong>all {historyData.length} detection results</strong> and cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button 
+                variant="outline" 
+                onClick={() => setShowClearAllDialog(false)}
+              >
+                Cancel
+              </Button>
+              <Button 
+                variant="destructive" 
+                onClick={confirmClearAll}
+              >
+                Clear All History
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </PageTransition>
     </MainLayout>
   );

@@ -1,11 +1,12 @@
 import { motion } from "framer-motion";
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import { Upload, BarChart3, Map, TrendingUp, ArrowRight, Sparkles, Shield, Zap, Users, GraduationCap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { PageTransition, staggerContainer, fadeInUp } from "@/components/layout/PageTransition";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { FishBackground } from "@/components/home/FishBackground";
+import { useAuth } from "@/contexts/AuthContext";
 import logoImg from "@/assets/marine-logo.png";
 const features = [{
   icon: Sparkles,
@@ -48,6 +49,13 @@ const teamMembers = [{
   role: "Frontend Engineer"
 }];
 export default function HomePage() {
+  const { isAuthenticated, isAdmin } = useAuth();
+
+  // Only redirect authenticated admins to admin panel
+  // Regular users should be able to access the home page
+  if (isAuthenticated && isAdmin) {
+    return <Navigate to="/admin" replace />;
+  }
   return <MainLayout>
       <PageTransition className="page-container">
         {/* Hero Section with Underwater Scene */}

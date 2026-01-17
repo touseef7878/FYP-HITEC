@@ -1237,32 +1237,219 @@ class DatabaseManager:
             logger.error(f"Update user password failed: {e}")
             return False
     
-    def delete_detection(self, detection_id: int) -> bool:
-        """Delete a detection and its associated data"""
+    def delete_detection(self, detection_id: int, user_id: int = None) -> bool:
+        """Delete a detection and its associated data completely"""
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 
-                # Delete associated files (this would need file cleanup logic)
-                # For now, just delete database records
+                # Get detection info for file cleanup
+                if user_id:
+                    cursor.execute("SELECT * FROM detections WHERE id = ? AND user_id = ?", (detection_id, user_id))
+                else:
+                    cursor.execute("SELECT * FROM detections WHERE id = ?", (detection_id,))
                 
-                # Delete detection results
+                detection = cursor.fetchone()
+                if not detection:
+                    return False
+                
+                # Delete associated files from disk
+                try:
+                    import os
+                    processed_videos_path = os.path.join(os.path.dirname(__file__), 'processed_videos')
+                    
+                    # Get video/image records to find file paths
+                    cursor.execute("SELECT file_path FROM videos WHERE detection_id = ?", (detection_id,))
+                    video_files = cursor.fetchall()
+                    
+                    cursor.execute("SELECT file_path FROM images WHERE detection_id = ?", (detection_id,))
+                    image_files = cursor.fetchall()
+                    
+                    # Delete video files
+                    for video in video_files:
+                        if video['file_path']:
+                            file_path = os.path.join(processed_videos_path, os.path.basename(video['file_path']))
+                            if os.path.exists(file_path):
+                                os.remove(file_path)
+                                logger.info(f"Deleted video file: {file_path}")
+                    
+                    # Delete image files  
+                    for image in image_files:
+                        if image['file_path']:
+                            file_path = os.path.join(processed_videos_path, os.path.basename(image['file_path']))
+                            if os.path.exists(file_path):
+                                os.remove(file_path)
+                                logger.info(f"Deleted image file: {file_path}")
+                                
+                except Exception as file_error:
+                    logger.warning(f"Failed to delete some files: {file_error}")
+                
+                # Delete database records in correct order
                 cursor.execute("DELETE FROM detection_results WHERE detection_id = ?", (detection_id,))
-                
-                # Delete video/image records
                 cursor.execute("DELETE FROM videos WHERE detection_id = ?", (detection_id,))
                 cursor.execute("DELETE FROM images WHERE detection_id = ?", (detection_id,))
-                
-                # Delete main detection record
                 cursor.execute("DELETE FROM detections WHERE id = ?", (detection_id,))
                 
                 success = cursor.rowcount > 0
                 conn.commit()
                 
+                if success:
+                    logger.info(f"Detection {detection_id} completely deleted (including files)")
+                
                 return success
                 
         except Exception as e:
             logger.error(f"Delete detection failed: {e}")
+            return False
+
+    def delete_all_user_detections(self, user_id: int) -> bool:
+        """Delete all detections for a user - ATOMIC operation"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # Start transaction
+                cursor.execute("BEGIN TRANSACTION")
+                
+                try:
+                    # Get all user's detections
+                    cursor.execute("SELECT id FROM detections WHERE user_id = ?", (user_id,))
+                    detection_ids = [row['id'] for row in cursor.fetchall()]
+                    
+                    if not detection_ids:
+                        cursor.execute("COMMIT")
+                        logger.info(f"No detections found for user {user_id}")
+                        return True
+                    
+                    # Delete files for all detections first
+                    files_deleted = 0
+                    for detection_id in detection_ids:
+                        try:
+                            import os
+                            processed_videos_path = os.path.join(os.path.dirname(__file__), 'processed_videos')
+                            
+                            # Get file paths
+                            cursor.execute("SELECT file_path FROM videos WHERE detection_id = ?", (detection_id,))
+                            video_files = cursor.fetchall()
+                            cursor.execute("SELECT file_path FROM images WHERE detection_id = ?", (detection_id,))
+                            image_files = cursor.fetchall()
+                            
+                            # Delete video files
+                            for video in video_files:
+                                if video['file_path']:
+                                    file_path = os.path.join(processed_videos_path, os.path.basename(video['file_path']))
+                                    if os.path.exists(file_path):
+                                        os.remove(file_path)
+                                        files_deleted += 1
+                            
+                            # Delete image files
+                            for image in image_files:
+                                if image['file_path']:
+                                    file_path = os.path.join(processed_videos_path, os.path.basename(image['file_path']))
+                                    if os.path.exists(file_path):
+                                        os.remove(file_path)
+                                        files_deleted += 1
+                                        
+                        except Exception as file_error:
+                            logger.warning(f"Failed to delete files for detection {detection_id}: {file_error}")
+                    
+                    # Delete database records (CASCADE will handle related tables)
+                    cursor.execute("DELETE FROM detections WHERE user_id = ?", (user_id,))
+                    deleted_count = cursor.rowcount
+                    
+                    # Commit transaction
+                    cursor.execute("COMMIT")
+                    
+                    logger.info(f"Successfully deleted {deleted_count} detections and {files_deleted} files for user {user_id}")
+                    return True
+                    
+                except Exception as db_error:
+                    # Rollback on any error
+                    cursor.execute("ROLLBACK")
+                    logger.error(f"Database deletion failed for user {user_id} detections, rolled back: {db_error}")
+                    return False
+                
+        except Exception as e:
+            logger.error(f"Delete all user detections failed: {e}")
+            return False
+
+    def delete_all_user_data(self, user_id: int) -> bool:
+        """Delete ALL data for a user (detections, reports, predictions, analytics) - ATOMIC"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # Start transaction
+                cursor.execute("BEGIN TRANSACTION")
+                
+                try:
+                    # Get all detection IDs first for file cleanup
+                    cursor.execute("SELECT id FROM detections WHERE user_id = ?", (user_id,))
+                    detection_ids = [row['id'] for row in cursor.fetchall()]
+                    
+                    # Delete files for all detections
+                    files_deleted = 0
+                    for detection_id in detection_ids:
+                        try:
+                            import os
+                            processed_videos_path = os.path.join(os.path.dirname(__file__), 'processed_videos')
+                            
+                            # Get file paths
+                            cursor.execute("SELECT file_path FROM videos WHERE detection_id = ?", (detection_id,))
+                            video_files = cursor.fetchall()
+                            cursor.execute("SELECT file_path FROM images WHERE detection_id = ?", (detection_id,))
+                            image_files = cursor.fetchall()
+                            
+                            # Delete video files
+                            for video in video_files:
+                                if video['file_path']:
+                                    file_path = os.path.join(processed_videos_path, os.path.basename(video['file_path']))
+                                    if os.path.exists(file_path):
+                                        os.remove(file_path)
+                                        files_deleted += 1
+                            
+                            # Delete image files
+                            for image in image_files:
+                                if image['file_path']:
+                                    file_path = os.path.join(processed_videos_path, os.path.basename(image['file_path']))
+                                    if os.path.exists(file_path):
+                                        os.remove(file_path)
+                                        files_deleted += 1
+                                        
+                        except Exception as file_error:
+                            logger.warning(f"Failed to delete files for detection {detection_id}: {file_error}")
+                    
+                    # Delete database records in correct order (let CASCADE handle relationships)
+                    cursor.execute("DELETE FROM detections WHERE user_id = ?", (user_id,))
+                    detections_deleted = cursor.rowcount
+                    
+                    cursor.execute("DELETE FROM reports WHERE user_id = ?", (user_id,))
+                    reports_deleted = cursor.rowcount
+                    
+                    cursor.execute("DELETE FROM predictions WHERE user_id = ?", (user_id,))
+                    predictions_deleted = cursor.rowcount
+                    
+                    cursor.execute("DELETE FROM analytics_data WHERE user_id = ?", (user_id,))
+                    analytics_deleted = cursor.rowcount
+                    
+                    # Delete sessions (logout user)
+                    cursor.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+                    sessions_deleted = cursor.rowcount
+                    
+                    # Commit transaction
+                    cursor.execute("COMMIT")
+                    
+                    logger.info(f"ALL data deleted for user {user_id}: {detections_deleted} detections, {reports_deleted} reports, {predictions_deleted} predictions, {analytics_deleted} analytics, {sessions_deleted} sessions, {files_deleted} files")
+                    return True
+                    
+                except Exception as db_error:
+                    # Rollback on any database error
+                    cursor.execute("ROLLBACK")
+                    logger.error(f"Database deletion failed for user {user_id}, rolled back: {db_error}")
+                    return False
+                
+        except Exception as e:
+            logger.error(f"Delete all user data failed: {e}")
             return False
     
     def update_report_file_path(self, report_id: int, file_path: str) -> bool:
@@ -1556,6 +1743,85 @@ class DatabaseManager:
             logger.error(f"Get report by ID failed: {e}")
             return None
     
+    def delete_report(self, report_id: int, user_id: int) -> bool:
+        """Delete a user's report completely including PDF file"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # Get report info first for file cleanup
+                cursor.execute("""
+                    SELECT file_path, title FROM reports 
+                    WHERE id = ? AND user_id = ?
+                """, (report_id, user_id))
+                
+                report = cursor.fetchone()
+                if not report:
+                    return False
+                
+                # Delete PDF file if it exists
+                if report['file_path']:
+                    try:
+                        import os
+                        if os.path.exists(report['file_path']):
+                            os.remove(report['file_path'])
+                            logger.info(f"Deleted report PDF file: {report['file_path']}")
+                    except Exception as file_error:
+                        logger.warning(f"Failed to delete report file {report['file_path']}: {file_error}")
+                
+                # Delete database record
+                cursor.execute("""
+                    DELETE FROM reports 
+                    WHERE id = ? AND user_id = ?
+                """, (report_id, user_id))
+                
+                success = cursor.rowcount > 0
+                conn.commit()
+                
+                if success:
+                    logger.info(f"Report {report_id} '{report['title']}' deleted by user {user_id}")
+                
+                return success
+                
+        except Exception as e:
+            logger.error(f"Delete report failed: {e}")
+            return False
+
+    def delete_all_user_reports(self, user_id: int) -> bool:
+        """Delete all reports for a user including PDF files"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # Get all report file paths first for cleanup
+                cursor.execute("SELECT id, file_path, title FROM reports WHERE user_id = ?", (user_id,))
+                reports = cursor.fetchall()
+                
+                # Delete PDF files
+                files_deleted = 0
+                for report in reports:
+                    if report['file_path']:
+                        try:
+                            import os
+                            if os.path.exists(report['file_path']):
+                                os.remove(report['file_path'])
+                                files_deleted += 1
+                                logger.info(f"Deleted report PDF: {report['file_path']}")
+                        except Exception as file_error:
+                            logger.warning(f"Failed to delete report file {report['file_path']}: {file_error}")
+                
+                # Delete database records
+                cursor.execute("DELETE FROM reports WHERE user_id = ?", (user_id,))
+                deleted_count = cursor.rowcount
+                conn.commit()
+                
+                logger.info(f"Deleted {deleted_count} reports and {files_deleted} PDF files for user {user_id}")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Delete all user reports failed: {e}")
+            return False
+
     def get_user_report_by_id(self, user_id: int, report_id: int) -> Optional[Dict]:
         """Get user's specific report - ensures user can only access their own reports"""
         try:
@@ -1590,5 +1856,198 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Get user report by ID failed: {e}")
             return None
+    def get_all_users(self) -> List[Dict]:
+        """Get all users for admin management"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT id, username, email, role, is_active, created_at, last_login
+                    FROM users 
+                    ORDER BY created_at DESC
+                """)
+                
+                users = []
+                for row in cursor.fetchall():
+                    users.append({
+                        'id': row['id'],
+                        'username': row['username'],
+                        'email': row['email'],
+                        'role': row['role'],
+                        'is_active': row['is_active'],
+                        'created_at': row['created_at'],
+                        'last_login': row['last_login']
+                    })
+                
+                return users
+                
+        except Exception as e:
+            logger.error(f"Get all users failed: {e}")
+            return []
+
+    def get_user_stats(self, user_id: int) -> Dict:
+        """Get statistics for a specific user"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # Count detections
+                cursor.execute("SELECT COUNT(*) as count FROM detections WHERE user_id = ?", (user_id,))
+                total_detections = cursor.fetchone()['count']
+                
+                # Count reports
+                cursor.execute("SELECT COUNT(*) as count FROM reports WHERE user_id = ?", (user_id,))
+                total_reports = cursor.fetchone()['count']
+                
+                # Calculate storage used (placeholder - would need actual file size calculation)
+                storage_used = total_detections * 2.5  # Estimate 2.5MB per detection
+                
+                return {
+                    'total_detections': total_detections,
+                    'total_reports': total_reports,
+                    'storage_used': round(storage_used, 2)
+                }
+                
+        except Exception as e:
+            logger.error(f"Get user stats failed: {e}")
+            return {'total_detections': 0, 'total_reports': 0, 'storage_used': 0}
+
+    def deactivate_user(self, user_id: int) -> bool:
+        """Deactivate a user account"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute("""
+                    UPDATE users 
+                    SET is_active = 0
+                    WHERE id = ?
+                """, (user_id,))
+                
+                success = cursor.rowcount > 0
+                conn.commit()
+                
+                if success:
+                    # Also revoke all sessions
+                    cursor.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+                    conn.commit()
+                    logger.info(f"User {user_id} deactivated")
+                
+                return success
+                
+        except Exception as e:
+            logger.error(f"Deactivate user failed: {e}")
+            return False
+
+    def get_system_stats(self) -> Dict:
+        """Get system statistics for admin dashboard"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # Active users (logged in within last 24 hours)
+                cursor.execute("""
+                    SELECT COUNT(DISTINCT user_id) as count 
+                    FROM sessions 
+                    WHERE last_used > datetime('now', '-1 day')
+                """)
+                active_users = cursor.fetchone()['count']
+                
+                # Total detections
+                cursor.execute("SELECT COUNT(*) as count FROM detections")
+                total_detections = cursor.fetchone()['count']
+                
+                # Database size (approximate)
+                cursor.execute("SELECT page_count * page_size as size FROM pragma_page_count(), pragma_page_size()")
+                db_size = cursor.fetchone()['size'] / (1024 * 1024)  # Convert to MB
+                
+                # Active sessions
+                cursor.execute("SELECT COUNT(*) as count FROM sessions WHERE last_used > datetime('now', '-1 hour')")
+                active_sessions = cursor.fetchone()['count']
+                
+                # API requests today (from logs)
+                cursor.execute("""
+                    SELECT COUNT(*) as count 
+                    FROM logs 
+                    WHERE timestamp > datetime('now', 'start of day')
+                    AND message LIKE '%API%'
+                """)
+                api_requests = cursor.fetchone()['count']
+                
+                return {
+                    'active_users': active_users,
+                    'total_detections': total_detections,
+                    'database_size': round(db_size, 2),
+                    'active_sessions': active_sessions,
+                    'api_requests_today': api_requests,
+                    'storage_used': total_detections * 2.5  # Estimate
+                }
+                
+        except Exception as e:
+            logger.error(f"Get system stats failed: {e}")
+            return {
+                'active_users': 0,
+                'total_detections': 0,
+                'database_size': 0,
+                'active_sessions': 0,
+                'api_requests_today': 0,
+                'storage_used': 0
+            }
+
+    def get_recent_logs(self, limit: int = 50, level: str = None) -> List[Dict]:
+        """Get recent system logs"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                query = """
+                    SELECT id, user_id, level, message, module, timestamp
+                    FROM logs 
+                """
+                params = []
+                
+                if level:
+                    query += " WHERE level = ?"
+                    params.append(level.upper())
+                
+                query += " ORDER BY timestamp DESC LIMIT ?"
+                params.append(limit)
+                
+                cursor.execute(query, params)
+                
+                logs = []
+                for row in cursor.fetchall():
+                    logs.append({
+                        'id': row['id'],
+                        'user_id': row['user_id'],
+                        'level': row['level'],
+                        'message': row['message'],
+                        'module': row['module'],
+                        'timestamp': row['timestamp']
+                    })
+                
+                return logs
+                
+        except Exception as e:
+            logger.error(f"Get recent logs failed: {e}")
+            return []
+
+    def log_activity(self, user_id: int, level: str, message: str, module: str = "system") -> bool:
+        """Log an activity/event"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute("""
+                    INSERT INTO logs (user_id, level, message, module, timestamp)
+                    VALUES (?, ?, ?, ?, datetime('now'))
+                """, (user_id, level.upper(), message, module))
+                
+                conn.commit()
+                return True
+                
+        except Exception as e:
+            logger.error(f"Log activity failed: {e}")
+            return False
 # Global database instance
 db = DatabaseManager()

@@ -52,16 +52,31 @@ export default function SettingsPage() {
     setIsClearing(true);
     
     try {
+      const token = localStorage.getItem('auth_token');
+      if (token) {
+        const response = await fetch('http://localhost:8000/api/user/history/clear', {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to clear history from server');
+        }
+      }
+
+      // Also clear local data
       await dataService.clearAllData();
       
       toast({
-        title: "All Data Cleared",
-        description: "Detection history, analytics, and reports have been removed.",
+        title: "History Cleared",
+        description: "All detection history has been permanently removed from your account.",
       });
     } catch (error) {
       toast({
         title: "Error",
-        description: "Failed to clear data. Please try again.",
+        description: "Failed to clear history. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -69,25 +84,104 @@ export default function SettingsPage() {
     }
   };
 
+  const handleDeleteAllData = async () => {
+    if (!confirm("⚠️ WARNING: This will permanently delete ALL your data including detections, reports, predictions, and analytics. This action cannot be undone. Are you sure?")) {
+      return;
+    }
+
+    if (!confirm("This is your final confirmation. Type 'DELETE' in the next prompt to proceed.")) {
+      return;
+    }
+
+    const confirmation = prompt("Type 'DELETE' to confirm permanent deletion of all your data:");
+    if (confirmation !== 'DELETE') {
+      toast({
+        title: "Cancelled",
+        description: "Data deletion cancelled.",
+      });
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('auth_token');
+      if (!token) {
+        throw new Error('Authentication required');
+      }
+
+      const response = await fetch('http://localhost:8000/api/user/data/all', {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Failed to delete data');
+      }
+
+      const result = await response.json();
+
+      // Clear local data
+      await dataService.clearAllData();
+      
+      toast({
+        title: "All Data Deleted",
+        description: "All your data has been permanently deleted from your account.",
+      });
+
+      // Refresh stats
+      setStats({
+        detections: 0,
+        totalObjects: 0,
+        hotspots: 0,
+      });
+
+    } catch (error: any) {
+      toast({
+        title: "Delete Failed",
+        description: error.message || "Failed to delete data. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleExportData = async () => {
     try {
-      const data = await dataService.exportData();
-      const blob = new Blob([data], { type: 'application/json' });
+      const token = localStorage.getItem('auth_token');
+      if (!token) {
+        throw new Error('Authentication required');
+      }
+
+      const response = await fetch('http://localhost:8000/api/user/data/export', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to export data from server');
+      }
+
+      const result = await response.json();
+      
+      // Create and download the file
+      const blob = new Blob([JSON.stringify(result.data, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `oceanguard-data-${new Date().toISOString().split('T')[0]}.json`;
+      link.download = `oceanguard-data-${user?.username}-${new Date().toISOString().split('T')[0]}.json`;
       link.click();
       URL.revokeObjectURL(url);
       
       toast({
         title: "Data Exported",
-        description: "Your data has been exported successfully.",
+        description: "Your complete data has been exported successfully.",
       });
-    } catch (error) {
+    } catch (error: any) {
       toast({
         title: "Export Failed",
-        description: "Failed to export data. Please try again.",
+        description: error.message || "Failed to export data. Please try again.",
         variant: "destructive",
       });
     }
@@ -355,11 +449,10 @@ export default function SettingsPage() {
                   
                   <div className="p-4 bg-destructive/10 rounded-lg border border-destructive/20">
                     <h4 className="font-medium text-destructive mb-2">
-                      Clear All Data
+                      Clear Detection History
                     </h4>
                     <p className="text-sm text-muted-foreground mb-4">
-                      This will permanently delete all your detection history, analytics, 
-                      and reports. This action cannot be undone.
+                      This will permanently delete all your detection history from your account.
                     </p>
                     <Button
                       variant="destructive"
@@ -372,7 +465,26 @@ export default function SettingsPage() {
                       ) : (
                         <Trash2 className="h-4 w-4 mr-2" />
                       )}
-                      {isClearing ? "Clearing..." : "Clear All Data"}
+                      {isClearing ? "Clearing..." : "Clear History"}
+                    </Button>
+                  </div>
+
+                  <div className="p-4 bg-red-500/10 rounded-lg border border-red-500/20">
+                    <h4 className="font-medium text-red-600 mb-2">
+                      ⚠️ Delete ALL Account Data
+                    </h4>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      This will permanently delete ALL your data including detections, reports, 
+                      predictions, analytics, and associated files. This action cannot be undone.
+                    </p>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={handleDeleteAllData}
+                      className="bg-red-600 hover:bg-red-700"
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete All Data
                     </Button>
                   </div>
                 </div>

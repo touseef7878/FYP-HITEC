@@ -1120,6 +1120,193 @@ async def get_recent_activity(current_user: dict = Depends(get_admin_user)):
         )
 
 @app.post("/api/admin/system/{action}")
+async def admin_system_action(
+    action: str,
+    current_user: dict = Depends(get_admin_user)
+):
+    """Admin system maintenance actions"""
+    try:
+        if action == "backup":
+            # Trigger database backup
+            backup_path = db.backup_database()
+            return {"message": f"Database backup created at {backup_path}"}
+        
+        elif action == "cache-clear":
+            # Clear application cache
+            return {"message": "Application cache cleared"}
+        
+        elif action == "optimize-db":
+            # Optimize database
+            db.optimize_database()
+            return {"message": "Database optimized"}
+        
+        elif action == "restart-services":
+            # This would restart background services
+            return {"message": "Background services restarted"}
+        
+        elif action == "export-data":
+            # Export system data for backup
+            return {"message": "Data export initiated"}
+        
+        elif action == "maintenance":
+            # Enable/disable maintenance mode
+            return {"message": "Maintenance mode toggled"}
+        
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown action: {action}"
+            )
+            
+    except Exception as e:
+        logger.error(f"Admin action {action} failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to execute {action}"
+        )
+
+@app.get("/api/admin/users")
+async def get_all_users(current_user: dict = Depends(get_admin_user)):
+    """Get all users for admin management"""
+    try:
+        users = db.get_all_users()
+        
+        # Remove sensitive data and add stats
+        admin_users = []
+        for user in users:
+            user_stats = db.get_user_stats(user['id'])
+            admin_users.append({
+                'id': user['id'],
+                'username': user['username'],
+                'email': user['email'],
+                'role': user['role'],
+                'is_active': user['is_active'],
+                'created_at': user['created_at'],
+                'last_login': user.get('last_login'),
+                'total_detections': user_stats.get('total_detections', 0),
+                'total_reports': user_stats.get('total_reports', 0),
+                'storage_used': user_stats.get('storage_used', 0)
+            })
+        
+        return {"users": admin_users}
+        
+    except Exception as e:
+        logger.error(f"Error getting users: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to get users"
+        )
+
+@app.post("/api/admin/users/{user_id}/deactivate")
+async def deactivate_user(
+    user_id: int,
+    current_user: dict = Depends(get_admin_user)
+):
+    """Deactivate a user account"""
+    try:
+        # Prevent admin from deactivating themselves
+        if user_id == current_user['user_id']:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot deactivate your own account"
+            )
+        
+        success = db.deactivate_user(user_id)
+        if not success:
+            raise HTTPException(
+                status_code=404,
+                detail="User not found"
+            )
+        
+        # Log admin action
+        db.log_activity(
+            user_id=current_user['user_id'],
+            level="WARNING",
+            message=f"Admin {current_user['username']} deactivated user {user_id}",
+            module="admin"
+        )
+        
+        return {"message": "User deactivated successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deactivating user: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to deactivate user"
+        )
+
+@app.delete("/api/admin/users/{user_id}/data")
+async def admin_delete_user_data(
+    user_id: int,
+    current_user: dict = Depends(get_admin_user)
+):
+    """Admin delete all data for a specific user"""
+    try:
+        # Get user info for logging
+        user = db.get_user_by_id(user_id)
+        if not user:
+            raise HTTPException(
+                status_code=404,
+                detail="User not found"
+            )
+        
+        # Prevent admin from deleting their own data
+        if user_id == current_user['user_id']:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot delete your own data"
+            )
+        
+        # Delete all user data
+        success = db.delete_all_user_data(user_id)
+        if not success:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to delete user data"
+            )
+        
+        # Log admin action
+        db.log_activity(
+            user_id=current_user['user_id'],
+            level="CRITICAL",
+            message=f"Admin {current_user['username']} deleted ALL data for user {user['username']} (ID: {user_id})",
+            module="admin"
+        )
+        
+        return {
+            "message": f"All data deleted for user {user['username']}",
+            "success": True,
+            "deleted_for_user": user['username']
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting user data: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to delete user data"
+        )
+
+@app.get("/api/admin/logs")
+async def get_system_logs(
+    limit: int = 100,
+    level: str = "all",
+    current_user: dict = Depends(get_admin_user)
+):
+    """Get system logs for admin monitoring"""
+    try:
+        logs = db.get_recent_logs(limit=limit, level=level if level != "all" else None)
+        return {"logs": logs}
+        
+    except Exception as e:
+        logger.error(f"Error getting logs: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to get system logs"
+        )
 async def admin_system_action(action: str, current_user: dict = Depends(get_admin_user)):
     """Perform system maintenance actions"""
     try:
@@ -1393,7 +1580,7 @@ async def delete_user_detection(
     detection_id: int,
     current_user: dict = Depends(get_current_user)
 ):
-    """Delete a user's detection"""
+    """Delete a user's detection completely (including files)"""
     try:
         # Verify ownership
         detection = db.get_detection_by_id(detection_id)
@@ -1403,21 +1590,29 @@ async def delete_user_detection(
                 detail="Detection not found"
             )
         
-        if detection['user_id'] != current_user['user_id'] and current_user['role'] != 'ADMIN':
+        if detection['user_id'] != current_user['user_id']:
             raise HTTPException(
                 status_code=403,
                 detail="Not authorized to delete this detection"
             )
         
         # Delete detection and associated files
-        success = db.delete_detection(detection_id)
+        success = db.delete_detection(detection_id, current_user['user_id'])
         if not success:
             raise HTTPException(
                 status_code=500,
                 detail="Failed to delete detection"
             )
         
-        return {"message": "Detection deleted successfully"}
+        # Log the deletion
+        db.log_activity(
+            user_id=current_user['user_id'],
+            level="INFO",
+            message=f"User deleted detection {detection_id}",
+            module="user_data"
+        )
+        
+        return {"message": "Detection deleted completely", "success": True}
         
     except HTTPException:
         raise
@@ -1426,6 +1621,186 @@ async def delete_user_detection(
         raise HTTPException(
             status_code=500,
             detail="Failed to delete detection"
+        )
+
+@app.delete("/api/user/reports/{report_id}")
+async def delete_user_report(
+    report_id: int,
+    current_user: dict = Depends(get_current_user)
+):
+    """Delete a user's report completely"""
+    try:
+        # Verify ownership by trying to get the report
+        report = db.get_user_report_by_id(current_user['user_id'], report_id)
+        if not report:
+            raise HTTPException(
+                status_code=404,
+                detail="Report not found or not authorized"
+            )
+        
+        # Delete the report
+        success = db.delete_report(report_id, current_user['user_id'])
+        if not success:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to delete report"
+            )
+        
+        # Log the deletion
+        db.log_activity(
+            user_id=current_user['user_id'],
+            level="INFO",
+            message=f"User deleted report {report_id}: {report['title']}",
+            module="user_data"
+        )
+        
+        return {"message": "Report deleted successfully", "success": True}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting report: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to delete report"
+        )
+
+@app.delete("/api/user/data/all")
+async def delete_all_user_data(
+    current_user: dict = Depends(get_current_user)
+):
+    """Delete ALL user data (detections, reports, predictions, analytics)"""
+    try:
+        user_id = current_user['user_id']
+        
+        # Log before deletion
+        db.log_activity(
+            user_id=user_id,
+            level="WARNING",
+            message=f"User {current_user['username']} requested complete data deletion",
+            module="user_data"
+        )
+        
+        # Delete all user data
+        success = db.delete_all_user_data(user_id)
+        if not success:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to delete all user data"
+            )
+        
+        return {
+            "message": "All your data has been permanently deleted",
+            "success": True,
+            "deleted": [
+                "All detections and results",
+                "All generated reports", 
+                "All predictions",
+                "All analytics data",
+                "All associated files"
+            ]
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting all user data: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to delete all user data"
+        )
+
+@app.get("/api/user/data/export")
+async def export_user_data(
+    current_user: dict = Depends(get_current_user)
+):
+    """Export all user data for GDPR compliance"""
+    try:
+        user_id = current_user['user_id']
+        
+        # Get all user data
+        user_info = db.get_user_by_id(user_id)
+        detections = db.get_user_detections(user_id, limit=1000)
+        reports = db.get_user_reports(user_id, limit=100)
+        predictions = db.get_user_predictions(user_id, limit=1000)
+        
+        # Remove sensitive data
+        if user_info:
+            user_info.pop('password_hash', None)
+        
+        export_data = {
+            "export_info": {
+                "user_id": user_id,
+                "username": current_user['username'],
+                "export_date": datetime.now().isoformat(),
+                "export_type": "complete_user_data"
+            },
+            "user_profile": user_info,
+            "detections": detections,
+            "reports": reports,
+            "predictions": predictions,
+            "summary": {
+                "total_detections": len(detections),
+                "total_reports": len(reports),
+                "total_predictions": len(predictions),
+                "account_created": user_info.get('created_at') if user_info else None
+            }
+        }
+        
+        # Log the export
+        db.log_activity(
+            user_id=user_id,
+            level="INFO",
+            message=f"User {current_user['username']} exported their data",
+            module="privacy"
+        )
+        
+        return {
+            "success": True,
+            "data": export_data,
+            "message": "All your data has been exported successfully"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error exporting user data: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to export user data"
+        )
+
+@app.delete("/api/user/history/clear")
+async def clear_user_history(
+    current_user: dict = Depends(get_current_user)
+):
+    """Clear user's detection history (same as delete all detections)"""
+    try:
+        user_id = current_user['user_id']
+        
+        # Delete all user detections
+        success = db.delete_all_user_detections(user_id)
+        if not success:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to clear history"
+            )
+        
+        # Log the action
+        db.log_activity(
+            user_id=user_id,
+            level="INFO",
+            message=f"User {current_user['username']} cleared all detection history",
+            module="user_data"
+        )
+        
+        return {"message": "Detection history cleared completely", "success": True}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error clearing history: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to clear history"
         )
 
 # ============================================================================

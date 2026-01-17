@@ -15,6 +15,9 @@ import PredictionsPage from "./pages/PredictionsPage";
 import ReportsPage from "./pages/ReportsPage";
 import SettingsPage from "./pages/SettingsPage";
 import AdminDashboard from "./pages/AdminDashboard";
+import AdminLogs from "./pages/AdminLogs";
+import AdminUsers from "./pages/AdminUsers";
+import PrivacyPolicy from "./pages/PrivacyPolicy";
 import AuthPage from "./pages/AuthPage";
 import NotFound from "./pages/NotFound";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -51,88 +54,118 @@ const ProtectedRoute = ({ children, requireAdmin = false }: { children: React.Re
   return <>{children}</>;
 };
 
+// User-only Route Component (prevents admin access and redirects them)
+const UserOnlyRoute = ({ children }: { children: React.ReactNode }) => {
+  const { isAuthenticated, isAdmin, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/auth" replace />;
+  }
+
+  // Automatically redirect admins to admin panel
+  if (isAdmin) {
+    return <Navigate to="/admin" replace />;
+  }
+
+  return <>{children}</>;
+};
+
 const AppRoutes = () => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isAdmin } = useAuth();
 
   return (
     <Routes>
       <Route path="/" element={<HomePage />} />
       <Route 
         path="/auth" 
-        element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <AuthPage />} 
+        element={
+          isAuthenticated ? (
+            <Navigate to={isAdmin ? "/admin" : "/"} replace />
+          ) : (
+            <AuthPage />
+          )
+        } 
       />
       <Route 
         path="/upload" 
         element={
-          <ProtectedRoute>
+          <UserOnlyRoute>
             <UploadPage />
-          </ProtectedRoute>
+          </UserOnlyRoute>
         } 
       />
       <Route 
         path="/results" 
         element={
-          <ProtectedRoute>
+          <UserOnlyRoute>
             <ResultsPage />
-          </ProtectedRoute>
+          </UserOnlyRoute>
         } 
       />
       <Route 
         path="/results/:detectionId" 
         element={
-          <ProtectedRoute>
+          <UserOnlyRoute>
             <ResultsPage />
-          </ProtectedRoute>
+          </UserOnlyRoute>
         } 
       />
       <Route 
         path="/dashboard" 
         element={
-          <ProtectedRoute>
+          <UserOnlyRoute>
             <DashboardPage />
-          </ProtectedRoute>
+          </UserOnlyRoute>
         } 
       />
       <Route 
         path="/history" 
         element={
-          <ProtectedRoute>
+          <UserOnlyRoute>
             <HistoryPage />
-          </ProtectedRoute>
+          </UserOnlyRoute>
         } 
       />
       <Route 
         path="/heatmap" 
         element={
-          <ProtectedRoute>
+          <UserOnlyRoute>
             <HeatmapPage />
-          </ProtectedRoute>
+          </UserOnlyRoute>
         } 
       />
       <Route 
         path="/predictions" 
         element={
-          <ProtectedRoute>
+          <UserOnlyRoute>
             <ErrorBoundary>
               <PredictionsPage />
             </ErrorBoundary>
-          </ProtectedRoute>
+          </UserOnlyRoute>
         } 
       />
       <Route 
         path="/reports" 
         element={
-          <ProtectedRoute>
+          <UserOnlyRoute>
             <ReportsPage />
-          </ProtectedRoute>
+          </UserOnlyRoute>
         } 
       />
       <Route 
         path="/settings" 
         element={
-          <ProtectedRoute>
+          <UserOnlyRoute>
             <SettingsPage />
-          </ProtectedRoute>
+          </UserOnlyRoute>
         } 
       />
       <Route 
@@ -143,6 +176,23 @@ const AppRoutes = () => {
           </ProtectedRoute>
         } 
       />
+      <Route 
+        path="/admin/logs" 
+        element={
+          <ProtectedRoute requireAdmin>
+            <AdminLogs />
+          </ProtectedRoute>
+        } 
+      />
+      <Route 
+        path="/admin/users" 
+        element={
+          <ProtectedRoute requireAdmin>
+            <AdminUsers />
+          </ProtectedRoute>
+        } 
+      />
+      <Route path="/privacy" element={<PrivacyPolicy />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   );

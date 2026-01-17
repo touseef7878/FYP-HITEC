@@ -1735,6 +1735,8 @@ async def detect_objects(
 async def detect_video(
     file: UploadFile = File(...), 
     confidence: float = 0.25,
+    frame_skip: int = 1,  # Process every Nth frame for speed
+    max_frames: int = 0,  # Limit total frames processed (0 = no limit)
     current_user: dict = Depends(get_current_user)
 ):
     if model is None:
@@ -1781,6 +1783,17 @@ async def detect_video(
         
         with open(temp_input_path, 'wb') as f:
             f.write(contents)
+        
+        # Generate unique video ID for file naming
+        video_id = str(uuid.uuid4())
+        
+        # Save original video to processed_videos directory for serving
+        original_filename = f"original_{video_id}.{file.filename.split('.')[-1]}"
+        original_video_path = os.path.join(processed_videos_path, original_filename)
+        
+        # Copy original video to processed_videos directory
+        shutil.copy2(temp_input_path, original_video_path)
+        logger.info(f"💾 Original video saved: {original_video_path}")
         
         # Open video with OpenCV
         cap = cv2.VideoCapture(temp_input_path)
@@ -1836,21 +1849,37 @@ async def detect_video(
         
         # Initialize processing variables
         frame_count = 0
+        processed_frame_count = 0
         total_detections = 0
         all_detections = []
         class_counts = {}
         colors = {}
         frames_with_detections = 0
         
-        logger.info("🔍 Starting frame-by-frame detection...")
+        logger.info("🔍 Starting optimized frame-by-frame detection...")
+        logger.info(f"   Frame skip: {frame_skip} (processing every {frame_skip} frame(s))")
+        if max_frames > 0:
+            logger.info(f"   Max frames: {max_frames}")
         
-        # Process video frame by frame
+        # Process video frame by frame with optimizations
         while True:
             ret, frame = cap.read()
             if not ret:
                 break
             
             frame_count += 1
+            
+            # Skip frames for speed optimization
+            if frame_count % frame_skip != 0:
+                out.write(frame)  # Write original frame without processing
+                continue
+            
+            # Limit total frames processed if specified
+            if max_frames > 0 and processed_frame_count >= max_frames:
+                out.write(frame)  # Write remaining frames without processing
+                continue
+            
+            processed_frame_count += 1
             
             # Run YOLO inference on frame
             try:
@@ -1975,14 +2004,13 @@ async def detect_video(
             # Log progress every 50 frames or at significant milestones
             if frame_count % 50 == 0 or frame_count == total_frames:
                 progress = (frame_count / total_frames) * 100
-                logger.info(f"   Progress: {frame_count}/{total_frames} frames ({progress:.1f}%) | Detections: {total_detections}")
+                logger.info(f"   Progress: {frame_count}/{total_frames} frames ({progress:.1f}%) | Processed: {processed_frame_count} | Detections: {total_detections}")
         
         # Release resources
         cap.release()
         out.release()
         
         # Generate unique filename for processed video
-        video_id = str(uuid.uuid4())
         processed_filename = f"processed_{video_id}.mp4"
         final_output_path = os.path.join(processed_videos_path, processed_filename)
         
@@ -2073,7 +2101,7 @@ async def detect_video(
             fps=fps,
             duration=duration,
             resolution=f"{width}x{height}",
-            original_path=temp_input_path,
+            original_path=original_video_path,
             annotated_path=final_output_path
         )
         
@@ -2104,7 +2132,7 @@ async def detect_video(
             "detections": all_detections,
             "summary": summary,
             "annotatedVideoUrl": f"/processed-video/{processed_filename}",
-            "originalVideoUrl": f"/processed-video/{processed_filename}" if original_video_base64 is None else None,
+            "originalVideoUrl": f"/processed-video/{original_filename}",
             "originalVideo": f"data:video/mp4;base64,{original_video_base64}" if original_video_base64 else None,
             "videoId": video_id,
             "processingStats": {
@@ -3051,6 +3079,7 @@ async def get_detection_by_id(
                 "avgDetectionsPerFrame": metadata.get('avg_detections_per_frame', 0),
                 "fileSizeMB": metadata.get('file_size_mb', 0),
                 "annotatedVideoUrl": f"/processed-video/{os.path.basename(video_metadata.get('annotated_path', ''))}" if video_metadata.get('annotated_path') else None,
+                "originalVideoUrl": f"/processed-video/{os.path.basename(video_metadata.get('original_path', ''))}" if video_metadata.get('original_path') else None,
                 "videoId": metadata.get('video_id', ''),
             })
         

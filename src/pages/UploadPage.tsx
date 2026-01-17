@@ -273,17 +273,37 @@ export default function UploadPage() {
           throw new Error("Not authenticated. Please login first.");
         }
         
-        const startTime = Date.now();
-        const response = await fetch(
-          `${API_URL}${endpoint}?confidence=${confidence / 100}`,
-          {
-            method: "POST",
-            headers: {
-              'Authorization': `Bearer ${token}`,
-            },
-            body: formData,
+        // Build API URL with optimization parameters
+        let apiUrl = `${API_URL}${endpoint}?confidence=${confidence / 100}`;
+        
+        // Add speed optimization for videos
+        if (isVideo) {
+          const fileSize = file.file.size / (1024 * 1024); // Size in MB
+          
+          // Auto-optimize based on file size and duration
+          if (fileSize > 10) {
+            apiUrl += "&frame_skip=2"; // Process every 2nd frame for large files
+            addLog(`🚀 Speed optimization: Processing every 2nd frame (large file: ${fileSize.toFixed(1)}MB)`);
+          } else if (fileSize > 5) {
+            apiUrl += "&frame_skip=1"; // Process every frame for medium files
+            addLog(`⚡ Processing every frame (medium file: ${fileSize.toFixed(1)}MB)`);
           }
-        );
+          
+          // Limit frames for very long videos
+          if (fileSize > 20) {
+            apiUrl += "&max_frames=500"; // Limit to 500 processed frames for very large files
+            addLog(`⏱️ Frame limit: 500 frames max for performance`);
+          }
+        }
+        
+        const startTime = Date.now();
+        const response = await fetch(apiUrl, {
+          method: "POST",
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+          body: formData,
+        });
 
         // Update to processing status
         setFiles((prev) =>
@@ -346,9 +366,12 @@ export default function UploadPage() {
           addLog(`📊 Video stats: ${result.duration}s duration, ${result.fps} FPS, ${result.resolution}`);
           if (result.annotatedVideoUrl) {
             addLog(`💾 Processed video saved to: backend/processed_videos/`);
-            addLog(`🌐 Video accessible at: ${API_URL}${result.annotatedVideoUrl}`);
-            addLog(`📁 Local file: processed_${result.videoId}.mp4`);
+            addLog(`🌐 Processed video: ${API_URL}${result.annotatedVideoUrl}`);
           }
+          if (result.originalVideoUrl) {
+            addLog(`📹 Original video: ${API_URL}${result.originalVideoUrl}`);
+          }
+          addLog(`📁 Video ID: ${result.videoId}`);
         } else {
           addLog(`✓ Image processed: ${result.totalDetections} objects detected`);
         }

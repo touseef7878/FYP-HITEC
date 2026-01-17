@@ -57,14 +57,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   };
 
   const handleLoadStart = () => {
-    console.log('Video load started');
     setIsLoading(true);
     setError(null);
     onLoadStart?.();
   };
 
   const handleCanPlay = () => {
-    console.log('Video can play');
     setIsLoading(false);
     onCanPlay?.();
   };

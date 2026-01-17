@@ -273,61 +273,7 @@ async def options_video(filename: str):
         }
     )
 
-@app.get("/test-video/{filename}")
-async def test_video_access(filename: str):
-    """Test endpoint to check if video file exists and is accessible"""
-    try:
-        video_path = os.path.join(processed_videos_path, filename)
-        
-        if not os.path.exists(video_path):
-            return {"exists": False, "path": video_path}
-        
-        file_size = os.path.getsize(video_path)
-        file_stats = os.stat(video_path)
-        
-        # Try to read video metadata using OpenCV
-        video_info = {}
-        try:
-            import cv2
-            cap = cv2.VideoCapture(video_path)
-            if cap.isOpened():
-                video_info = {
-                    "frame_count": int(cap.get(cv2.CAP_PROP_FRAME_COUNT)),
-                    "fps": cap.get(cv2.CAP_PROP_FPS),
-                    "width": int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
-                    "height": int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
-                    "codec": int(cap.get(cv2.CAP_PROP_FOURCC)),
-                    "duration": cap.get(cv2.CAP_PROP_FRAME_COUNT) / cap.get(cv2.CAP_PROP_FPS) if cap.get(cv2.CAP_PROP_FPS) > 0 else 0
-                }
-                cap.release()
-            else:
-                video_info = {"error": "Could not open video with OpenCV"}
-        except Exception as e:
-            video_info = {"error": f"OpenCV error: {str(e)}"}
-        
-        # Check file header to determine actual format
-        file_header = ""
-        try:
-            with open(video_path, 'rb') as f:
-                header_bytes = f.read(12)
-                file_header = header_bytes.hex()
-        except Exception as e:
-            file_header = f"Error reading header: {e}"
-        
-        return {
-            "exists": True,
-            "path": video_path,
-            "size_bytes": file_size,
-            "size_mb": round(file_size / (1024 * 1024), 2),
-            "modified": file_stats.st_mtime,
-            "accessible": os.access(video_path, os.R_OK),
-            "video_info": video_info,
-            "file_header": file_header,
-            "url": f"/processed-video/{filename}"
-        }
-        
-    except Exception as e:
-        return {"error": str(e)}
+
 
 # Root endpoint
 @app.get("/")
@@ -2369,45 +2315,6 @@ async def generate_analytics(
         }
     except Exception as e:
         logger.error(f"Error generating analytics: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/api/analytics/debug")
-async def debug_analytics(
-    current_user: dict = Depends(get_current_user)
-):
-    """Debug analytics data - shows raw detection data"""
-    try:
-        user_id = current_user['user_id']
-        
-        # Get raw detections
-        detections = db.get_user_detections(user_id, limit=10)
-        
-        debug_info = {
-            "user_id": user_id,
-            "total_detections_found": len(detections),
-            "detections": []
-        }
-        
-        for detection in detections[:5]:  # Show first 5 for debugging
-            detection_results = db.get_detection_results(detection['id'], user_id)
-            debug_info["detections"].append({
-                "id": detection['id'],
-                "filename": detection.get('filename', 'unknown'),
-                "total_detections": detection.get('total_detections', 0),
-                "avg_confidence": detection.get('avg_confidence', 0),
-                "created_at": detection.get('created_at'),
-                "metadata": detection.get('metadata', {}),
-                "detection_results_count": len(detection_results),
-                "detection_results": detection_results[:3]  # Show first 3 results
-            })
-        
-        return {
-            "success": True,
-            "debug_info": debug_info
-        }
-        
-    except Exception as e:
-        logger.error(f"Error in debug analytics: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================================================

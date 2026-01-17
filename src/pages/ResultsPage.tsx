@@ -11,7 +11,6 @@ import {
   ImageIcon,
   Play,
   Video,
-  Save,
   Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -70,7 +69,6 @@ export default function ResultsPage() {
             return;
           }
 
-          console.log(`🔍 Fetching detection ID: ${detectionId}`);
           const response = await fetch(`${API_URL}/api/detections/${detectionId}`, {
             headers: {
               'Authorization': `Bearer ${token}`,
@@ -78,19 +76,14 @@ export default function ResultsPage() {
             }
           });
 
-          console.log(`📡 Response status: ${response.status}`);
-
           if (!response.ok) {
             const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
-            console.error('❌ API Error:', errorData);
             throw new Error(errorData.detail || 'Failed to fetch detection');
           }
 
           const data = await response.json();
-          console.log("📦 API Response:", data);
           
           if (data.success && data.detection) {
-            console.log("✅ Detection loaded successfully:", data.detection);
             setResults([data.detection]);
             
             toast({
@@ -99,11 +92,9 @@ export default function ResultsPage() {
               duration: 3000,
             });
           } else {
-            console.error("❌ Invalid response format:", data);
             throw new Error('Invalid response format');
           }
         } catch (error) {
-          console.error("❌ Error loading detection:", error);
           const errorMessage = error instanceof Error ? error.message : "Unknown error";
           toast({
             title: "Error Loading Results",
@@ -120,7 +111,6 @@ export default function ResultsPage() {
         if (storedResults) {
           try {
             const parsed = JSON.parse(storedResults);
-            console.log("🔍 Debug - Loaded results from session:", parsed);
             setResults(parsed);
             
             // Save results to data service for history and analytics
@@ -133,7 +123,6 @@ export default function ResultsPage() {
             // Show completion notification for videos
             const hasVideo = parsed.some((r: DetectionResult) => r.annotatedVideo || r.annotatedVideoUrl);
             if (hasVideo) {
-              console.log("🎬 Debug - Video detected in results");
               toast({
                 title: "🎬 Video Processing Complete!",
                 description: "Your annotated video with frame-by-frame detections is ready to view",
@@ -147,11 +136,9 @@ export default function ResultsPage() {
               duration: 3000,
             });
           } catch (error) {
-            console.error("Error parsing results:", error);
             setResults([emptyResult]);
           }
         } else {
-          console.log("⚠️ Debug - No stored results found");
           setResults([emptyResult]);
         }
       }
@@ -171,11 +158,6 @@ export default function ResultsPage() {
 
   const isVideo = !!(currentResult.annotatedVideo || currentResult.annotatedVideoUrl || currentResult.totalFrames);
   
-  // Debug logging
-  console.log("🔍 Debug - Current result:", currentResult);
-  console.log("🔍 Debug - Is video:", isVideo);
-  console.log("🔍 Debug - Has annotatedVideoUrl:", !!currentResult.annotatedVideoUrl);
-
   const handleDownload = () => {
     if (currentResult.annotatedImage) {
       const link = document.createElement("a");
@@ -313,45 +295,7 @@ export default function ResultsPage() {
 
           <div className="grid lg:grid-cols-3 gap-6">
             {/* File Saving Status - Show for videos */}
-            {isVideo && currentResult.annotatedVideoUrl && (
-              <div className="lg:col-span-3 mb-4">
-                <Card className="glass-card border-success/20 bg-success/5">
-                  <CardContent className="pt-6">
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 rounded-xl bg-success/10 flex items-center justify-center">
-                        <Save className="h-6 w-6 text-success" />
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-success">💾 Video Saved Successfully!</h3>
-                        <p className="text-sm text-muted-foreground">
-                          Processed video saved to: <code className="bg-muted px-1 rounded text-xs">backend/processed_videos/</code>
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          📁 File: processed_{currentResult.videoId}.mp4
-                        </p>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => window.open(`${API_URL}${currentResult.annotatedVideoUrl}`, '_blank')}
-                        >
-                          <Play className="h-3 w-3 mr-1" />
-                          View Video
-                        </Button>
-                        <Button
-                          size="sm"
-                          onClick={handleDownload}
-                        >
-                          <Download className="h-3 w-3 mr-1" />
-                          Download
-                        </Button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-            )}
+
 
             {/* Image Comparison */}
             <div className="lg:col-span-2">
@@ -428,36 +372,7 @@ export default function ResultsPage() {
                               <VideoPlayer
                                 src={`${API_URL}${currentResult.annotatedVideoUrl}`}
                                 className="w-full h-full"
-                                onError={(e) => {
-                                  console.error('Annotated video load error:', e);
-                                  console.log('Video URL:', `${API_URL}${currentResult.annotatedVideoUrl}`);
-                                }}
-                                onLoadStart={() => {
-                                  console.log('Video loading started:', `${API_URL}${currentResult.annotatedVideoUrl}`);
-                                }}
-                                onCanPlay={() => {
-                                  console.log('Video can play');
-                                }}
                               />
-                              <div className="px-4 pb-4">
-                                <div className="flex items-center justify-between text-sm">
-                                  <span className="text-muted-foreground">Processed Video:</span>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => window.open(`${API_URL}${currentResult.annotatedVideoUrl}`, '_blank')}
-                                  >
-                                    <Play className="h-3 w-3 mr-1" />
-                                    Open in New Tab
-                                  </Button>
-                                </div>
-                                <p className="text-xs text-muted-foreground mt-1">
-                                  📁 Saved to: backend/processed_videos/
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  🔗 URL: {`${API_URL}${currentResult.annotatedVideoUrl}`}
-                                </p>
-                              </div>
                             </div>
                           ) : currentResult.annotatedVideo ? (
                             <VideoPlayer

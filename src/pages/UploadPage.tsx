@@ -352,7 +352,6 @@ export default function UploadPage() {
           });
           addLog(`📊 Analytics updated automatically`);
         } catch (analyticsError) {
-          console.warn('Failed to generate analytics:', analyticsError);
           addLog(`⚠️ Analytics update failed (non-critical)`);
         }
         
@@ -364,14 +363,6 @@ export default function UploadPage() {
         if (isVideo) {
           addLog(`✓ Video processed: ${result.totalDetections} objects detected in ${result.totalFrames} frames`);
           addLog(`📊 Video stats: ${result.duration}s duration, ${result.fps} FPS, ${result.resolution}`);
-          if (result.annotatedVideoUrl) {
-            addLog(`💾 Processed video saved to: backend/processed_videos/`);
-            addLog(`🌐 Processed video: ${API_URL}${result.annotatedVideoUrl}`);
-          }
-          if (result.originalVideoUrl) {
-            addLog(`📹 Original video: ${API_URL}${result.originalVideoUrl}`);
-          }
-          addLog(`📁 Video ID: ${result.videoId}`);
         } else {
           addLog(`✓ Image processed: ${result.totalDetections} objects detected`);
         }
@@ -386,9 +377,6 @@ export default function UploadPage() {
         // Update overall progress
         const overallProgress = (processedTime / totalEstimatedTime) * 100;
         setProcessingProgress(Math.min(100, overallProgress));
-        
-        // Debug log
-        addLog(`📊 File ${i + 1}/${files.length} complete. Overall progress: ${Math.round(overallProgress)}%`);
 
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unknown error";
@@ -409,10 +397,6 @@ export default function UploadPage() {
       const videoCount = results.filter(r => r.annotatedVideoUrl).length;
       
       addLog(`🎉 All files processed! Total detections: ${totalDetections}`);
-      if (videoCount > 0) {
-        addLog(`💾 ${videoCount} processed video(s) saved to: backend/processed_videos/`);
-        addLog(`📂 You can find your files in the project's backend/processed_videos/ folder`);
-      }
       
       // Store results in sessionStorage for immediate viewing (fallback)
       sessionStorage.setItem("detectionResults", JSON.stringify(results));
@@ -425,26 +409,13 @@ export default function UploadPage() {
       // Show completion notification
       toast({
         title: "🎉 Detection Complete!",
-        description: `Successfully processed ${results.length} file(s) with ${totalDetections} total detections. Files saved to backend/processed_videos/`,
+        description: `Successfully processed ${results.length} file(s) with ${totalDetections} total detections`,
         duration: 5000,
       });
 
-      // Show completion popup for videos with direct access
+      // Show completion popup for videos
       const hasVideo = results.some(r => r.annotatedVideo || r.annotatedVideoUrl);
       if (hasVideo) {
-        const videoResult = results.find(r => r.annotatedVideoUrl);
-        if (videoResult?.annotatedVideoUrl) {
-          addLog(`🎬 Direct video link: ${API_URL}${videoResult.annotatedVideoUrl}`);
-          addLog(`💾 Video file saved in: backend/processed_videos/ folder`);
-        }
-        
-        // Show file saving notification
-        toast({
-          title: "💾 Video Saved Successfully!",
-          description: "Processed video saved to backend/processed_videos/ folder and ready for download",
-          duration: 6000,
-        });
-        
         toast({
           title: "🎬 Video Processing Complete!",
           description: "Click 'View Results Now' or wait for automatic redirect",

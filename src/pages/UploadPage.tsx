@@ -317,6 +317,11 @@ export default function UploadPage() {
         const result = await response.json();
         clearInterval(progressInterval);
         
+        // Store detection_id if available
+        if (result.detection_id) {
+          file.detectionId = result.detection_id;
+        }
+        
         // Auto-generate analytics after successful detection
         try {
           await fetch(`${API_URL}/api/analytics/generate`, {
@@ -386,7 +391,7 @@ export default function UploadPage() {
         addLog(`📂 You can find your files in the project's backend/processed_videos/ folder`);
       }
       
-      // Store results in sessionStorage to pass to results page
+      // Store results in sessionStorage for immediate viewing (fallback)
       sessionStorage.setItem("detectionResults", JSON.stringify(results));
       
       // IMMEDIATELY set completion state and stop processing
@@ -424,13 +429,20 @@ export default function UploadPage() {
         });
       }
 
-      // Navigate to results after showing completion (longer delay to show completion state)
+      // Navigate to results with detection ID (use first result's ID)
+      const firstDetectionId = results[0]?.detection_id;
       setTimeout(() => {
         addLog("🚀 Auto-redirecting to results...");
         setIsComplete(false); // Clear completion state
         setProcessingProgress(0); // Reset progress
         setEstimatedTime(null); // Clear estimated time
-        navigate("/results");
+        
+        // Navigate with ID if available, otherwise use sessionStorage fallback
+        if (firstDetectionId) {
+          navigate(`/results/${firstDetectionId}`);
+        } else {
+          navigate("/results");
+        }
       }, 5000); // Increased delay to show completion state longer
     } else {
       setIsProcessing(false);

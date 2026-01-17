@@ -314,6 +314,24 @@ class DatabaseManager:
             logger.error(f"Save video metadata failed: {e}")
             return False
     
+    def get_video_metadata(self, detection_id: int) -> Optional[Dict]:
+        """Get video metadata by detection ID"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT * FROM videos WHERE detection_id = ?
+                """, (detection_id,))
+                
+                row = cursor.fetchone()
+                if row:
+                    return dict(row)
+                return None
+                
+        except Exception as e:
+            logger.error(f"Get video metadata failed: {e}")
+            return None
+    
     def update_detection_status(self, detection_id: int, status: str, 
                                total_detections: int = None, processing_time: float = None,
                                error_message: str = None, metadata: Dict = None) -> bool:
@@ -1218,26 +1236,6 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Update user password failed: {e}")
             return False
-    
-    def get_detection_by_id(self, detection_id: int) -> Optional[Dict]:
-        """Get detection by ID"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT * FROM detections WHERE id = ?
-                """, (detection_id,))
-                
-                detection = cursor.fetchone()
-                if detection:
-                    detection = dict(detection)
-                    detection['metadata'] = json.loads(detection['metadata'] or '{}')
-                
-                return detection
-                
-        except Exception as e:
-            logger.error(f"Get detection by ID failed: {e}")
-            return None
     
     def delete_detection(self, detection_id: int) -> bool:
         """Delete a detection and its associated data"""

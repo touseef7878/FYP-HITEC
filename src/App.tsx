@@ -78,6 +78,14 @@ const AppRoutes = () => {
         } 
       />
       <Route 
+        path="/results/:detectionId" 
+        element={
+          <ProtectedRoute>
+            <ResultsPage />
+          </ProtectedRoute>
+        } 
+      />
+      <Route 
         path="/dashboard" 
         element={
           <ProtectedRoute>

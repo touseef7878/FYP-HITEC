@@ -89,12 +89,6 @@ export default function HistoryPage() {
     return matchesSearch && matchesType && matchesDate;
   });
 
-  const handleViewResult = (item: HistoryItem) => {
-    // Store the result in sessionStorage and navigate to results page
-    sessionStorage.setItem('detectionResults', JSON.stringify([item.result]));
-    // The Link component will handle navigation
-  };
-
   const handleDeleteItem = (itemId: string) => {
     const updatedHistory = historyData.filter(item => item.id !== itemId);
     setHistoryData(updatedHistory);
@@ -284,15 +278,16 @@ export default function HistoryPage() {
 
                         {/* Actions */}
                         <div className="flex items-center gap-2 flex-shrink-0">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleViewResult(item)}
-                            title="View Results"
-                          >
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                          <Link to="/results" onClick={() => handleViewResult(item)}>
+                          <Link to={`/results/${item.id}`}>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title="View Results"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          </Link>
+                          <Link to={`/results/${item.id}`}>
                             <Button variant="ghost" size="icon" title="Open Results">
                               <ChevronRight className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
                             </Button>

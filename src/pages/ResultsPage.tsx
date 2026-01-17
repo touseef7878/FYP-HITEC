@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Link } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import {
   Download,
   Share2,
@@ -12,6 +12,7 @@ import {
   Play,
   Video,
   Save,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,6 +22,7 @@ import { MainLayout } from "@/components/layout/MainLayout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { dataService, DetectionResult } from "@/lib/dataService";
+import { VideoPlayer } from "@/components/VideoPlayer";
 
 // Backend API URL - change this if your backend runs on a different port
 const API_URL = "http://localhost:8000";
@@ -45,52 +47,118 @@ const chartColors = [
 ];
 
 export default function ResultsPage() {
+  const { detectionId } = useParams<{ detectionId: string }>();
   const [results, setResults] = useState<DetectionResult[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
-    // Load results from sessionStorage
-    const storedResults = sessionStorage.getItem("detectionResults");
-    if (storedResults) {
-      try {
-        const parsed = JSON.parse(storedResults);
-        console.log("🔍 Debug - Loaded results:", parsed); // Debug log
-        setResults(parsed);
-        
-        // Save results to data service for history and analytics
-        parsed.forEach((result: DetectionResult) => {
-          if (result.success) { // Save all successful results, even with 0 detections
-            dataService.saveDetectionResult(result);
+    const loadResults = async () => {
+      // If we have a detection ID in URL, fetch from API
+      if (detectionId) {
+        setIsLoading(true);
+        try {
+          const token = localStorage.getItem('auth_token');
+          if (!token) {
+            toast({
+              title: "Authentication Required",
+              description: "Please login to view detection results",
+              variant: "destructive",
+            });
+            setIsLoading(false);
+            return;
           }
-        });
-        
-        // Show completion notification for videos
-        const hasVideo = parsed.some((r: DetectionResult) => r.annotatedVideo || r.annotatedVideoUrl);
-        if (hasVideo) {
-          console.log("🎬 Debug - Video detected in results"); // Debug log
-          toast({
-            title: "🎬 Video Processing Complete!",
-            description: "Your annotated video with frame-by-frame detections is ready to view",
-            duration: 5000,
-          });
-        }
 
-        // Show success notification for data saving
-        toast({
-          title: "✅ Results Saved",
-          description: "Detection results have been saved to your history and analytics",
-          duration: 3000,
-        });
-      } catch (error) {
-        console.error("Error parsing results:", error);
-        setResults([emptyResult]);
+          console.log(`🔍 Fetching detection ID: ${detectionId}`);
+          const response = await fetch(`${API_URL}/api/detections/${detectionId}`, {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          });
+
+          console.log(`📡 Response status: ${response.status}`);
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
+            console.error('❌ API Error:', errorData);
+            throw new Error(errorData.detail || 'Failed to fetch detection');
+          }
+
+          const data = await response.json();
+          console.log("📦 API Response:", data);
+          
+          if (data.success && data.detection) {
+            console.log("✅ Detection loaded successfully:", data.detection);
+            setResults([data.detection]);
+            
+            toast({
+              title: "✅ Results Loaded",
+              description: "Detection results loaded successfully",
+              duration: 3000,
+            });
+          } else {
+            console.error("❌ Invalid response format:", data);
+            throw new Error('Invalid response format');
+          }
+        } catch (error) {
+          console.error("❌ Error loading detection:", error);
+          const errorMessage = error instanceof Error ? error.message : "Unknown error";
+          toast({
+            title: "Error Loading Results",
+            description: errorMessage,
+            variant: "destructive",
+          });
+          setResults([]);
+        } finally {
+          setIsLoading(false);
+        }
+      } else {
+        // Fallback to sessionStorage for immediate results after detection
+        const storedResults = sessionStorage.getItem("detectionResults");
+        if (storedResults) {
+          try {
+            const parsed = JSON.parse(storedResults);
+            console.log("🔍 Debug - Loaded results from session:", parsed);
+            setResults(parsed);
+            
+            // Save results to data service for history and analytics
+            parsed.forEach((result: DetectionResult) => {
+              if (result.success) {
+                dataService.saveDetectionResult(result);
+              }
+            });
+            
+            // Show completion notification for videos
+            const hasVideo = parsed.some((r: DetectionResult) => r.annotatedVideo || r.annotatedVideoUrl);
+            if (hasVideo) {
+              console.log("🎬 Debug - Video detected in results");
+              toast({
+                title: "🎬 Video Processing Complete!",
+                description: "Your annotated video with frame-by-frame detections is ready to view",
+                duration: 5000,
+              });
+            }
+
+            toast({
+              title: "✅ Results Saved",
+              description: "Detection results have been saved to your history",
+              duration: 3000,
+            });
+          } catch (error) {
+            console.error("Error parsing results:", error);
+            setResults([emptyResult]);
+          }
+        } else {
+          console.log("⚠️ Debug - No stored results found");
+          setResults([emptyResult]);
+        }
       }
-    } else {
-      console.log("⚠️ Debug - No stored results found"); // Debug log
-      setResults([emptyResult]);
-    }
-  }, [toast]);
+    };
+
+    loadResults();
+  }, [detectionId, toast]);
 
   const currentResult = results[activeIndex] || emptyResult;
   const totalObjects = currentResult.totalDetections;
@@ -152,6 +220,42 @@ export default function ResultsPage() {
   return (
     <MainLayout>
       <PageTransition className="page-container">
+        {isLoading ? (
+          <div className="flex items-center justify-center min-h-[60vh]">
+            <div className="text-center">
+              <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
+              <p className="text-lg font-semibold">Loading detection results...</p>
+              <p className="text-sm text-muted-foreground">Please wait</p>
+            </div>
+          </div>
+        ) : results.length === 0 ? (
+          <div className="flex items-center justify-center min-h-[60vh]">
+            <Card className="glass-card max-w-md">
+              <CardContent className="pt-6 text-center">
+                <div className="w-16 h-16 rounded-full bg-muted mx-auto mb-4 flex items-center justify-center">
+                  <ImageIcon className="h-8 w-8 text-muted-foreground" />
+                </div>
+                <h3 className="text-lg font-semibold mb-2">No Results Found</h3>
+                <p className="text-muted-foreground mb-4">
+                  The detection results could not be loaded. This might happen if:
+                </p>
+                <ul className="text-sm text-muted-foreground text-left mb-4 space-y-1">
+                  <li>• The detection was deleted</li>
+                  <li>• You don't have permission to view it</li>
+                  <li>• The detection ID is invalid</li>
+                </ul>
+                <div className="flex gap-2 justify-center">
+                  <Button asChild variant="outline">
+                    <Link to="/history">View History</Link>
+                  </Button>
+                  <Button asChild>
+                    <Link to="/upload">New Detection</Link>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        ) : (
         <div className="max-w-6xl mx-auto">
           {/* Header */}
           <div className="flex items-center justify-between mb-8">
@@ -282,16 +386,20 @@ export default function ResultsPage() {
                               className="w-full h-full object-contain"
                             />
                           ) : currentResult.originalVideoUrl ? (
-                            <video
+                            <VideoPlayer
                               src={`${API_URL}${currentResult.originalVideoUrl}`}
-                              controls
-                              className="w-full h-full object-contain"
+                              className="w-full h-full"
+                              onError={(e) => {
+                                console.error('Original video load error:', e);
+                              }}
                             />
                           ) : currentResult.originalVideo ? (
-                            <video
+                            <VideoPlayer
                               src={currentResult.originalVideo}
-                              controls
-                              className="w-full h-full object-contain"
+                              className="w-full h-full"
+                              onError={(e) => {
+                                console.error('Original video load error:', e);
+                              }}
                             />
                           ) : isVideo ? (
                             <div className="flex items-center justify-center h-full">
@@ -317,10 +425,19 @@ export default function ResultsPage() {
                             />
                           ) : currentResult.annotatedVideoUrl ? (
                             <div className="space-y-4">
-                              <video
+                              <VideoPlayer
                                 src={`${API_URL}${currentResult.annotatedVideoUrl}`}
-                                controls
-                                className="w-full h-full object-contain"
+                                className="w-full h-full"
+                                onError={(e) => {
+                                  console.error('Annotated video load error:', e);
+                                  console.log('Video URL:', `${API_URL}${currentResult.annotatedVideoUrl}`);
+                                }}
+                                onLoadStart={() => {
+                                  console.log('Video loading started:', `${API_URL}${currentResult.annotatedVideoUrl}`);
+                                }}
+                                onCanPlay={() => {
+                                  console.log('Video can play');
+                                }}
                               />
                               <div className="px-4 pb-4">
                                 <div className="flex items-center justify-between text-sm">
@@ -337,13 +454,18 @@ export default function ResultsPage() {
                                 <p className="text-xs text-muted-foreground mt-1">
                                   📁 Saved to: backend/processed_videos/
                                 </p>
+                                <p className="text-xs text-muted-foreground">
+                                  🔗 URL: {`${API_URL}${currentResult.annotatedVideoUrl}`}
+                                </p>
                               </div>
                             </div>
                           ) : currentResult.annotatedVideo ? (
-                            <video
+                            <VideoPlayer
                               src={currentResult.annotatedVideo}
-                              controls
-                              className="w-full h-full object-contain"
+                              className="w-full h-full"
+                              onError={(e) => {
+                                console.error('Annotated video load error:', e);
+                              }}
                             />
                           ) : isVideo ? (
                             <div className="flex items-center justify-center h-full">
@@ -559,6 +681,7 @@ export default function ResultsPage() {
             </Button>
           </div>
         </div>
+        )}
       </PageTransition>
     </MainLayout>
   );

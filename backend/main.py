@@ -5,7 +5,7 @@ Implements authentication, user management, and comprehensive marine detection s
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, status, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from ultralytics import YOLO
 from PIL import Image
@@ -178,10 +178,156 @@ static_path = os.path.join(os.path.dirname(__file__), "..", "public")
 if os.path.exists(static_path):
     app.mount("/static", StaticFiles(directory=static_path), name="static")
 
-# Mount processed videos directory
+# Mount processed videos directory with proper headers
 processed_videos_path = os.path.join(os.path.dirname(__file__), "processed_videos")
 os.makedirs(processed_videos_path, exist_ok=True)
-app.mount("/processed-video", StaticFiles(directory=processed_videos_path), name="processed_videos")
+
+# Custom video streaming endpoint with proper headers
+@app.get("/processed-video/{filename}")
+async def serve_video(filename: str, request: Request):
+    """Serve video files with proper streaming headers and CORS"""
+    try:
+        video_path = os.path.join(processed_videos_path, filename)
+        
+        if not os.path.exists(video_path):
+            raise HTTPException(status_code=404, detail="Video not found")
+        
+        # Get file size
+        file_size = os.path.getsize(video_path)
+        
+        # Determine content type based on file extension
+        content_type = "video/mp4"
+        if filename.lower().endswith('.webm'):
+            content_type = "video/webm"
+        elif filename.lower().endswith('.avi'):
+            content_type = "video/x-msvideo"
+        elif filename.lower().endswith('.mov'):
+            content_type = "video/quicktime"
+        
+        # Handle range requests for video streaming
+        range_header = request.headers.get('range')
+        
+        # Base headers with CORS
+        base_headers = {
+            'Accept-Ranges': 'bytes',
+            'Content-Type': content_type,
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+            'Access-Control-Allow-Headers': 'Range, Content-Range, Content-Length',
+            'Cache-Control': 'public, max-age=3600',
+        }
+        
+        if range_header:
+            # Parse range header
+            range_match = range_header.replace('bytes=', '').split('-')
+            start = int(range_match[0]) if range_match[0] else 0
+            end = int(range_match[1]) if range_match[1] else file_size - 1
+            
+            # Ensure end doesn't exceed file size
+            end = min(end, file_size - 1)
+            content_length = end - start + 1
+            
+            # Read the requested chunk
+            with open(video_path, 'rb') as video_file:
+                video_file.seek(start)
+                chunk = video_file.read(content_length)
+            
+            headers = {
+                **base_headers,
+                'Content-Range': f'bytes {start}-{end}/{file_size}',
+                'Content-Length': str(content_length),
+            }
+            
+            return Response(
+                content=chunk,
+                status_code=206,  # Partial Content
+                headers=headers
+            )
+        else:
+            # Serve entire file
+            headers = {
+                **base_headers,
+                'Content-Length': str(file_size),
+            }
+            
+            return FileResponse(
+                path=video_path,
+                headers=headers,
+                media_type=content_type
+            )
+            
+    except Exception as e:
+        logger.error(f"Error serving video {filename}: {e}")
+        raise HTTPException(status_code=500, detail="Error serving video")
+
+# Handle OPTIONS requests for CORS preflight
+@app.options("/processed-video/{filename}")
+async def options_video(filename: str):
+    """Handle CORS preflight requests for video files"""
+    return Response(
+        headers={
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+            'Access-Control-Allow-Headers': 'Range, Content-Range, Content-Length',
+            'Access-Control-Max-Age': '86400',
+        }
+    )
+
+@app.get("/test-video/{filename}")
+async def test_video_access(filename: str):
+    """Test endpoint to check if video file exists and is accessible"""
+    try:
+        video_path = os.path.join(processed_videos_path, filename)
+        
+        if not os.path.exists(video_path):
+            return {"exists": False, "path": video_path}
+        
+        file_size = os.path.getsize(video_path)
+        file_stats = os.stat(video_path)
+        
+        # Try to read video metadata using OpenCV
+        video_info = {}
+        try:
+            import cv2
+            cap = cv2.VideoCapture(video_path)
+            if cap.isOpened():
+                video_info = {
+                    "frame_count": int(cap.get(cv2.CAP_PROP_FRAME_COUNT)),
+                    "fps": cap.get(cv2.CAP_PROP_FPS),
+                    "width": int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
+                    "height": int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
+                    "codec": int(cap.get(cv2.CAP_PROP_FOURCC)),
+                    "duration": cap.get(cv2.CAP_PROP_FRAME_COUNT) / cap.get(cv2.CAP_PROP_FPS) if cap.get(cv2.CAP_PROP_FPS) > 0 else 0
+                }
+                cap.release()
+            else:
+                video_info = {"error": "Could not open video with OpenCV"}
+        except Exception as e:
+            video_info = {"error": f"OpenCV error: {str(e)}"}
+        
+        # Check file header to determine actual format
+        file_header = ""
+        try:
+            with open(video_path, 'rb') as f:
+                header_bytes = f.read(12)
+                file_header = header_bytes.hex()
+        except Exception as e:
+            file_header = f"Error reading header: {e}"
+        
+        return {
+            "exists": True,
+            "path": video_path,
+            "size_bytes": file_size,
+            "size_mb": round(file_size / (1024 * 1024), 2),
+            "modified": file_stats.st_mtime,
+            "accessible": os.access(video_path, os.R_OK),
+            "video_info": video_info,
+            "file_header": file_header,
+            "url": f"/processed-video/{filename}"
+        }
+        
+    except Exception as e:
+        return {"error": str(e)}
 
 # Root endpoint
 @app.get("/")
@@ -1658,12 +1804,35 @@ async def detect_video(
         if fps <= 0 or width <= 0 or height <= 0 or total_frames <= 0:
             raise HTTPException(status_code=400, detail="Invalid video properties detected")
         
-        # Setup video writer with better codec settings
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        # Setup video writer with browser-compatible codec
+        # Try H.264 codec first (best browser compatibility)
+        fourcc = cv2.VideoWriter_fourcc(*'H264')
         out = cv2.VideoWriter(temp_output_path, fourcc, fps, (width, height))
         
+        # If H264 fails, try other browser-compatible codecs
         if not out.isOpened():
+            logger.warning("H264 codec failed, trying avc1...")
+            fourcc = cv2.VideoWriter_fourcc(*'avc1')
+            out = cv2.VideoWriter(temp_output_path, fourcc, fps, (width, height))
+        
+        if not out.isOpened():
+            logger.warning("avc1 codec failed, trying XVID...")
+            fourcc = cv2.VideoWriter_fourcc(*'XVID')
+            out = cv2.VideoWriter(temp_output_path, fourcc, fps, (width, height))
+        
+        if not out.isOpened():
+            logger.warning("XVID codec failed, trying mp4v as fallback...")
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            out = cv2.VideoWriter(temp_output_path, fourcc, fps, (width, height))
+        
+        if not out.isOpened():
+            logger.error("❌ Failed to initialize video writer with any codec")
             raise HTTPException(status_code=500, detail="Failed to create output video writer")
+        
+        logger.info(f"✅ Video writer initialized successfully")
+        logger.info(f"   Output resolution: {width}x{height}")
+        logger.info(f"   Output FPS: {fps}")
+        logger.info(f"   Output path: {temp_output_path}")
         
         # Initialize processing variables
         frame_count = 0
@@ -2793,6 +2962,116 @@ async def get_user_history(
         
     except Exception as e:
         logger.error(f"Error getting user history: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/detections/{detection_id}")
+async def get_detection_by_id(
+    detection_id: int,
+    current_user: dict = Depends(get_current_active_user)
+):
+    """Get a specific detection by ID with full details"""
+    try:
+        user_id = current_user['user_id']
+        logger.info(f"🔍 Fetching detection {detection_id} for user {user_id}")
+        
+        # Get detection from database
+        detection = db.get_detection_by_id(detection_id, user_id)
+        
+        if not detection:
+            raise HTTPException(status_code=404, detail="Detection not found or access denied")
+        
+        # Get detection results
+        detection_results = db.get_detection_results(detection_id, user_id)
+        
+        # Calculate average confidence and classes
+        avg_confidence = 0
+        classes = []
+        
+        if detection_results:
+            confidences = [r['confidence'] * 100 for r in detection_results]
+            avg_confidence = sum(confidences) / len(confidences) if confidences else 0
+            classes = list(set([r['class_name'] for r in detection_results]))
+        
+        # Parse metadata
+        metadata = detection.get('metadata', {})
+        if isinstance(metadata, str):
+            try:
+                import json
+                metadata = json.loads(metadata)
+            except:
+                metadata = {}
+        
+        # Get video metadata if it's a video
+        video_metadata = None
+        if detection.get('file_type') == 'video':
+            video_metadata = db.get_video_metadata(detection_id)
+        
+        # Build complete result object
+        result = {
+            "success": True,
+            "detection_id": detection_id,
+            "filename": detection.get('filename', 'Unknown'),
+            "totalDetections": detection.get('total_detections', 0),
+            "detections": [
+                {
+                    "class": r['class_name'],
+                    "confidence": round(r['confidence'] * 100, 1),
+                    "bbox": {
+                        "x1": r['bbox_x1'],
+                        "y1": r['bbox_y1'],
+                        "x2": r['bbox_x2'],
+                        "y2": r['bbox_y2']
+                    },
+                    "frame": r.get('frame_number', 0)
+                } for r in detection_results
+            ],
+            "summary": [
+                {
+                    "class": class_name,
+                    "count": len([r for r in detection_results if r['class_name'] == class_name]),
+                    "avgConfidence": round(sum([r['confidence'] * 100 for r in detection_results if r['class_name'] == class_name]) / len([r for r in detection_results if r['class_name'] == class_name]), 1) if [r for r in detection_results if r['class_name'] == class_name] else 0
+                } for class_name in classes
+            ],
+            "processingTime": detection.get('processing_time', 0),
+            "result_id": str(detection['id']),
+            "file_type": detection.get('file_type', 'image'),
+            "created_at": detection.get('created_at', '')
+        }
+        
+        # Add video-specific fields if it's a video
+        if video_metadata:
+            result.update({
+                "totalFrames": video_metadata.get('total_frames', 0),
+                "processedFrames": video_metadata.get('processed_frames', 0),
+                "fps": video_metadata.get('fps', 0),
+                "duration": video_metadata.get('duration', 0),
+                "resolution": video_metadata.get('resolution', ''),
+                "framesWithDetections": metadata.get('frames_with_detections', 0),
+                "detectionRate": metadata.get('detection_rate', 0),
+                "avgDetectionsPerFrame": metadata.get('avg_detections_per_frame', 0),
+                "fileSizeMB": metadata.get('file_size_mb', 0),
+                "annotatedVideoUrl": f"/processed-video/{os.path.basename(video_metadata.get('annotated_path', ''))}" if video_metadata.get('annotated_path') else None,
+                "videoId": metadata.get('video_id', ''),
+            })
+        
+        # Add image data if it's an image
+        if detection.get('file_type') == 'image':
+            result.update({
+                "annotatedImage": detection.get('annotated_image_base64', ''),
+                "originalImage": detection.get('original_image_base64', '')
+            })
+        
+        logger.info(f"✅ Successfully fetched detection {detection_id}")
+        
+        return {
+            "success": True,
+            "detection": result
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting detection {detection_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":

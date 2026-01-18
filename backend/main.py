@@ -23,6 +23,7 @@ import tempfile
 import uuid
 import asyncio
 import shutil
+import subprocess
 from pydantic import BaseModel
 import time
 
@@ -2138,29 +2139,14 @@ async def detect_video(
         if fps <= 0 or width <= 0 or height <= 0 or total_frames <= 0:
             raise HTTPException(status_code=400, detail="Invalid video properties detected")
         
-        # Setup video writer with browser-compatible codec
-        # Try H.264 codec first (best browser compatibility)
-        fourcc = cv2.VideoWriter_fourcc(*'H264')
-        out = cv2.VideoWriter(temp_output_path, fourcc, fps, (width, height))
-        
-        # If H264 fails, try other browser-compatible codecs
-        if not out.isOpened():
-            logger.warning("H264 codec failed, trying avc1...")
-            fourcc = cv2.VideoWriter_fourcc(*'avc1')
-            out = cv2.VideoWriter(temp_output_path, fourcc, fps, (width, height))
+        # Professional approach: Use OpenCV for detection, FFmpeg for final encoding
+        # Step 1: Create temporary video with XVID (reliable for OpenCV)
+        temp_raw_path = temp_output_path.replace('.mp4', '_temp.avi')
+        fourcc = cv2.VideoWriter_fourcc(*'XVID')
+        out = cv2.VideoWriter(temp_raw_path, fourcc, fps, (width, height))
         
         if not out.isOpened():
-            logger.warning("avc1 codec failed, trying XVID...")
-            fourcc = cv2.VideoWriter_fourcc(*'XVID')
-            out = cv2.VideoWriter(temp_output_path, fourcc, fps, (width, height))
-        
-        if not out.isOpened():
-            logger.warning("XVID codec failed, trying mp4v as fallback...")
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            out = cv2.VideoWriter(temp_output_path, fourcc, fps, (width, height))
-        
-        if not out.isOpened():
-            logger.error("❌ Failed to initialize video writer with any codec")
+            logger.error("❌ Failed to initialize video writer with XVID codec")
             raise HTTPException(status_code=500, detail="Failed to create output video writer")
         
         logger.info(f"✅ Video writer initialized successfully")
@@ -2335,8 +2321,126 @@ async def detect_video(
         processed_filename = f"processed_{video_id}.mp4"
         final_output_path = os.path.join(processed_videos_path, processed_filename)
         
-        # Move processed video to final location
-        shutil.move(temp_output_path, final_output_path)
+        # Step 2: Convert AVI to optimized MP4 using FFmpeg
+        logger.info("🎬 Converting to optimized MP4 format...")
+        ffmpeg_success = False
+        
+        # Try to find FFmpeg executable
+        ffmpeg_paths = [
+            'ffmpeg',  # If in PATH
+            'C:\\ffmpeg\\bin\\ffmpeg.exe',  # Manual installation
+            f'C:\\Users\\{os.environ.get("USERNAME", "")}\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.0.1-full_build\\bin\\ffmpeg.exe'  # WinGet installation
+        ]
+        
+        ffmpeg_exe = None
+        for path in ffmpeg_paths:
+            try:
+                result = subprocess.run([path, '-version'], capture_output=True, text=True, timeout=5)
+                if result.returncode == 0:
+                    ffmpeg_exe = path
+                    logger.info(f"✅ Found FFmpeg at: {path}")
+                    break
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                continue
+        
+        if ffmpeg_exe:
+            try:
+                # FFmpeg command for high-quality, web-optimized MP4
+                ffmpeg_cmd = [
+                    ffmpeg_exe,
+                    '-i', temp_raw_path,  # Input: temporary AVI file
+                    '-c:v', 'libx264',    # Video codec: H.264
+                    '-preset', 'medium',   # Encoding speed vs compression trade-off
+                    '-crf', '23',         # Quality: 23 is high quality (18-28 range)
+                    '-c:a', 'aac',        # Audio codec: AAC
+                    '-b:a', '128k',       # Audio bitrate
+                    '-movflags', '+faststart',  # Web optimization: metadata at beginning
+                    '-pix_fmt', 'yuv420p', # Pixel format for compatibility
+                    '-y',                 # Overwrite output file if exists
+                    final_output_path     # Output: final MP4 file
+                ]
+                
+                # Run FFmpeg conversion
+                result = subprocess.run(
+                    ffmpeg_cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=300  # 5 minute timeout
+                )
+                
+                if result.returncode == 0:
+                    logger.info("✅ FFmpeg conversion successful!")
+                    ffmpeg_success = True
+                    # Clean up temporary AVI file
+                    if os.path.exists(temp_raw_path):
+                        os.unlink(temp_raw_path)
+                else:
+                    logger.error(f"❌ FFmpeg conversion failed: {result.stderr}")
+                    
+            except subprocess.TimeoutExpired:
+                logger.error("❌ FFmpeg conversion timed out")
+            except Exception as e:
+                logger.error(f"❌ FFmpeg conversion error: {e}")
+        else:
+            logger.error("❌ FFmpeg not found in any expected location")
+        
+        # Fallback: Use OpenCV to convert AVI to MP4 if FFmpeg failed
+        if not ffmpeg_success:
+            logger.info("🔄 Using OpenCV fallback conversion to MP4...")
+            try:
+                # Read the AVI file with OpenCV
+                fallback_cap = cv2.VideoCapture(temp_raw_path)
+                if fallback_cap.isOpened():
+                    # Get video properties
+                    fallback_fps = int(fallback_cap.get(cv2.CAP_PROP_FPS))
+                    fallback_width = int(fallback_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                    fallback_height = int(fallback_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                    
+                    # Create MP4 writer with better browser compatibility
+                    fallback_fourcc = cv2.VideoWriter_fourcc(*'H264')  # Try H264 first
+                    fallback_out = cv2.VideoWriter(final_output_path, fallback_fourcc, fallback_fps, (fallback_width, fallback_height))
+                    
+                    # If H264 fails, try mp4v
+                    if not fallback_out.isOpened():
+                        fallback_fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                        fallback_out = cv2.VideoWriter(final_output_path, fallback_fourcc, fallback_fps, (fallback_width, fallback_height))
+                    
+                    if fallback_out.isOpened():
+                        # Copy frames from AVI to MP4
+                        while True:
+                            ret, frame = fallback_cap.read()
+                            if not ret:
+                                break
+                            fallback_out.write(frame)
+                        
+                        fallback_cap.release()
+                        fallback_out.release()
+                        
+                        # Clean up temporary AVI file
+                        if os.path.exists(temp_raw_path):
+                            os.unlink(temp_raw_path)
+                        
+                        logger.info("✅ OpenCV fallback conversion successful!")
+                    else:
+                        logger.error("❌ OpenCV MP4 writer failed")
+                        # Last resort: just move the AVI file but warn user
+                        shutil.move(temp_raw_path, final_output_path.replace('.mp4', '.avi'))
+                        final_output_path = final_output_path.replace('.mp4', '.avi')
+                        processed_filename = processed_filename.replace('.mp4', '.avi')
+                        logger.warning("⚠️ Video saved as AVI - may not play in all browsers")
+                else:
+                    logger.error("❌ Could not read temporary AVI file")
+                    raise Exception("Fallback conversion failed")
+                    
+            except Exception as fallback_error:
+                logger.error(f"❌ OpenCV fallback failed: {fallback_error}")
+                # Last resort: just move the AVI file but warn user
+                if os.path.exists(temp_raw_path):
+                    shutil.move(temp_raw_path, final_output_path.replace('.mp4', '.avi'))
+                    final_output_path = final_output_path.replace('.mp4', '.avi')
+                    processed_filename = processed_filename.replace('.mp4', '.avi')
+                    logger.warning("⚠️ Video saved as AVI - may not play in all browsers")
+        
         temp_output_path = None  # Prevent cleanup of moved file
         
         # Log successful save with clear message
@@ -2481,6 +2585,12 @@ async def detect_video(
                 os.unlink(temp_output_path)
             except Exception as e:
                 logger.warning(f"Could not cleanup temp output file: {e}")
+        # Cleanup temporary AVI file if it still exists
+        if 'temp_raw_path' in locals() and temp_raw_path and os.path.exists(temp_raw_path):
+            try:
+                os.unlink(temp_raw_path)
+            except Exception as e:
+                logger.warning(f"Could not cleanup temp AVI file: {e}")
 
 # ============================================================================
 # ANALYTICS ENDPOINTS

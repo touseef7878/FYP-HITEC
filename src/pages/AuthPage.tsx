@@ -83,7 +83,7 @@ export default function AuthPage() {
                 <Shield className="h-6 w-6" />
               </div>
               <div>
-                <h3 className="font-semibold">Real-time Detection</h3>
+                <h3 className="font-semibold">Detection</h3>
                 <p className="text-blue-100">Upload images and videos for instant pollution analysis</p>
               </div>
             </div>

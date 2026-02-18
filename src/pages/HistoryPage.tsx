@@ -128,12 +128,12 @@ export default function HistoryPage() {
         }
       }
 
-      // Update local state only after successful backend deletion
+      // Update local state immediately after successful backend deletion
       const updatedHistory = historyData.filter(item => item.id !== itemToDelete.id);
       setHistoryData(updatedHistory);
       
-      // Update localStorage as backup
-      localStorage.setItem('detectionHistory', JSON.stringify(updatedHistory));
+      // Clear localStorage to force fresh fetch on next load
+      localStorage.removeItem('detectionHistory');
       
       toast({
         title: "Detection Deleted",

@@ -5,31 +5,31 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { ThemeProvider } from "@/hooks/useTheme";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
-import { ErrorBoundary } from "./components/ErrorBoundary";
+import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { Suspense, lazy } from "react";
 
 // Lazy load pages for code splitting
-const HomePage = lazy(() => import("./pages/HomePage"));
-const UploadPage = lazy(() => import("./pages/UploadPage"));
-const ResultsPage = lazy(() => import("./pages/ResultsPage"));
-const DashboardPage = lazy(() => import("./pages/DashboardPage"));
-const HistoryPage = lazy(() => import("./pages/HistoryPage"));
-const HeatmapPage = lazy(() => import("./pages/HeatmapPage"));
-const PredictionsPage = lazy(() => import("./pages/PredictionsPage"));
-const ReportsPage = lazy(() => import("./pages/ReportsPage"));
-const SettingsPage = lazy(() => import("./pages/SettingsPage"));
-const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
-const AdminLogs = lazy(() => import("./pages/AdminLogs"));
-const AdminUsers = lazy(() => import("./pages/AdminUsers"));
-const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
-const AuthPage = lazy(() => import("./pages/AuthPage"));
-const NotFound = lazy(() => import("./pages/NotFound"));
+const HomePage = lazy(() => import("@/pages/Home"));
+const UploadPage = lazy(() => import("@/pages/user/Upload"));
+const ResultsPage = lazy(() => import("@/pages/user/Results"));
+const DashboardPage = lazy(() => import("@/pages/user/Dashboard"));
+const HistoryPage = lazy(() => import("@/pages/user/History"));
+const HeatmapPage = lazy(() => import("@/pages/user/Heatmap"));
+const PredictionsPage = lazy(() => import("@/pages/user/Predictions"));
+const ReportsPage = lazy(() => import("@/pages/user/Reports"));
+const SettingsPage = lazy(() => import("@/pages/user/Settings"));
+const AdminDashboard = lazy(() => import("@/pages/admin/Dashboard"));
+const AdminLogs = lazy(() => import("@/pages/admin/Logs"));
+const AdminUsers = lazy(() => import("@/pages/admin/Users"));
+const PrivacyPolicy = lazy(() => import("@/pages/PrivacyPolicy"));
+const AuthPage = lazy(() => import("@/pages/Auth"));
+const NotFound = lazy(() => import("@/pages/NotFound"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 5 * 60 * 1000, // 5 minutes
-      cacheTime: 10 * 60 * 1000, // 10 minutes
+      gcTime: 10 * 60 * 1000, // 10 minutes (renamed from cacheTime)
       refetchOnWindowFocus: false,
       retry: 1,
     },

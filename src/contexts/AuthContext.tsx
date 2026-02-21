@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import logger from '@/lib/logger';
+import logger from '@/utils/logger';
 import ENV from '@/config/env';
 
 interface User {

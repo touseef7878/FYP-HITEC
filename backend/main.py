@@ -31,13 +31,13 @@ import time
 load_dotenv()
 
 # Import enhanced components
-from database import db
-from auth import (
+from core.database import db
+from core.security import (
     AuthManager, get_current_user, get_current_active_user, get_admin_user,
     UserRegistration, UserLogin, TokenResponse, UserProfile, PasswordChange, ProfileUpdate
 )
-from data_cache_service import data_cache_service
-from lstm_model import EnvironmentalLSTM
+from services.data_cache_service import data_cache_service
+from models.lstm import EnvironmentalLSTM
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

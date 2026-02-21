@@ -11,7 +11,7 @@ from tabulate import tabulate
 import getpass
 
 # Import the database manager
-from database import db
+from core.database import db
 
 class Colors:
     """Simple color codes for terminal output"""

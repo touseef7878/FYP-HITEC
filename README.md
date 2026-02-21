@@ -1,346 +1,519 @@
-# 🌊 Marine Detection System - AI-Powered Ocean Protection Platform
+# 🌊 Marine Detection System
 
-A comprehensive, production-ready full-stack web application for marine plastic pollution detection and environmental trend analysis. Features advanced YOLOv12n object detection, LSTM-based pollution prediction, and a complete user management system with admin dashboard.
+AI-powered platform for marine plastic pollution detection and environmental trend analysis using YOLOv12n and LSTM neural networks.
 
-## 🎯 System Overview
-
-**Scale**: Designed for 1-5 concurrent users  
-**Deployment**: Local/cloud deployment with no external dependencies  
-**Database**: SQLite with complete data persistence  
-**Authentication**: JWT-based with role-based access control (USER/ADMIN)  
-**Tech Stack**: React 18 + TypeScript + FastAPI + TensorFlow + YOLOv12n  
-
-### Core Modules
-
-1. **🔍 Real-time Detection**: YOLOv12n-powered object detection for images and videos
-2. **📈 Pollution Prediction**: LSTM neural networks for environmental trend forecasting  
-3. **👥 User Management**: Complete authentication system with USER/ADMIN roles
-4. **📊 Analytics Dashboard**: Comprehensive data visualization and reporting
-5. **🗺️ Spatial Analysis**: Interactive heatmaps and geographical pollution mapping
-
-## ✨ Complete Feature Set
-
-### 🔐 Authentication & User Management
-- **User Registration & Login** with email validation
-- **JWT Authentication** with secure session management
-- **Role-Based Access Control** (USER/ADMIN)
-- **Password Management** with secure hashing
-- **Profile Management** with customizable settings
-- **Session Management** with automatic cleanup
-
-### 🎯 Detection Features
-- **Image Upload & Detection** with drag-drop interface
-- **Video Processing** with frame-by-frame analysis
-- **Real-time Progress Tracking** with animated progress bars
-- **Confidence Threshold Control** (adjustable 0.01-1.0)
-- **Batch Processing** for multiple files
-- **Detection History** per user with search/filter
-- **Annotated Results** with bounding boxes and labels
-- **Before/After Comparison** slider for visual analysis
-
-### 📊 Analytics & Visualization
-- **Interactive Charts** using Recharts library
-- **Pollution Heatmaps** with Leaflet mapping
-- **Statistical Dashboards** with key metrics
-- **Trend Analysis** with historical data
-- **Confidence Analytics** and model performance metrics
-- **Export Capabilities** for data and reports
-
-### 🤖 LSTM Prediction System
-- **Multi-Region Support** (Pacific, Atlantic, Indian, Mediterranean)
-- **Environmental Data Integration** (temperature, humidity, wind, AQI)
-- **7-90 Day Predictions** with confidence intervals
-- **Synthetic Data Generation** for training enhancement
-- **Model Training Interface** with epoch control
-- **Prediction Accuracy Tracking** with validation metrics
-
-### 📋 Reporting System
-- **Auto-Generated PDF Reports** with detection summaries
-- **Custom Report Builder** with date range selection
-- **Data Export** in multiple formats (CSV, JSON, PDF)
-- **Report History** with download management
-- **Scheduled Reports** (admin feature)
-
-### 🛡️ Admin Dashboard
-- **System Statistics** (users, detections, storage, uptime)
-- **User Management** (view, deactivate, role management)
-- **System Maintenance** (backup, cache clear, DB optimization)
-- **Activity Monitoring** with real-time logs
-- **Storage Analytics** with usage tracking
-- **Data Management** (export, cleanup, archival)
-
-### 🎨 User Experience
-- **Responsive Design** (mobile + desktop optimized)
-- **Dark/Light Theme** with system preference detection
-- **Smooth Animations** using Framer Motion
-- **Loading States** and progress indicators
-- **Error Handling** with user-friendly messages
-- **Accessibility Compliant** interface
-
-## 🏗️ Technical Architecture
-
-### Frontend Stack
-- **React 18** with TypeScript for type safety
-- **Vite** for fast development and optimized builds
-- **Code Splitting** with lazy loading for optimal performance
-- **Tailwind CSS** for utility-first styling
-- **shadcn/ui** for consistent component library
-- **Framer Motion** for smooth animations
-- **React Router** with lazy-loaded routes
-- **Recharts** for data visualization
-- **Leaflet** for interactive maps
-- **React Query** for server state management with caching
-
-### Backend Stack
-- **FastAPI** with automatic API documentation
-- **SQLite** database with 10 optimized tables
-- **JWT Authentication** with secure token management
-- **YOLOv12n** for state-of-the-art object detection
-- **TensorFlow/Keras** for LSTM model training
-- **OpenCV** for advanced image processing
-- **Pandas/NumPy** for data analysis
-- **Uvicorn** ASGI server for production deployment
-
-### Database Schema
-```sql
--- 10 Comprehensive Tables
-users, detections, detection_results, videos, images, 
-predictions, reports, analytics_data, logs, sessions
-
--- 13 Performance Indexes
--- Automatic cleanup and optimization
--- Full ACID compliance
-```
-
-## 🚀 Quick Start
-
-### Prerequisites
-- **Python 3.8+** with pip
-- **Node.js 16+** with npm
-- **YOLOv12n model weights** (`best.pt` file)
-
-### Installation (10 minutes)
-
-```bash
-# 1. Clone repository
-git clone <your-repo-url>
-cd marine-detection-system
-
-# 2. Backend setup
-cd backend
-pip install -r requirements.txt
-
-# 3. ⚠️ CRITICAL: Configure environment variables for security
-cp .env.example .env
-
-# Generate a secure JWT secret key (REQUIRED):
-python -c "import secrets; print(secrets.token_urlsafe(32))"
-
-# Edit backend/.env and set:
-# - JWT_SECRET_KEY=<paste-generated-key-here>
-# - ALLOWED_ORIGINS=http://localhost:8080 (or your domain)
-
-# 4. Initialize database
-python init_db.py
-# Place your best.pt file in backend/weights/
-
-# 5. Frontend setup
-cd ..
-npm install
-
-# 6. Configure frontend environment (optional)
-cp .env.example .env
-# Edit .env if deploying to production or changing API URL
-
-📖 **Detailed Installation**: See [`docs/INSTALLATION.md`](docs/INSTALLATION.md)  
-📖 **Environment Setup**: See [`docs/ENVIRONMENT_SETUP.md`](docs/ENVIRONMENT_SETUP.md)
-# Terminal 1 - Backend:
-cd backend && python main.py
-
-# Terminal 2 - Frontend:
-npm run dev
-```
-
-### Access Application
-- **Frontend**: http://localhost:8080
-- **API Docs**: http://localhost:8000/docs
-- **Health Check**: http://localhost:8000/health
-
-### Default Credentials
-- **Admin**: `admin` / `admin123`
-- **Demo User**: `demo_user` / `user123`
-
-### ⚠️ Security Notice
-**IMPORTANT**: The application will NOT start without a properly configured JWT secret key in `backend/.env`. This is a critical security requirement.
-
-📖 **Detailed Installation**: See [`docs/INSTALLATION.md`](docs/INSTALLATION.md)
-```
-
-### Access Application
-- **Frontend**: http://localhost:8080
-- **API Docs**: http://localhost:8000/docs
-- **Health Check**: http://localhost:8000/healt
-
-## 📖 Usage Guide
-
-### 👤 For Regular Users
-
-**1. Authentication**
-- Register new account or login at `/auth`
-- Access protected features after authentication
-
-**2. Detection**
-- Upload images/videos on Upload page
-- Adjust confidence threshold (10-90%)
-- View real-time processing with progress tracking
-- Analyze results with interactive visualizations
-
-**3. History & Analytics**
-- View past detections with filtering
-- Track detection trends over time
-- Export data and download annotated results
-
-**4. LSTM Predictions**
-- Select marine region (Pacific, Atlantic, Indian, Mediterranean)
-- Generate 7-90 day pollution forecasts
-- View trend analysis with confidence intervals
-
-**5. Reports**
-## 📊 System Specifications
-
-### Performance
-- **Concurrent Users**: 1-5 users
-- **Detection Speed**: 2-5 seconds per image
-- **Video Processing**: Real-time frame analysis
-- **Memory Usage**: 500MB-1GB (model dependent)
-- **Initial Load Time**: <2 seconds (optimized)
-- **Bundle Size**: ~500-600KB (gzipped)
-- **Time to Interactive**: <3 seconds
-- User management (view, deactivate, roles)
-- System maintenance (backup, cache, optimization)
-### Security
-- **Password Hashing**: SHA-256 with salt
-- **JWT Tokens**: 24-hour expiration with secure secret key requirement
-- **Session Management**: Automatic cleanup and token validation
-- **CORS Protection**: Explicit origin whitelist (no wildcards)
-- **Input Validation**: Comprehensive request validation
-- **SQL Injection Protection**: Parameterized queries
-- **Environment Variables**: Secure configuration management
-- **Production Logger**: Console logs disabled in production builds
-### Core Endpoints
-- **Authentication**: `/api/auth/*` - Register, login, profile
-- **Detection**: `/detect`, `/detect-video` - Image/video processing
-- **History**: `/api/history` - Detection history
-- **Analytics**: `/api/analytics` - User statistics
-- **LSTM**: `/api/data/*`, `/api/train`, `/api/predict` - Predictions
-- **Reports**: `/api/reports/*` - Report generation
-## � Project Structure
-
-```
-marine-detection-system/
-├── 📂 backend/           # FastAPI backend + ML models
-│   ├── .env.example      # Environment variables template
-│   └── weights/          # YOLO model weights
-├── � docs/              # Complete documentation
-├── 📂 public/            # Static assets
-├── 📂 src/               # React frontend source
-│   ├── config/           # Environment configuration
-│   └── lib/              # Utilities (logger, debounce, etc.)
-├── 📄 .env.example       # Frontend environment template
-├── 📄 .gitignore         # Git ignore rules (excludes large files)
-├── 📄 README.md          # This file
-├── 📄 SECURITY_AND_OPTIMIZATION_REPORT.md  # Security audit
-└── 📄 OPTIMIZATION_IMPLEMENTATION_GUIDE.md # Implementation guide
-```
-
-📖 **Detailed Structure**: See [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md)
-- **JWT Tokens**: 24-hour expiration
-- **Session Management**: Automatic cleanup
-- **Input Validation**: Comprehensive request validation
-- **SQL Injection Protection**: Parameterized queries
-
-### Database Schema
-- **10 Optimized Tables**: users, detections, detection_results, videos, images, predictions, reports, analytics_data, logs, sessions
-- **13 Performance Indexes**: Automatic cleanup and optimization
-- **ACID Compliance**: Full transaction support
-
-## 🧪 Testing
-
-The application includes comprehensive testing capabilities through the admin dashboard and API health checks.
-
-**Health Check**: http://localhost:8000/health
-
-**API Documentation**: http://localhost:8000/docs (includes interactive testing)
-
-## 🌟 Key Features
-
-✅ Complete full-stack application with authentication  
-✅ Production-ready database with 10 optimized tables  
-✅ Advanced ML integration (YOLO + LSTM)  
-✅ Responsive UI/UX with dark/light themes  
-✅ Comprehensive admin panel  
-✅ Real-time processing with progress tracking  
-✅ Multi-format export capabilities  
-✅ Scalable architecture  
-✅ **NEW**: Enhanced security with environment-based configuration  
-✅ **NEW**: Optimized bundle size with code splitting  
-✅ **NEW**: Production-safe logging system  
-✅ **NEW**: Improved performance with caching strategies  
-
-**Ready for deployment and real-world marine conservation use! 🌊**
-
-## 🔒 Security & Performance
-
-### Recent Improvements (2026)
-- **Critical Security Fixes**: JWT secret key enforcement, CORS protection
-- **Performance Optimization**: 40-60% faster load times with code splitting
-- **Bundle Size Reduction**: 25-35% smaller with lazy loading
-- **Memory Optimization**: 30-40% lower memory usage
-- **Production Logger**: Prevents console pollution in production
-- **Environment Configuration**: Centralized config management
-
-📖 **Full Security Report**: See [`SECURITY_AND_OPTIMIZATION_REPORT.md`](SECURITY_AND_OPTIMIZATION_REPORT.md)  
-📖 **Implementation Guide**: See [`OPTIMIZATION_IMPLEMENTATION_GUIDE.md`](OPTIMIZATION_IMPLEMENTATION_GUIDE.md)
-
-📖 **Detailed Structure**: See [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md)
-
-## 🤝 Development Team
-
-**HITEC University Taxila - Final Year Project (2022)**
-
-- **Touseef Ur Rehman** - ML Engineer & YOLOv12n Implementation
-- **Qasim Shahzad** - Backend Engineer & LSTM Implementation  
-- **Zohaib Ashraf** - Frontend Engineer & Data Visualization
-
-## 📄 License
-
-This project is developed for academic research and marine conservation purposes at HITEC University Taxila. The system is designed to support environmental monitoring and ocean protection initiatives.
+**HITEC University Taxila - Final Year Project 2026**
 
 ---
 
-## 🌟 Key Features
+## 📋 Table of Contents
 
-✅ Complete full-stack application with authentication  
-✅ Production-ready database with 10 optimized tables  
+- [Features](#-features)
+- [Tech Stack](#-tech-stack)
+- [Installation](#-installation)
+- [Running the Application](#-running-the-application)
+- [Project Structure](#-project-structure)
+- [Usage Guide](#-usage-guide)
+- [API Documentation](#-api-documentation)
+- [Team](#-team)
+
+---
+
+## ✨ Features
+
+### Core Features
+- **YOLOv12n Object Detection** - Real-time detection of marine plastic in images and videos
+- **LSTM Predictions** - Forecast pollution trends for 7-90 days ahead
+- **User Authentication** - JWT-based auth with USER/ADMIN roles
+- **Interactive Heatmaps** - Visualize pollution density across marine regions
+- **PDF Reports** - Auto-generated detection and analysis reports
+- **Admin Dashboard** - System management and user administration
+- **Dark/Light Theme** - Responsive design for all devices
+
+### Detection Capabilities
+- Image upload with drag-drop interface
+- Video processing with frame-by-frame analysis
+- Adjustable confidence threshold (10-90%)
+- Real-time progress tracking
+- Detection history with search/filter
+- Before/after comparison slider
+
+### LSTM Prediction System
+- Multi-region support (Pacific, Atlantic, Indian, Mediterranean)
+- Environmental data integration (temperature, humidity, wind, AQI)
+- 7-90 day predictions with confidence intervals
+- Model training interface with epoch control
+
+---
+
+## 🛠️ Tech Stack
+
+### Frontend
+- React 18 + TypeScript
+- Vite (build tool)
+- Tailwind CSS + shadcn/ui
+- React Query (state management)
+- Recharts (data visualization)
+- Leaflet (interactive maps)
+- Framer Motion (animations)
+
+### Backend
+- FastAPI (Python web framework)
+- SQLite (database)
+- YOLOv12n (object detection)
+- TensorFlow/Keras (LSTM models)
+- OpenCV (image processing)
+- JWT (authentication)
+
+---
+
+## 📦 Installation
+
+### Prerequisites
+- Python 3.8 or higher
+- Node.js 16 or higher
+- npm or yarn
+
+### Step 1: Clone Repository
+```bash
+git clone <your-repo-url>
+cd marine-detection-system
+```
+
+### Step 2: Backend Setup
+
+#### 2.1 Install Python Dependencies
+```bash
+cd backend
+pip install -r requirements.txt
+```
+
+#### 2.2 Configure Environment Variables (CRITICAL!)
+```bash
+# Copy the example file
+cp .env.example .env
+
+# Generate a secure JWT secret key
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+Edit `backend/.env` and set:
+```env
+JWT_SECRET_KEY=<paste-the-generated-key-here>
+ALLOWED_ORIGINS=http://localhost:8080,http://localhost:5173
+```
+
+**⚠️ IMPORTANT**: The application will NOT start without a valid JWT_SECRET_KEY (minimum 32 characters).
+
+#### 2.3 Initialize Database
+```bash
+# Run from backend/ folder
+python init_db.py
+```
+
+This creates `backend/marine_detection.db` with:
+- 10 tables (users, detections, predictions, etc.)
+- Default admin account (username: `admin`, password: `admin123`)
+- Default demo user (username: `demo_user`, password: `user123`)
+
+#### 2.4 Add YOLO Model Weights
+Place your `best.pt` file in `backend/weights/` folder.
+
+### Step 3: Frontend Setup
+
+```bash
+# Go back to root directory
+cd ..
+
+# Install dependencies
+npm install
+
+# Optional: Configure frontend environment
+cp .env.example .env
+```
+
+Edit `.env` if needed (defaults work for local development):
+```env
+VITE_API_URL=http://localhost:8000
+```
+
+---
+
+## 🚀 Running the Application
+
+### Development Mode
+
+You need TWO terminal windows:
+
+#### Terminal 1 - Backend Server
+```bash
+# Navigate to backend folder
+cd backend
+
+# Start FastAPI server
+python main.py
+```
+
+Server will start at: **http://localhost:8000**
+
+You should see:
+```
+INFO:     Uvicorn running on http://0.0.0.0:8000
+✅ Custom YOLO Model loaded from backend/weights/best.pt
+🚀 Refactored API server started
+```
+
+#### Terminal 2 - Frontend Server
+```bash
+# From root directory
+npm run dev
+```
+
+Frontend will start at: **http://localhost:8080**
+
+You should see:
+```
+VITE v5.4.21  ready in XXX ms
+
+➜  Local:   http://localhost:8080/
+```
+
+### Production Build
+
+#### Build Frontend
+```bash
+npm run build
+npm run preview
+```
+
+#### Run Backend in Production
+```bash
+cd backend
+uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+---
+
+## 📁 Project Structure
+
+```
+marine-detection-system/
+│
+├── backend/                      # Backend Application
+│   ├── core/                     # Core logic
+│   │   ├── database.py          # Database manager
+│   │   └── security.py          # Authentication & JWT
+│   ├── models/                   # ML Models
+│   │   └── lstm.py              # LSTM implementation
+│   ├── services/                 # Business services
+│   │   ├── data_cache.service.py
+│   │   └── environmental_data.service.py
+│   ├── utils/                    # Utilities
+│   │   ├── noaa_api.py          # NOAA API client
+│   │   └── waqi_api.py          # WAQI API client
+│   ├── data/                     # Data storage
+│   │   ├── cache/               # Cached datasets
+│   │   ├── uploads/             # User uploads
+│   │   └── processed/           # Processed videos
+│   ├── weights/                  # Model weights
+│   │   └── best.pt              # YOLO weights (add this)
+│   ├── .env.example             # Environment template
+│   ├── .env                     # Your config (create this)
+│   ├── init_db.py               # Database initialization
+│   ├── main.py                  # Application entry point
+│   ├── requirements.txt         # Python dependencies
+│   └── marine_detection.db      # SQLite database (auto-created)
+│
+├── src/                          # Frontend Application
+│   ├── components/              # React components
+│   │   ├── common/              # Shared components
+│   │   ├── features/            # Feature-specific
+│   │   ├── layout/              # Layout components
+│   │   ├── auth/                # Auth components
+│   │   └── ui/                  # UI library (shadcn)
+│   ├── pages/                   # Page components
+│   │   ├── admin/               # Admin pages
+│   │   ├── user/                # User pages
+│   │   └── *.tsx                # Public pages
+│   ├── hooks/                   # Custom React hooks
+│   ├── services/                # API services
+│   ├── utils/                   # Utility functions
+│   ├── contexts/                # React contexts
+│   ├── config/                  # Configuration
+│   ├── styles/                  # Global styles
+│   ├── App.tsx                  # Main app component
+│   └── main.tsx                 # Entry point
+│
+├── docs/                         # Documentation
+│   ├── guides/                  # User guides
+│   │   ├── INSTALLATION.md
+│   │   ├── DEPLOYMENT.md
+│   │   └── VIDEO_DETECTION_GUIDE.md
+│   ├── api/                     # API documentation
+│   │   └── API_DOCUMENTATION.md
+│   └── ENVIRONMENT_SETUP.md     # Environment setup guide
+│
+├── public/                       # Static assets
+├── .env.example                 # Frontend env template
+├── package.json                 # Node dependencies
+├── vite.config.ts               # Vite configuration
+├── tailwind.config.ts           # Tailwind configuration
+├── CHANGELOG.md                 # Version history
+├── QUICK_START.md               # Quick setup guide
+├── PROJECT_STRUCTURE_NEW.md     # Detailed structure
+└── README.md                    # This file
+```
+
+---
+
+## � Usage Guide
+
+### 1. Access the Application
+
+Open your browser and go to: **http://localhost:8080**
+
+### 2. Login
+
+**Admin Account:**
+- Username: `admin`
+- Password: `admin123`
+
+**Demo User:**
+- Username: `demo_user`
+- Password: `user123`
+
+### 3. Upload and Detect
+
+1. Login as a user
+2. Go to **Upload** page
+3. Drag and drop an image or video
+4. Adjust confidence threshold (10-90%)
+5. Click **Detect**
+6. View results with bounding boxes and labels
+
+### 4. View History
+
+1. Go to **History** page
+2. See all your past detections
+3. Filter by date or search
+4. Download annotated results
+
+### 5. Generate Predictions
+
+1. Go to **Predictions** page
+2. Select a region (Pacific, Atlantic, Indian, Mediterranean)
+3. Click **Fetch Data** (one-time only per region)
+4. Click **Train Model** (configure epochs)
+5. Click **Generate Predictions** (7-90 days ahead)
+6. View trend analysis and forecasts
+
+### 6. Generate Reports
+
+1. Go to **Reports** page
+2. Select date range
+3. Click **Generate Report**
+4. Download PDF report
+
+### 7. Admin Features (Admin Only)
+
+1. Login as admin
+2. Go to **Admin Dashboard**
+3. View system statistics
+4. Manage users (view, deactivate, change roles)
+5. View activity logs
+6. Perform system maintenance
+
+---
+
+## 🔗 API Documentation
+
+### Access Interactive API Docs
+
+When the backend is running, visit:
+
+- **Swagger UI**: http://localhost:8000/docs
+- **ReDoc**: http://localhost:8000/redoc
+- **Health Check**: http://localhost:8000/health
+
+### Key Endpoints
+
+#### Authentication
+```
+POST /api/auth/register    - Register new user
+POST /api/auth/login       - Login user
+GET  /api/auth/profile     - Get user profile
+POST /api/auth/logout      - Logout user
+```
+
+#### Detection
+```
+POST /detect               - Detect objects in image
+POST /detect-video         - Process video file
+GET  /api/history          - Get detection history
+```
+
+#### LSTM Predictions
+```
+GET  /api/data/regions     - Get available regions
+POST /api/data/fetch       - Fetch environmental data
+POST /api/train            - Train LSTM model
+POST /api/predict          - Generate predictions
+```
+
+#### Admin
+```
+GET  /api/admin/users      - Get all users
+PUT  /api/admin/users/:id  - Update user
+GET  /api/admin/logs       - Get system logs
+GET  /api/admin/stats      - Get system statistics
+```
+
+For detailed API documentation, see: [docs/api/API_DOCUMENTATION.md](docs/api/API_DOCUMENTATION.md)
+
+---
+
+## 🔧 Common Commands
+
+### Development
+```bash
+# Start backend (from backend/ folder)
+python main.py
+
+# Start frontend (from root folder)
+npm run dev
+
+# Type checking
+npm run type-check
+
+# Linting
+npm run lint
+```
+
+### Build
+```bash
+# Build frontend
+npm run build
+
+# Preview production build
+npm run preview
+```
+
+### Database
+```bash
+# Initialize database (from backend/ folder)
+python init_db.py
+
+# Reset database (WARNING: deletes all data)
+rm marine_detection.db
+python init_db.py
+```
+
+### Testing
+```bash
+# Test backend syntax
+python -m py_compile main.py
+
+# Test frontend build
+npm run build
+```
+
+---
+
+## 🔒 Security Features
+
+- **JWT Authentication** with 32+ character secret key requirement
+- **CORS Protection** with explicit origin whitelist
+- **Password Hashing** using SHA-256 with salt
+- **Session Management** with automatic cleanup
+- **Input Validation** on all API endpoints
+- **SQL Injection Protection** with parameterized queries
+- **Production Logger** (no console.log in production)
+
+---
+
+## 🐛 Troubleshooting
+
+### Backend won't start
+
+**Error**: "JWT_SECRET_KEY environment variable is required"
+
+**Solution**:
+1. Generate key: `python -c "import secrets; print(secrets.token_urlsafe(32))"`
+2. Add to `backend/.env`: `JWT_SECRET_KEY=<your-generated-key>`
+
+### CORS errors
+
+**Error**: "CORS policy blocked"
+
+**Solution**: Add your frontend URL to `ALLOWED_ORIGINS` in `backend/.env`
+```env
+ALLOWED_ORIGINS=http://localhost:8080,http://localhost:5173
+```
+
+### Database errors
+
+**Error**: "No such table"
+
+**Solution**: Initialize database
+```bash
+cd backend
+python init_db.py
+```
+
+### Import errors
+
+**Error**: "Module not found"
+
+**Solution**: Install dependencies
+```bash
+# Backend
+cd backend
+pip install -r requirements.txt
+
+# Frontend
+npm install
+```
+
+---
+
+## 📚 Additional Documentation
+
+- **[QUICK_START.md](QUICK_START.md)** - 5-minute setup guide
+- **[CHANGELOG.md](CHANGELOG.md)** - Version history and changes
+- **[PROJECT_STRUCTURE_NEW.md](PROJECT_STRUCTURE_NEW.md)** - Detailed project structure
+- **[docs/guides/INSTALLATION.md](docs/guides/INSTALLATION.md)** - Detailed installation guide
+- **[docs/guides/DEPLOYMENT.md](docs/guides/DEPLOYMENT.md)** - Deployment instructions
+- **[docs/ENVIRONMENT_SETUP.md](docs/ENVIRONMENT_SETUP.md)** - Environment configuration
+- **[docs/api/API_DOCUMENTATION.md](docs/api/API_DOCUMENTATION.md)** - Complete API reference
+
+---
+
+## 👥 Team
+
+**HITEC University Taxila - Final Year Project 2026**
+
+- **Touseef Ur Rehman** - ML Engineer (YOLOv12n & LSTM)
+- **Qasim Shahzad** - Backend Engineer (FastAPI & Database)
+- **Zohaib Ashraf** - Frontend Engineer (React & UI/UX)
+
+---
+
+## 📄 License
+
+This project is developed for academic research and marine conservation purposes at HITEC University Taxila.
+
+---
+
+## 🌟 Key Highlights
+
+✅ Production-ready full-stack application  
 ✅ Advanced ML integration (YOLO + LSTM)  
-✅ Responsive UI/UX with dark/light themes  
-✅ Comprehensive admin panel  
+✅ Complete authentication system  
+✅ Responsive UI with dark/light themes  
 ✅ Real-time processing with progress tracking  
-✅ Multi-format export capabilities  
-✅ Scalable architecture  
+✅ Interactive data visualization  
+✅ Comprehensive admin dashboard  
+✅ PDF report generation  
+✅ Multi-region pollution prediction  
 
 **Ready for deployment and real-world marine conservation use! 🌊**
-
-## 🎯 AI Models
-
-### YOLOv12n Object Detection
-- **22 Marine Classes**: Animals (crab, eel, fish, shells, starfish), Plants (marine vegetation), Equipment (ROV), Trash (bags, bottles, containers, nets, ropes, etc.)
-- **Detection Speed**: Real-time processing
-- **Confidence Threshold**: Adjustable 0.01-1.0
-
-### LSTM Pollution Prediction
-- **Input Features**: 10 environmental parameters
-- **Sequence Length**: 30 days historical data
-- **Regions**: Pacific, Atlantic, Indian, Mediterranean
-- **Accuracy**: 94%+ validation accuracy
-- **Prediction Range**: 7-90 days ahead

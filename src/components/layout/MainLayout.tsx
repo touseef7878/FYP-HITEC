@@ -1,7 +1,7 @@
 import { ReactNode, memo } from "react";
 import { Sidebar } from "./Sidebar";
 import { SidebarProvider, useSidebarContext } from "@/hooks/useSidebar";
-import { cn } from "@/lib/utils";
+import { cn } from "@/utils/cn";
 
 interface MainLayoutProps {
   children: ReactNode;

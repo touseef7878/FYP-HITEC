@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Import the DatabaseManager to use its hashing method
-from database import DatabaseManager
+from core.database import DatabaseManager
 
 def init_database():
     """Initialize the SQLite database with all required tables"""

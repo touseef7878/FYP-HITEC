@@ -20,8 +20,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/hooks/useTheme";
 import { useSidebarContext } from "@/hooks/useSidebar";
-import { cn } from "@/lib/utils";
-import logoImg from "@/assets/marine-logo.png";
+import { cn } from "@/utils/cn";
+import logoImg from "@/assets/images/marine-logo.png";
 
 const navItems = [
   { path: "/", label: "Home", icon: Home },

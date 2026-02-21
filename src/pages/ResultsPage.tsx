@@ -379,7 +379,7 @@ export default function ResultsPage() {
                               src={currentResult.annotatedVideo}
                               className="w-full h-full"
                               onError={(e) => {
-                                console.error('Annotated video load error:', e);
+                                logger.error('Annotated video load error:', e);
                               }}
                             />
                           ) : isVideo ? (

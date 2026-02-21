@@ -62,7 +62,7 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onS
         onSuccess();
       }
     } catch (error) {
-      console.error('Registration error:', error);
+      logger.error('Registration error:', error);
     } finally {
       setIsLoading(false);
     }

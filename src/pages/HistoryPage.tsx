@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
+import logger from '@/lib/logger';
 import { Link } from "react-router-dom";
 import {
   Search,
@@ -59,7 +60,7 @@ export default function HistoryPage() {
         const history = await dataService.getHistory();
         setHistoryData(history);
       } catch (error) {
-        console.error('Error loading history data:', error);
+        logger.error('Error loading history data:', error);
         toast({
           title: "Error Loading History",
           description: "Failed to load detection history. Please try again.",
@@ -141,7 +142,7 @@ export default function HistoryPage() {
       });
 
     } catch (error: any) {
-      console.error('Error deleting item:', error);
+      logger.error('Error deleting item:', error);
       toast({
         title: "Delete Failed",
         description: error.message || "Failed to delete detection. Please try again.",
@@ -188,7 +189,7 @@ export default function HistoryPage() {
       });
 
     } catch (error: any) {
-      console.error('Error clearing history:', error);
+      logger.error('Error clearing history:', error);
       toast({
         title: "Clear Failed",
         description: error.message || "Failed to clear history. Please try again.",

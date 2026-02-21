@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import logger from '@/lib/logger';
 import { 
   Users, 
   Activity, 
@@ -87,7 +88,7 @@ const AdminDashboard: React.FC = () => {
         throw new Error('Failed to fetch system stats');
       }
     } catch (error) {
-      console.error('Error fetching system stats:', error);
+      logger.error('Error fetching system stats:', error);
       toast({
         title: "Error",
         description: "Failed to load system statistics",
@@ -112,7 +113,7 @@ const AdminDashboard: React.FC = () => {
         setRecentActivity(data);
       }
     } catch (error) {
-      console.error('Error fetching recent activity:', error);
+      logger.error('Error fetching recent activity:', error);
     }
   };
 

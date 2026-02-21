@@ -30,7 +30,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onSucc
         onSuccess();
       }
     } catch (error) {
-      console.error('Login error:', error);
+      logger.error('Login error:', error);
     } finally {
       setIsLoading(false);
     }

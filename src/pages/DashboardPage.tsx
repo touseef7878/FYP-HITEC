@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 import { useState, useEffect } from "react";
+import logger from '@/lib/logger';
 import {
   BarChart3,
   TrendingUp,
@@ -74,7 +75,7 @@ export default function DashboardPage() {
       const data = await dataService.getAnalytics();
       setAnalyticsData(data);
     } catch (error) {
-      console.error('Error loading analytics data:', error);
+      logger.error('Error loading analytics data:', error);
       
       // Handle different error types
       if (error instanceof Error) {
@@ -100,7 +101,7 @@ export default function DashboardPage() {
           variant: "default",
         });
       } catch (fallbackError) {
-        console.error('Fallback data loading failed:', fallbackError);
+        logger.error('Fallback data loading failed:', fallbackError);
         toast({
           title: "Error Loading Data",
           description: "Failed to load analytics data. Please try refreshing the page.",

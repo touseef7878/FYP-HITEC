@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
+import logger from '@/lib/logger';
 import {
   FileText,
   Download,
@@ -96,7 +97,7 @@ export default function ReportsPage() {
           });
         }
       } catch (error) {
-        console.error('Error loading reports:', error);
+        logger.error('Error loading reports:', error);
         toast({
           title: "Error Loading Reports",
           description: "Failed to load reports from server. Please check your connection.",
@@ -174,7 +175,7 @@ export default function ReportsPage() {
         throw new Error(data.message || 'Report generation returned invalid data');
       }
     } catch (error: any) {
-      console.error('Error generating report:', error);
+      logger.error('Error generating report:', error);
       
       let errorMessage = "Failed to generate report. Please try again.";
       
@@ -239,7 +240,7 @@ export default function ReportsPage() {
       });
 
     } catch (error: any) {
-      console.error('Error deleting report:', error);
+      logger.error('Error deleting report:', error);
       toast({
         title: "Delete Failed",
         description: error.message || "Failed to delete report. Please try again.",

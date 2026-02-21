@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import logger from '@/lib/logger';
 import { 
   FileText, 
   Filter, 
@@ -80,7 +81,7 @@ const AdminLogs: React.FC = () => {
         throw new Error('Failed to fetch logs');
       }
     } catch (error) {
-      console.error('Error fetching logs:', error);
+      logger.error('Error fetching logs:', error);
       toast({
         title: "Error",
         description: "Failed to load system logs",

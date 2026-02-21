@@ -50,7 +50,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   };
 
   const handleError = (e: any) => {
-    console.error('Video error:', e);
+    logger.error('Video error:', e);
     setError('Failed to load video');
     setIsLoading(false);
     onError?.(e);

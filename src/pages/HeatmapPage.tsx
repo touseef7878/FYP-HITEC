@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 import { useState, useEffect } from "react";
+import logger from '@/lib/logger';
 import { MapPin, Layers, Info, Database, RefreshCw, Plus, Trash2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -105,7 +106,7 @@ export default function HeatmapPage() {
         setHotspots(mappedUserHotspots);
       }
     } catch (error) {
-      console.error('Error loading hotspot data:', error);
+      logger.error('Error loading hotspot data:', error);
       toast({
         title: "Error Loading Data",
         description: "Failed to load hotspot data",

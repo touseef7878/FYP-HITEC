@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
+import logger from '@/lib/logger';
 import {
   TrendingUp,
   TrendingDown,
@@ -203,7 +204,7 @@ export default function PredictionsPage() {
         });
       }
     } catch (error) {
-      console.error("Error loading regions:", error);
+      logger.error("Error loading regions:", error);
       toast({
         title: "Connection Error",
         description: "Failed to connect to the server",
@@ -224,7 +225,7 @@ export default function PredictionsPage() {
         }));
       }
     } catch (error) {
-      console.error(`Error loading status for ${region}:`, error);
+      logger.error(`Error loading status for ${region}:`, error);
     }
   };
 
@@ -258,7 +259,7 @@ export default function PredictionsPage() {
         throw new Error(data.message || 'Failed to fetch data');
       }
     } catch (error) {
-      console.error("Error fetching data:", error);
+      logger.error("Error fetching data:", error);
       toast({
         title: "Data Fetch Error",
         description: error instanceof Error ? error.message : "Failed to fetch environmental data. You can still train with synthetic data.",
@@ -303,7 +304,7 @@ export default function PredictionsPage() {
         throw new Error(data.detail || 'Training failed');
       }
     } catch (error) {
-      console.error("Error training model:", error);
+      logger.error("Error training model:", error);
       toast({
         title: "Training Error",
         description: error instanceof Error ? error.message : "Failed to train model",
@@ -339,7 +340,7 @@ export default function PredictionsPage() {
         throw new Error(data.detail || 'Prediction failed');
       }
     } catch (error) {
-      console.error("Error fetching predictions:", error);
+      logger.error("Error fetching predictions:", error);
       
       // Check if the error is due to no trained model
       const errorMessage = error instanceof Error ? error.message : "Failed to generate predictions";
@@ -424,7 +425,7 @@ export default function PredictionsPage() {
         }));
       }
     } catch (error) {
-      console.error(`Error fetching analysis for ${region}:`, error);
+      logger.error(`Error fetching analysis for ${region}:`, error);
       // Set default analysis on error
       setRegionAnalyses(prev => ({
         ...prev,

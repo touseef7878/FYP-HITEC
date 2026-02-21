@@ -41,7 +41,7 @@ export default function SettingsPage() {
           hotspots: hotspots.length,
         });
       } catch (error) {
-        console.error('Error loading stats:', error);
+        logger.error('Error loading stats:', error);
       }
     };
 

@@ -5,24 +5,43 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { ThemeProvider } from "@/hooks/useTheme";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
-import HomePage from "./pages/HomePage";
-import UploadPage from "./pages/UploadPage";
-import ResultsPage from "./pages/ResultsPage";
-import DashboardPage from "./pages/DashboardPage";
-import HistoryPage from "./pages/HistoryPage";
-import HeatmapPage from "./pages/HeatmapPage";
-import PredictionsPage from "./pages/PredictionsPage";
-import ReportsPage from "./pages/ReportsPage";
-import SettingsPage from "./pages/SettingsPage";
-import AdminDashboard from "./pages/AdminDashboard";
-import AdminLogs from "./pages/AdminLogs";
-import AdminUsers from "./pages/AdminUsers";
-import PrivacyPolicy from "./pages/PrivacyPolicy";
-import AuthPage from "./pages/AuthPage";
-import NotFound from "./pages/NotFound";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { Suspense, lazy } from "react";
 
-const queryClient = new QueryClient();
+// Lazy load pages for code splitting
+const HomePage = lazy(() => import("./pages/HomePage"));
+const UploadPage = lazy(() => import("./pages/UploadPage"));
+const ResultsPage = lazy(() => import("./pages/ResultsPage"));
+const DashboardPage = lazy(() => import("./pages/DashboardPage"));
+const HistoryPage = lazy(() => import("./pages/HistoryPage"));
+const HeatmapPage = lazy(() => import("./pages/HeatmapPage"));
+const PredictionsPage = lazy(() => import("./pages/PredictionsPage"));
+const ReportsPage = lazy(() => import("./pages/ReportsPage"));
+const SettingsPage = lazy(() => import("./pages/SettingsPage"));
+const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
+const AdminLogs = lazy(() => import("./pages/AdminLogs"));
+const AdminUsers = lazy(() => import("./pages/AdminUsers"));
+const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
+const AuthPage = lazy(() => import("./pages/AuthPage"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000, // 5 minutes
+      cacheTime: 10 * 60 * 1000, // 10 minutes
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
+  },
+});
+
+// Loading fallback component
+const PageLoader = () => (
+  <div className="flex items-center justify-center min-h-screen">
+    <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+  </div>
+);
 
 // Protected Route Component
 const ProtectedRoute = ({ children, requireAdmin = false }: { children: React.ReactNode; requireAdmin?: boolean }) => {
@@ -82,7 +101,8 @@ const AppRoutes = () => {
   const { isAuthenticated, isAdmin } = useAuth();
 
   return (
-    <Routes>
+    <Suspense fallback={<PageLoader />}>
+      <Routes>
       <Route path="/" element={<HomePage />} />
       <Route 
         path="/auth" 
@@ -195,6 +215,7 @@ const AppRoutes = () => {
       <Route path="/privacy" element={<PrivacyPolicy />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
+    </Suspense>
   );
 };
 

@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useToast } from '@/hooks/use-toast';
+import logger from '@/lib/logger';
+import ENV from '@/config/env';
 
 interface User {
   id: number;
@@ -27,7 +29,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const API_URL = 'http://localhost:8000';
+const API_URL = ENV.API_URL;
 
 interface AuthProviderProps {
   children: ReactNode;
@@ -54,7 +56,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           await refreshUser();
         }
       } catch (error) {
-        console.error('Auth initialization failed:', error);
+        logger.error('Auth initialization failed:', error);
         // Clear invalid data
         localStorage.removeItem('auth_token');
         localStorage.removeItem('auth_user');
@@ -98,7 +100,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       return true;
     } catch (error) {
-      console.error('Login failed:', error);
+      logger.error('Login failed:', error);
       toast({
         title: "Login failed",
         description: error instanceof Error ? error.message : "Please check your credentials",
@@ -142,7 +144,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       return true;
     } catch (error) {
-      console.error('Registration failed:', error);
+      logger.error('Registration failed:', error);
       toast({
         title: "Registration failed",
         description: error instanceof Error ? error.message : "Please try again",
@@ -166,7 +168,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         });
       }
     } catch (error) {
-      console.error('Logout API call failed:', error);
+      logger.error('Logout API call failed:', error);
     } finally {
       // Clear local state regardless of API call success
       setUser(null);
@@ -215,7 +217,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       return true;
     } catch (error) {
-      console.error('Profile update failed:', error);
+      logger.error('Profile update failed:', error);
       toast({
         title: "Update failed",
         description: "Failed to update profile",
@@ -248,7 +250,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setUser(userData);
       localStorage.setItem('auth_user', JSON.stringify(userData));
     } catch (error) {
-      console.error('User refresh failed:', error);
+      logger.error('User refresh failed:', error);
       // Token is invalid, logout
       await logout();
     }

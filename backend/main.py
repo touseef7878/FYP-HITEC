@@ -150,13 +150,19 @@ async def generate_synthetic_training_data(region: str, days: int = 730) -> pd.D
 
 app = FastAPI(title="Marine Plastic Detection API - Refactored")
 
-# CORS - allow frontend to connect
+# CORS - allow frontend to connect (secure configuration)
+ALLOWED_ORIGINS = os.getenv('ALLOWED_ORIGINS', 'http://localhost:8080,http://localhost:5173,http://localhost:3000').split(',')
+ALLOWED_ORIGINS = [origin.strip() for origin in ALLOWED_ORIGINS if origin.strip()]
+
+logger.info(f"CORS allowed origins: {ALLOWED_ORIGINS}")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000", "http://localhost:8080", "*"],
+    allow_origins=ALLOWED_ORIGINS,  # No wildcard "*" for security
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],  # Explicit methods
+    allow_headers=["Content-Type", "Authorization", "Accept"],  # Explicit headers
+    max_age=3600,  # Cache preflight requests for 1 hour
 )
 
 # Pydantic models for request validation

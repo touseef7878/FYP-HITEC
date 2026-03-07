@@ -313,26 +313,38 @@ def load_yolo_model():
     global model
     try:
         if os.path.exists(WEIGHTS_PATH):
-            # Load custom trained model
-            model = YOLO(WEIGHTS_PATH)
-            logger.info(f"✅ Custom YOLO Model loaded from {WEIGHTS_PATH}")
-            logger.info(f"   Model type: {model.model_name if hasattr(model, 'model_name') else 'Custom'}")
-            logger.info(f"   Classes: {list(model.names.values()) if model.names else 'Unknown'}")
-        else:
-            # Fallback to YOLOv12n pretrained model for general object detection
-            logger.info(f"⚠️ No custom weights found at {WEIGHTS_PATH}")
-            logger.info("🔄 Loading YOLOv12n pretrained model as fallback...")
+            # Try to load custom trained model
             try:
-                model = YOLO("yolo12n.pt")  # This will download YOLOv12n if not available
-                logger.info("✅ YOLOv12n pretrained model loaded successfully")
-                logger.info(f"   Classes: {list(model.names.values())[:10]}... (showing first 10)")
-            except Exception as e:
-                logger.warning(f"Could not load YOLOv12n: {e}")
-                logger.info("🔄 Falling back to YOLOv8n...")
-                model = YOLO("yolov8n.pt")  # Final fallback
-                logger.info("✅ YOLOv8n pretrained model loaded as final fallback")
+                model = YOLO(WEIGHTS_PATH)
+                logger.info(f"✅ Custom YOLO Model loaded from {WEIGHTS_PATH}")
+                logger.info(f"   Model type: {model.model_name if hasattr(model, 'model_name') else 'Custom'}")
+                logger.info(f"   Classes: {list(model.names.values()) if model.names else 'Unknown'}")
+                return  # Successfully loaded custom model
+            except Exception as custom_error:
+                logger.warning(f"⚠️ Custom model at {WEIGHTS_PATH} failed to load: {custom_error}")
+                logger.info("   This is likely due to version incompatibility or custom architecture")
+                logger.info("   Falling back to pretrained model...")
+        else:
+            logger.info(f"⚠️ No custom weights found at {WEIGHTS_PATH}")
+        
+        # Fallback to pretrained models
+        logger.info("🔄 Loading YOLOv8n pretrained model as fallback...")
+        try:
+            model = YOLO("yolov8n.pt")  # Use YOLOv8n as it's most stable
+            logger.info("✅ YOLOv8n pretrained model loaded successfully")
+            logger.info(f"   Classes: {list(model.names.values())[:10]}... (showing first 10 of {len(model.names)})")
+        except Exception as e:
+            logger.warning(f"Could not load YOLOv8n: {e}")
+            logger.info("🔄 Trying YOLOv11n...")
+            try:
+                model = YOLO("yolo11n.pt")
+                logger.info("✅ YOLOv11n pretrained model loaded successfully")
+            except Exception as e2:
+                logger.error(f"❌ All fallback models failed: {e2}")
+                model = None
+                
     except Exception as e:
-        logger.error(f"❌ Failed to load any YOLO model: {e}")
+        logger.error(f"❌ Critical error in model loading: {e}")
         model = None
 
 def clear_all_cache():
@@ -371,6 +383,9 @@ async def startup():
 @app.get("/health")
 async def health_check():
     model_info = {}
+    model_status = "not_loaded"
+    model_message = ""
+    
     if model is not None:
         model_info = {
             "loaded": True,
@@ -378,18 +393,31 @@ async def health_check():
             "num_classes": len(model.names) if model.names else 0,
             "model_type": getattr(model, 'model_name', 'Custom/Unknown')
         }
+        model_status = "loaded"
+        
+        # Check if custom model or fallback
+        if os.path.exists(WEIGHTS_PATH):
+            model_message = "Using pretrained fallback model (custom model incompatible)"
+        else:
+            model_message = "Using pretrained model (no custom weights found)"
     else:
         model_info = {"loaded": False}
+        model_status = "failed"
+        model_message = "Model failed to load - detection features unavailable"
     
     return {
-        "status": "healthy",
+        "status": "healthy" if model is not None else "degraded",
         "yolo_model_loaded": model is not None,
+        "model_status": model_status,
+        "model_message": model_message,
         "model_info": model_info,
         "data_cache_ready": True,
         "lstm_model_ready": True,
         "cache_directory": data_cache_service.cache_dir,
         "models_directory": data_cache_service.models_dir,
-        "processed_videos_directory": processed_videos_path
+        "processed_videos_directory": processed_videos_path,
+        "custom_weights_path": WEIGHTS_PATH,
+        "custom_weights_exists": os.path.exists(WEIGHTS_PATH)
     }
 
 # ============================================================================
@@ -2007,11 +2035,13 @@ async def detect_objects(
                 frame_number=0
             )
         
-        # Save image metadata
+        # Save image metadata with base64 data
         db.save_image_metadata(
             detection_id=detection_id,
             width=image.width,
-            height=image.height
+            height=image.height,
+            original_base64=f"data:image/{file.content_type.split('/')[-1]};base64,{base64.b64encode(contents).decode()}",
+            annotated_base64=f"data:image/png;base64,{annotated_base64}"
         )
         
         # Trigger analytics generation for this user

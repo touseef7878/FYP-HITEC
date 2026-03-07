@@ -277,15 +277,18 @@ class DatabaseManager:
             return False
     
     def save_image_metadata(self, detection_id: int, width: int, height: int,
-                           original_path: str = None, annotated_path: str = None) -> bool:
-        """Save image metadata"""
+                           original_path: str = None, annotated_path: str = None,
+                           original_base64: str = None, annotated_base64: str = None) -> bool:
+        """Save image metadata with optional base64 data"""
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
-                    INSERT INTO images (detection_id, width, height, original_path, annotated_path)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (detection_id, width, height, original_path, annotated_path))
+                    INSERT INTO images (detection_id, width, height, original_path, annotated_path, 
+                                      original_base64, annotated_base64)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (detection_id, width, height, original_path, annotated_path, 
+                     original_base64, annotated_base64))
                 
                 conn.commit()
                 return True
@@ -452,7 +455,7 @@ class DatabaseManager:
             return []
     
     def get_detection_by_id(self, detection_id: int, user_id: int = None) -> Optional[Dict]:
-        """Get detection by ID with results"""
+        """Get detection by ID with results and image data"""
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
@@ -494,6 +497,18 @@ class DatabaseManager:
                     })
                 
                 detection['results'] = results
+                
+                # Get image base64 data if it's an image
+                if detection.get('file_type') == 'image':
+                    cursor.execute("""
+                        SELECT original_base64, annotated_base64 
+                        FROM images WHERE detection_id = ?
+                    """, (detection_id,))
+                    image_data = cursor.fetchone()
+                    if image_data:
+                        detection['original_image_base64'] = image_data['original_base64']
+                        detection['annotated_image_base64'] = image_data['annotated_base64']
+                
                 return detection
                 
         except Exception as e:

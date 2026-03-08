@@ -35,7 +35,7 @@ import {
 
 export default function DashboardPage() {
   const [analyticsData, setAnalyticsData] = useState<AnalyticsData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false); // Start with false - show cached data immediately
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const { toast } = useToast();
 
@@ -70,10 +70,12 @@ export default function DashboardPage() {
 
   const loadAnalyticsData = async () => {
     try {
-      // Always generate fresh analytics first
-      await dataService.generateAnalytics();
-      const data = await dataService.getAnalytics();
-      setAnalyticsData(data);
+      // OPTIMIZED: Load cached data immediately (non-blocking)
+      const cachedData = await dataService.getAnalytics();
+      setAnalyticsData(cachedData);
+      
+      // Generate fresh analytics in background (non-blocking)
+      dataService.generateAnalytics(); // Fire and forget
     } catch (error) {
       logger.error('Error loading analytics data:', error);
       
@@ -85,43 +87,27 @@ export default function DashboardPage() {
             description: "Please log in again to continue",
             variant: "destructive",
           });
-          return; // Don't show generic error if redirecting to login
+          return;
         }
       }
       
-      // For network errors or other issues, try to load cached data
-      try {
-        const cachedData = await dataService.getAnalytics();
-        setAnalyticsData(cachedData);
-        
-        // Show a warning toast about using cached data
-        toast({
-          title: "Using Cached Data",
-          description: "Unable to fetch latest data. Showing cached analytics.",
-          variant: "default",
-        });
-      } catch (fallbackError) {
-        logger.error('Fallback data loading failed:', fallbackError);
-        toast({
-          title: "Error Loading Data",
-          description: "Failed to load analytics data. Please try refreshing the page.",
-          variant: "destructive",
-        });
-      }
-    } finally {
-      setIsLoading(false);
+      toast({
+        title: "Error Loading Data",
+        description: "Failed to load analytics data. Please try refreshing the page.",
+        variant: "destructive",
+      });
     }
   };
 
   useEffect(() => {
     loadAnalyticsData();
     
-    // Set up auto-refresh every 30 seconds, but only when online
+    // OPTIMIZED: Reduced auto-refresh to 60 seconds to reduce API calls
     const interval = setInterval(() => {
       if (navigator.onLine) {
         loadAnalyticsData();
       }
-    }, 30000);
+    }, 60000);
 
     // Cleanup interval on component unmount
     return () => clearInterval(interval);
@@ -129,11 +115,15 @@ export default function DashboardPage() {
 
   const handleRefresh = async () => {
     setIsLoading(true);
-    await loadAnalyticsData();
-    toast({
-      title: "Data Refreshed",
-      description: "Analytics data has been updated",
-    });
+    try {
+      await loadAnalyticsData();
+      toast({
+        title: "Data Refreshed",
+        description: "Analytics data has been updated",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   if (isLoading) {

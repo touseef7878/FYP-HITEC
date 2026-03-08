@@ -78,7 +78,17 @@ export default function ResultsPage() {
 
           if (!response.ok) {
             const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
-            throw new Error(errorData.detail || 'Failed to fetch detection');
+            
+            // Provide more specific error messages
+            if (response.status === 404) {
+              throw new Error('Detection not found. It may have been deleted or you may not have permission to view it.');
+            } else if (response.status === 401) {
+              throw new Error('Authentication required. Please login again.');
+            } else if (response.status === 403) {
+              throw new Error('Access denied. You do not have permission to view this detection.');
+            } else {
+              throw new Error(errorData.detail || `Failed to fetch detection (${response.status})`);
+            }
           }
 
           const data = await response.json();
@@ -328,6 +338,7 @@ export default function ResultsPage() {
                               src={currentResult.originalImage}
                               alt="Original"
                               className="w-full h-full object-contain"
+                              loading="lazy"
                             />
                           ) : currentResult.originalVideoUrl ? (
                             <VideoPlayer
@@ -366,6 +377,7 @@ export default function ResultsPage() {
                               src={currentResult.annotatedImage}
                               alt="Detected objects"
                               className="w-full h-full object-contain"
+                              loading="lazy"
                             />
                           ) : currentResult.annotatedVideoUrl ? (
                             <div className="space-y-4">

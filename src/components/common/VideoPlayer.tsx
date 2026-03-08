@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Play, Pause, Volume2, VolumeX, Maximize } from 'lucide-react';
+import logger from '@/utils/logger';
 
 interface VideoPlayerProps {
   src: string;
@@ -22,6 +23,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [isMuted, setIsMuted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [hasInteracted, setHasInteracted] = useState(false); // OPTIMIZED: Lazy load on interaction
 
   const togglePlay = () => {
     if (videoRef.current) {
@@ -66,22 +68,38 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     setIsLoading(false);
     onCanPlay?.();
   };
+  
+  // OPTIMIZED: Load video only when user interacts
+  const handleInteraction = () => {
+    if (!hasInteracted) {
+      setHasInteracted(true);
+    }
+  };
 
   return (
-    <div className={`relative ${className}`}>
-      <video
-        ref={videoRef}
-        src={src}
-        className="w-full h-full object-contain"
-        preload="metadata"
-        playsInline
-        onError={handleError}
-        onLoadStart={handleLoadStart}
-        onCanPlay={handleCanPlay}
-        onPlay={() => setIsPlaying(true)}
-        onPause={() => setIsPlaying(false)}
-        controls
-      />
+    <div className={`relative ${className}`} onClick={handleInteraction}>
+      {!hasInteracted ? (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/80 cursor-pointer">
+          <div className="text-center text-white">
+            <Play className="h-16 w-16 mx-auto mb-2" />
+            <p className="text-sm">Click to load video</p>
+          </div>
+        </div>
+      ) : (
+        <video
+          ref={videoRef}
+          src={src}
+          className="w-full h-full object-contain"
+          preload="none"
+          playsInline
+          onError={handleError}
+          onLoadStart={handleLoadStart}
+          onCanPlay={handleCanPlay}
+          onPlay={() => setIsPlaying(true)}
+          onPause={() => setIsPlaying(false)}
+          controls
+        />
+      )}
       
       {error && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/50">
@@ -93,7 +111,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
       )}
       
-      {isLoading && (
+      {isLoading && hasInteracted && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/30">
           <div className="text-center text-white">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-2"></div>

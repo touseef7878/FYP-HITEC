@@ -48,9 +48,13 @@ yarn-error.log*
 
 # Database
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 *.sqlite3
 backend/marine_detection.db
+backend/marine_detection.db-shm
+backend/marine_detection.db-wal
 
 # Model weights (large files)
 backend/weights/*.pt

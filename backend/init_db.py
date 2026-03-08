@@ -108,6 +108,8 @@ def init_database():
                 annotated_path VARCHAR(500),
                 width INTEGER,
                 height INTEGER,
+                original_base64 TEXT,
+                annotated_base64 TEXT,
                 FOREIGN KEY (detection_id) REFERENCES detections (id) ON DELETE CASCADE
             )
         """)
@@ -196,24 +198,54 @@ def init_database():
         # Create indexes for better performance
         logger.info("🔧 Creating database indexes...")
         
+        # OPTIMIZED: Added comprehensive indexes for query performance
         indexes = [
+            # User indexes
             "CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)",
             "CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)",
+            
+            # Detection indexes (most frequently queried)
             "CREATE INDEX IF NOT EXISTS idx_detections_user_id ON detections(user_id)",
-            "CREATE INDEX IF NOT EXISTS idx_detections_created_at ON detections(created_at)",
+            "CREATE INDEX IF NOT EXISTS idx_detections_created_at ON detections(created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_detections_user_created ON detections(user_id, created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_detections_file_type ON detections(file_type)",
+            
+            # Detection results indexes
             "CREATE INDEX IF NOT EXISTS idx_detection_results_detection_id ON detection_results(detection_id)",
+            "CREATE INDEX IF NOT EXISTS idx_detection_results_class ON detection_results(class_name)",
+            
+            # Video/Image indexes
+            "CREATE INDEX IF NOT EXISTS idx_videos_detection_id ON videos(detection_id)",
+            "CREATE INDEX IF NOT EXISTS idx_images_detection_id ON images(detection_id)",
+            
+            # Prediction indexes
             "CREATE INDEX IF NOT EXISTS idx_predictions_user_id ON predictions(user_id)",
             "CREATE INDEX IF NOT EXISTS idx_predictions_region ON predictions(region)",
+            "CREATE INDEX IF NOT EXISTS idx_predictions_date ON predictions(prediction_date)",
+            
+            # Report indexes
             "CREATE INDEX IF NOT EXISTS idx_reports_user_id ON reports(user_id)",
+            "CREATE INDEX IF NOT EXISTS idx_reports_created ON reports(created_at DESC)",
+            
+            # Analytics indexes
             "CREATE INDEX IF NOT EXISTS idx_analytics_user_id ON analytics_data(user_id)",
-            "CREATE INDEX IF NOT EXISTS idx_analytics_date ON analytics_data(date_recorded)",
-            "CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON logs(timestamp)",
+            "CREATE INDEX IF NOT EXISTS idx_analytics_date ON analytics_data(date_recorded DESC)",
+            
+            # Log indexes
+            "CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON logs(timestamp DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_logs_level ON logs(level)",
+            "CREATE INDEX IF NOT EXISTS idx_logs_user_id ON logs(user_id)",
+            
+            # Session indexes
             "CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)",
-            "CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash)"
+            "CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash)",
+            "CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at)"
         ]
         
         for index_sql in indexes:
             cursor.execute(index_sql)
+        
+        logger.info(f"✅ Created {len(indexes)} database indexes for optimal performance")
         
         # Create default admin account
         logger.info("🔧 Creating default admin account...")

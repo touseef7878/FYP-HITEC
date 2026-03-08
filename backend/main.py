@@ -5,6 +5,7 @@ Implements authentication, user management, and comprehensive marine detection s
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, status, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from ultralytics import YOLO
@@ -149,6 +150,9 @@ async def generate_synthetic_training_data(region: str, days: int = 730) -> pd.D
         return pd.DataFrame()
 
 app = FastAPI(title="Marine Plastic Detection API - Refactored")
+
+# OPTIMIZED: Add GZip compression middleware for 3-5x smaller responses
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # CORS - allow frontend to connect (secure configuration)
 ALLOWED_ORIGINS = os.getenv('ALLOWED_ORIGINS', 'http://localhost:8080,http://localhost:5173,http://localhost:3000').split(',')
@@ -3422,22 +3426,35 @@ async def get_user_history(
 
 @app.get("/api/detections/{detection_id}")
 async def get_detection_by_id(
-    detection_id: int,
+    detection_id: str,  # Changed to str to handle both int and string
     current_user: dict = Depends(get_current_active_user)
 ):
     """Get a specific detection by ID with full details"""
     try:
-        user_id = current_user['user_id']
-        logger.info(f"🔍 Fetching detection {detection_id} for user {user_id}")
+        # Convert detection_id to int
+        try:
+            detection_id_int = int(detection_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid detection ID format")
         
-        # Get detection from database
-        detection = db.get_detection_by_id(detection_id, user_id)
+        user_id = current_user['user_id']
+        
+        # Get detection from database (first check if it exists at all)
+        detection_check = db.get_detection_by_id(detection_id_int, user_id=None)
+        if detection_check:
+            if detection_check.get('user_id') != user_id:
+                raise HTTPException(status_code=403, detail=f"Access denied. This detection belongs to another user.")
+        else:
+            raise HTTPException(status_code=404, detail="Detection not found")
+        
+        # Get detection from database with user verification
+        detection = db.get_detection_by_id(detection_id_int, user_id)
         
         if not detection:
             raise HTTPException(status_code=404, detail="Detection not found or access denied")
         
         # Get detection results
-        detection_results = db.get_detection_results(detection_id, user_id)
+        detection_results = db.get_detection_results(detection_id_int, user_id)
         
         # Calculate average confidence and classes
         avg_confidence = 0
@@ -3460,12 +3477,12 @@ async def get_detection_by_id(
         # Get video metadata if it's a video
         video_metadata = None
         if detection.get('file_type') == 'video':
-            video_metadata = db.get_video_metadata(detection_id)
+            video_metadata = db.get_video_metadata(detection_id_int)
         
         # Build complete result object
         result = {
             "success": True,
-            "detection_id": detection_id,
+            "detection_id": detection_id_int,
             "filename": detection.get('filename', 'Unknown'),
             "totalDetections": detection.get('total_detections', 0),
             "detections": [
@@ -3517,8 +3534,6 @@ async def get_detection_by_id(
                 "annotatedImage": detection.get('annotated_image_base64', ''),
                 "originalImage": detection.get('original_image_base64', '')
             })
-        
-        logger.info(f"✅ Successfully fetched detection {detection_id}")
         
         return {
             "success": True,

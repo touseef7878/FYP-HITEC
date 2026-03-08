@@ -119,12 +119,34 @@ const CLASS_COLORS = [
 class DataService {
   private static instance: DataService;
   private useDatabase: boolean = true; // Flag to enable/disable database usage
+  private abortControllers: Map<string, AbortController> = new Map(); // OPTIMIZED: Request cancellation
 
   public static getInstance(): DataService {
     if (!DataService.instance) {
       DataService.instance = new DataService();
     }
     return DataService.instance;
+  }
+  
+  /**
+   * OPTIMIZED: Cancel ongoing request
+   */
+  private cancelRequest(key: string): void {
+    const controller = this.abortControllers.get(key);
+    if (controller) {
+      controller.abort();
+      this.abortControllers.delete(key);
+    }
+  }
+  
+  /**
+   * OPTIMIZED: Create new abort controller for request
+   */
+  private createAbortController(key: string): AbortController {
+    this.cancelRequest(key); // Cancel previous request
+    const controller = new AbortController();
+    this.abortControllers.set(key, controller);
+    return controller;
   }
 
   /**
@@ -157,6 +179,7 @@ class DataService {
   /**
    * Get detection history from database or localStorage
    * Uses timeout to prevent blocking and returns cached data immediately
+   * OPTIMIZED: Added request cancellation
    */
   async getHistory(): Promise<HistoryItem[]> {
     // Return cached data immediately for instant UI
@@ -166,12 +189,16 @@ class DataService {
     if (this.useDatabase) {
       const token = localStorage.getItem('auth_token');
       if (token) {
+        // OPTIMIZED: Create abort controller for cancellation
+        const controller = this.createAbortController('history');
+        
         // Fire and forget - don't wait for response
         fetch(`${API_URL}/api/history?limit=100`, {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
-          }
+          },
+          signal: controller.signal
         }).then(async response => {
           if (response.ok) {
             const data = await response.json();
@@ -241,14 +268,15 @@ class DataService {
 
   /**
    * Get detection history with fresh data (blocking) - use only when needed
+   * OPTIMIZED: Added request cancellation and timeout
    */
   async getHistoryFresh(): Promise<HistoryItem[]> {
     try {
       if (this.useDatabase) {
         const token = localStorage.getItem('auth_token');
         if (token) {
-          // Add timeout to prevent blocking
-          const controller = new AbortController();
+          // OPTIMIZED: Add timeout and cancellation
+          const controller = this.createAbortController('history-fresh');
           const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
           
           const response = await fetch(`${API_URL}/api/history?limit=100`, {

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo, memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import {
@@ -38,6 +38,7 @@ interface UploadFile {
   progress: number;
   status: "pending" | "uploading" | "processing" | "complete" | "error";
   errorMessage?: string;
+  detectionId?: number;
 }
 
 interface DetectionResult {
@@ -66,6 +67,70 @@ interface DetectionResult {
   duration?: number;
   resolution?: string;
 }
+
+// OPTIMIZED: Memoized file item component to prevent unnecessary re-renders
+const FileItem = memo(({ file, isProcessing, onRemove }: {
+  file: UploadFile;
+  isProcessing: boolean;
+  onRemove: (id: string) => void;
+}) => {
+  return (
+    <motion.div
+      key={file.id}
+      initial={{ opacity: 0, x: -20 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: 20 }}
+      className="flex items-center gap-4 p-3 bg-muted/30 rounded-lg"
+    >
+      <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+        {file.file.type.startsWith("image/") ? (
+          <Image className="h-5 w-5 text-primary" />
+        ) : (
+          <Video className="h-5 w-5 text-primary" />
+        )}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium truncate">
+          {file.file.name}
+        </p>
+        {file.errorMessage && (
+          <p className="text-xs text-destructive truncate">
+            {file.errorMessage}
+          </p>
+        )}
+        <div className="flex items-center gap-2 mt-1">
+          <Progress value={file.progress} className="h-1.5 flex-1" />
+          <span className="text-xs text-muted-foreground w-10">
+            {file.progress}%
+          </span>
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        {file.status === "complete" && (
+          <CheckCircle className="h-5 w-5 text-success" />
+        )}
+        {file.status === "error" && (
+          <AlertCircle className="h-5 w-5 text-destructive" />
+        )}
+        {(file.status === "uploading" || file.status === "processing") && (
+          <Loader2 className="h-5 w-5 text-primary animate-spin" />
+        )}
+        {file.status === "pending" && !isProcessing && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => onRemove(file.id)}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        )}
+      </div>
+    </motion.div>
+  );
+});
+
+FileItem.displayName = 'FileItem';
 
 export default function UploadPage() {
   const [files, setFiles] = useState<UploadFile[]>([]);
@@ -214,10 +279,13 @@ export default function UploadPage() {
     addLog(`Added ${selectedFiles.length} file(s) to queue`);
   };
 
-  const removeFile = (id: string) => {
+  // OPTIMIZED: Memoize file list to prevent unnecessary re-renders
+  const fileList = useMemo(() => files, [files]);
+  
+  const removeFile = useCallback((id: string) => {
     setFiles((prev) => prev.filter((f) => f.id !== id));
     addLog("Removed file from queue");
-  };
+  }, []);
 
   const processFiles = async () => {
     if (files.length === 0) return;
@@ -337,10 +405,15 @@ export default function UploadPage() {
         const result = await response.json();
         clearInterval(progressInterval);
         
-        // Store detection_id if available
-        if (result.detection_id) {
-          file.detectionId = result.detection_id;
-        }
+        // Store detection_id in the file object
+        const detectionId = result.detection_id;
+        
+        // Update file with detection ID
+        setFiles((prev) =>
+          prev.map((f) =>
+            f.id === file.id ? { ...f, detectionId: detectionId } : f
+          )
+        );
         
         // Auto-generate analytics after successful detection
         try {
@@ -424,7 +497,10 @@ export default function UploadPage() {
       }
 
       // Navigate to results with detection ID (use first result's ID)
-      const firstDetectionId = results[0]?.detection_id;
+      // Get detection ID from the files array (which was updated with detection IDs)
+      const firstFileWithDetection = files.find(f => f.detectionId);
+      const firstDetectionId = firstFileWithDetection?.detectionId || results[0]?.detection_id;
+      
       setTimeout(() => {
         addLog("🚀 Auto-redirecting to results...");
         setIsComplete(false); // Clear completion state
@@ -433,8 +509,10 @@ export default function UploadPage() {
         
         // Navigate with ID if available, otherwise use sessionStorage fallback
         if (firstDetectionId) {
+          addLog(`📍 Navigating to detection ID: ${firstDetectionId}`);
           navigate(`/results/${firstDetectionId}`);
         } else {
+          addLog(`📍 Navigating to results (using sessionStorage)`);
           navigate("/results");
         }
       }, 5000); // Increased delay to show completion state longer
@@ -577,59 +655,13 @@ export default function UploadPage() {
                     <CardTitle className="text-lg">Upload Queue</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    {files.map((file) => (
-                      <motion.div
+                    {fileList.map((file) => (
+                      <FileItem
                         key={file.id}
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: 20 }}
-                        className="flex items-center gap-4 p-3 bg-muted/30 rounded-lg"
-                      >
-                        <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                          {file.file.type.startsWith("image/") ? (
-                            <Image className="h-5 w-5 text-primary" />
-                          ) : (
-                            <Video className="h-5 w-5 text-primary" />
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">
-                            {file.file.name}
-                          </p>
-                          {file.errorMessage && (
-                            <p className="text-xs text-destructive truncate">
-                              {file.errorMessage}
-                            </p>
-                          )}
-                          <div className="flex items-center gap-2 mt-1">
-                            <Progress value={file.progress} className="h-1.5 flex-1" />
-                            <span className="text-xs text-muted-foreground w-10">
-                              {file.progress}%
-                            </span>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {file.status === "complete" && (
-                            <CheckCircle className="h-5 w-5 text-success" />
-                          )}
-                          {file.status === "error" && (
-                            <AlertCircle className="h-5 w-5 text-destructive" />
-                          )}
-                          {(file.status === "uploading" || file.status === "processing") && (
-                            <Loader2 className="h-5 w-5 text-primary animate-spin" />
-                          )}
-                          {file.status === "pending" && !isProcessing && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={() => removeFile(file.id)}
-                            >
-                              <X className="h-4 w-4" />
-                            </Button>
-                          )}
-                        </div>
-                      </motion.div>
+                        file={file}
+                        isProcessing={isProcessing}
+                        onRemove={removeFile}
+                      />
                     ))}
                   </CardContent>
                 </Card>
@@ -727,7 +759,17 @@ export default function UploadPage() {
               <Button
                 variant="secondary"
                 size="lg"
-                onClick={() => navigate("/results")}
+                onClick={() => {
+                  // Get detection ID from files or results
+                  const firstFileWithDetection = files.find(f => f.detectionId);
+                  const detectionId = firstFileWithDetection?.detectionId;
+                  
+                  if (detectionId) {
+                    navigate(`/results/${detectionId}`);
+                  } else {
+                    navigate("/results");
+                  }
+                }}
               >
                 <Eye className="mr-2 h-5 w-5" />
                 View Results Now

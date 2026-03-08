@@ -33,6 +33,7 @@ interface InteractiveMapProps {
 export function InteractiveMap({ hotspots, onHotspotClick }: InteractiveMapProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
+  const markersRef = useRef<Map<string, { circle: L.Circle; marker: L.Marker }>>(new Map());
   const [currentLayer, setCurrentLayer] = useState<'satellite' | 'street' | 'ocean'>('ocean');
 
   useEffect(() => {
@@ -78,27 +79,34 @@ export function InteractiveMap({ hotspots, onHotspotClick }: InteractiveMapProps
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
+        markersRef.current.clear();
       }
     };
   }, []);
 
+  // OPTIMIZED: Only update changed markers instead of redrawing all
   useEffect(() => {
     if (!mapInstanceRef.current) return;
 
     const map = mapInstanceRef.current;
+    const existingMarkers = markersRef.current;
+    const newMarkerIds = new Set(hotspots.map(h => `${h.lat}-${h.lng}`));
 
-    // Clear existing markers
-    map.eachLayer((layer) => {
-      if (layer instanceof L.Marker || layer instanceof L.Circle) {
-        map.removeLayer(layer);
+    // Remove markers that no longer exist
+    existingMarkers.forEach((layers, id) => {
+      if (!newMarkerIds.has(id)) {
+        map.removeLayer(layers.circle);
+        map.removeLayer(layers.marker);
+        existingMarkers.delete(id);
       }
     });
 
-    // Add hotspot markers
+    // Add or update markers
     hotspots.forEach((hotspot) => {
+      const markerId = `${hotspot.lat}-${hotspot.lng}`;
       const intensity = hotspot.intensity.toLowerCase();
-      let color = '#10b981'; // Default green
-      let radius = 50000; // Default radius in meters
+      let color = '#10b981';
+      let radius = 50000;
 
       switch (intensity) {
         case 'critical':
@@ -119,68 +127,71 @@ export function InteractiveMap({ hotspots, onHotspotClick }: InteractiveMapProps
           break;
       }
 
-      // Create circle marker for pollution zone
-      const circle = L.circle([hotspot.lat, hotspot.lng], {
-        color: color,
-        fillColor: color,
-        fillOpacity: 0.3,
-        radius: radius,
-        weight: 2,
-      }).addTo(map);
+      // Check if marker already exists
+      const existing = existingMarkers.get(markerId);
+      
+      if (!existing) {
+        // Create new marker
+        const circle = L.circle([hotspot.lat, hotspot.lng], {
+          color: color,
+          fillColor: color,
+          fillOpacity: 0.3,
+          radius: radius,
+          weight: 2,
+        }).addTo(map);
 
-      // Create popup content
-      const popupContent = `
-        <div class="p-2 min-w-[200px]">
-          <h3 class="font-bold text-lg mb-2">${hotspot.name}</h3>
-          <p class="text-sm text-gray-600 mb-2">${hotspot.location}</p>
-          <div class="space-y-1">
-            <div class="flex justify-between">
-              <span class="text-sm">Intensity:</span>
-              <span class="text-sm font-medium" style="color: ${color}">${hotspot.intensity}</span>
+        const popupContent = `
+          <div class="p-2 min-w-[200px]">
+            <h3 class="font-bold text-lg mb-2">${hotspot.name}</h3>
+            <p class="text-sm text-gray-600 mb-2">${hotspot.location}</p>
+            <div class="space-y-1">
+              <div class="flex justify-between">
+                <span class="text-sm">Intensity:</span>
+                <span class="text-sm font-medium" style="color: ${color}">${hotspot.intensity}</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-sm">Density:</span>
+                <span class="text-sm font-medium">${hotspot.plasticDensity}</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-sm">Coordinates:</span>
+                <span class="text-sm">${hotspot.coordinates}</span>
+              </div>
+              ${hotspot.detectionCount ? `
+              <div class="flex justify-between">
+                <span class="text-sm">Detections:</span>
+                <span class="text-sm font-medium">${hotspot.detectionCount}</span>
+              </div>
+              ` : ''}
             </div>
-            <div class="flex justify-between">
-              <span class="text-sm">Density:</span>
-              <span class="text-sm font-medium">${hotspot.plasticDensity}</span>
-            </div>
-            <div class="flex justify-between">
-              <span class="text-sm">Coordinates:</span>
-              <span class="text-sm">${hotspot.coordinates}</span>
-            </div>
-            ${hotspot.detectionCount ? `
-            <div class="flex justify-between">
-              <span class="text-sm">Detections:</span>
-              <span class="text-sm font-medium">${hotspot.detectionCount}</span>
-            </div>
-            ` : ''}
           </div>
-        </div>
-      `;
+        `;
 
-      circle.bindPopup(popupContent);
+        circle.bindPopup(popupContent);
+        circle.on('click', () => {
+          if (onHotspotClick) {
+            onHotspotClick(hotspot);
+          }
+        });
 
-      // Add click handler
-      circle.on('click', () => {
-        if (onHotspotClick) {
-          onHotspotClick(hotspot);
-        }
-      });
+        const marker = L.marker([hotspot.lat, hotspot.lng], {
+          icon: L.divIcon({
+            className: 'custom-marker',
+            html: `<div style="background-color: ${color}; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>`,
+            iconSize: [12, 12],
+            iconAnchor: [6, 6],
+          }),
+        }).addTo(map);
 
-      // Add marker at center
-      const marker = L.marker([hotspot.lat, hotspot.lng], {
-        icon: L.divIcon({
-          className: 'custom-marker',
-          html: `<div style="background-color: ${color}; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>`,
-          iconSize: [12, 12],
-          iconAnchor: [6, 6],
-        }),
-      }).addTo(map);
+        marker.bindPopup(popupContent);
+        marker.on('click', () => {
+          if (onHotspotClick) {
+            onHotspotClick(hotspot);
+          }
+        });
 
-      marker.bindPopup(popupContent);
-      marker.on('click', () => {
-        if (onHotspotClick) {
-          onHotspotClick(hotspot);
-        }
-      });
+        existingMarkers.set(markerId, { circle, marker });
+      }
     });
 
     // Fit map to show all hotspots if any exist
@@ -190,7 +201,7 @@ export function InteractiveMap({ hotspots, onHotspotClick }: InteractiveMapProps
       );
       map.fitBounds(group.getBounds().pad(0.1));
     }
-  }, [hotspots, onHotspotClick]);
+  }, [hotspots]); // OPTIMIZED: Removed onHotspotClick from dependencies
 
   const switchLayer = (layerType: 'satellite' | 'street' | 'ocean') => {
     if (!mapInstanceRef.current) return;

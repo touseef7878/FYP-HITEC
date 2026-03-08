@@ -1,6 +1,7 @@
 ﻿"""
 Database Module
 Handles all database operations for the marine detection system
+OPTIMIZED: Added connection pooling for better performance
 """
 
 import sqlite3
@@ -12,8 +13,48 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple, Any
 import logging
 from contextlib import contextmanager
+from queue import Queue
+import threading
 
 logger = logging.getLogger(__name__)
+
+class ConnectionPool:
+    """OPTIMIZED: Database connection pool for better performance"""
+    
+    def __init__(self, database: str, max_connections: int = 10):
+        self.database = database
+        self.max_connections = max_connections
+        self.pool = Queue(maxsize=max_connections)
+        self.lock = threading.Lock()
+        
+        # Pre-create connections
+        for _ in range(max_connections):
+            conn = sqlite3.connect(database, check_same_thread=False)
+            conn.row_factory = sqlite3.Row
+            # Enable WAL mode for better concurrency
+            conn.execute("PRAGMA journal_mode=WAL")
+            self.pool.put(conn)
+        
+        logger.info(f"✅ Connection pool initialized with {max_connections} connections")
+    
+    @contextmanager
+    def get_connection(self):
+        """Get connection from pool"""
+        conn = self.pool.get()
+        try:
+            yield conn
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            raise e
+        finally:
+            self.pool.put(conn)
+    
+    def close_all(self):
+        """Close all connections in pool"""
+        while not self.pool.empty():
+            conn = self.pool.get()
+            conn.close()
 
 class DatabaseManager:
     """Centralized database manager for all operations"""
@@ -24,26 +65,35 @@ class DatabaseManager:
             db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "marine_detection.db")
         self.db_path = db_path
         
-        # Ensure database exists
-        if not os.path.exists(db_path):
+        # OPTIMIZED: Initialize connection pool
+        self.pool = None
+        if os.path.exists(db_path):
+            self.pool = ConnectionPool(db_path, max_connections=10)
+        else:
             logger.warning(f"Database not found at {db_path}. Run init_db.py first!")
     
     @contextmanager
     def get_connection(self):
-        """Context manager for database connections"""
-        conn = None
-        try:
-            conn = sqlite3.connect(self.db_path)
-            conn.row_factory = sqlite3.Row  # Enable dict-like access
-            yield conn
-        except Exception as e:
-            if conn:
-                conn.rollback()
-            logger.error(f"Database error: {e}")
-            raise
-        finally:
-            if conn:
-                conn.close()
+        """Context manager for database connections - uses pool if available"""
+        if self.pool:
+            with self.pool.get_connection() as conn:
+                yield conn
+        else:
+            # Fallback to direct connection
+            conn = None
+            try:
+                conn = sqlite3.connect(self.db_path)
+                conn.row_factory = sqlite3.Row
+                yield conn
+                conn.commit()
+            except Exception as e:
+                if conn:
+                    conn.rollback()
+                logger.error(f"Database error: {e}")
+                raise
+            finally:
+                if conn:
+                    conn.close()
     
     def hash_password(self, password: str) -> str:
         """Hash password with salt"""

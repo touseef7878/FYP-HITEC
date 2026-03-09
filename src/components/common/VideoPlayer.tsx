@@ -23,14 +23,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [isMuted, setIsMuted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [hasInteracted, setHasInteracted] = useState(false); // OPTIMIZED: Lazy load on interaction
+  const [hasInteracted, setHasInteracted] = useState(false);
 
   const togglePlay = () => {
     if (videoRef.current) {
       if (isPlaying) {
         videoRef.current.pause();
       } else {
-        videoRef.current.play();
+        videoRef.current.play().catch(err => {
+          logger.error('Play error:', err);
+        });
       }
       setIsPlaying(!isPlaying);
     }
@@ -52,8 +54,30 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   };
 
   const handleError = (e: any) => {
-    logger.error('Video error:', e);
-    setError('Failed to load video');
+    const videoElement = e.target as HTMLVideoElement;
+    let errorMessage = 'Failed to load video';
+    
+    if (videoElement.error) {
+      switch (videoElement.error.code) {
+        case 1:
+          errorMessage = 'Video loading aborted';
+          break;
+        case 2:
+          errorMessage = 'Network error while loading video';
+          break;
+        case 3:
+          errorMessage = 'Video format not supported';
+          break;
+        case 4:
+          errorMessage = 'Video not found or access denied';
+          break;
+        default:
+          errorMessage = 'Unknown video error';
+      }
+    }
+    
+    logger.error('Video error:', errorMessage, 'URL:', src);
+    setError(errorMessage);
     setIsLoading(false);
     onError?.(e);
   };
@@ -69,7 +93,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     onCanPlay?.();
   };
   
-  // OPTIMIZED: Load video only when user interacts
   const handleInteraction = () => {
     if (!hasInteracted) {
       setHasInteracted(true);
@@ -77,9 +100,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   };
 
   return (
-    <div className={`relative ${className}`} onClick={handleInteraction}>
+    <div className={`relative w-full h-full ${className}`}>
       {!hasInteracted ? (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/80 cursor-pointer">
+        <div 
+          className="absolute inset-0 flex items-center justify-center bg-black/80 cursor-pointer z-10 rounded-lg"
+          onClick={handleInteraction}
+        >
           <div className="text-center text-white">
             <Play className="h-16 w-16 mx-auto mb-2" />
             <p className="text-sm">Click to load video</p>
@@ -89,8 +115,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         <video
           ref={videoRef}
           src={src}
-          className="w-full h-full object-contain"
-          preload="none"
+          className="w-full h-full object-contain rounded-lg"
+          preload="metadata"
           playsInline
           onError={handleError}
           onLoadStart={handleLoadStart}
@@ -102,17 +128,17 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       )}
       
       {error && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-          <div className="text-center text-white">
-            <p className="text-sm mb-2">Video Error</p>
-            <p className="text-xs text-red-300">{error}</p>
-            <p className="text-xs text-gray-300 mt-1">URL: {src}</p>
+        <div className="absolute inset-0 flex items-center justify-center bg-black/80 z-20 rounded-lg">
+          <div className="text-center text-white p-4">
+            <p className="text-sm mb-2 font-semibold">Video Error</p>
+            <p className="text-xs text-red-300 mb-2">{error}</p>
+            <p className="text-xs text-gray-400 break-all">URL: {src}</p>
           </div>
         </div>
       )}
       
-      {isLoading && hasInteracted && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+      {isLoading && hasInteracted && !error && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/30 z-10 rounded-lg">
           <div className="text-center text-white">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-2"></div>
             <p className="text-sm">Loading video...</p>

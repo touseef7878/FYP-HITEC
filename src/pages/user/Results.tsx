@@ -332,7 +332,7 @@ export default function ResultsPage() {
                         </TabsList>
                       </div>
                       <TabsContent value="before" className="mt-0">
-                        <div className="relative aspect-video bg-muted">
+                        <div className="relative aspect-video bg-muted overflow-hidden">
                           {currentResult.originalImage ? (
                             <img
                               src={currentResult.originalImage}
@@ -341,21 +341,19 @@ export default function ResultsPage() {
                               loading="lazy"
                             />
                           ) : currentResult.originalVideoUrl ? (
-                            <VideoPlayer
-                              src={`${API_URL}${currentResult.originalVideoUrl}`}
-                              className="w-full h-full"
-                              onError={(e) => {
-                                console.error('Original video load error:', e);
-                              }}
-                            />
+                            <div className="absolute inset-0">
+                              <VideoPlayer
+                                src={`${API_URL}${currentResult.originalVideoUrl}`}
+                                className="w-full h-full"
+                              />
+                            </div>
                           ) : currentResult.originalVideo ? (
-                            <VideoPlayer
-                              src={currentResult.originalVideo}
-                              className="w-full h-full"
-                              onError={(e) => {
-                                console.error('Original video load error:', e);
-                              }}
-                            />
+                            <div className="absolute inset-0">
+                              <VideoPlayer
+                                src={currentResult.originalVideo}
+                                className="w-full h-full"
+                              />
+                            </div>
                           ) : isVideo ? (
                             <div className="flex items-center justify-center h-full">
                               <div className="text-center">
@@ -371,7 +369,7 @@ export default function ResultsPage() {
                         </div>
                       </TabsContent>
                       <TabsContent value="after" className="mt-0">
-                        <div className="relative aspect-video bg-muted">
+                        <div className="relative aspect-video bg-muted overflow-hidden">
                           {currentResult.annotatedImage ? (
                             <img
                               src={currentResult.annotatedImage}
@@ -380,20 +378,19 @@ export default function ResultsPage() {
                               loading="lazy"
                             />
                           ) : currentResult.annotatedVideoUrl ? (
-                            <div className="space-y-4">
+                            <div className="absolute inset-0">
                               <VideoPlayer
                                 src={`${API_URL}${currentResult.annotatedVideoUrl}`}
                                 className="w-full h-full"
                               />
                             </div>
                           ) : currentResult.annotatedVideo ? (
-                            <VideoPlayer
-                              src={currentResult.annotatedVideo}
-                              className="w-full h-full"
-                              onError={(e) => {
-                                logger.error('Annotated video load error:', e);
-                              }}
-                            />
+                            <div className="absolute inset-0">
+                              <VideoPlayer
+                                src={currentResult.annotatedVideo}
+                                className="w-full h-full"
+                              />
+                            </div>
                           ) : isVideo ? (
                             <div className="flex items-center justify-center h-full">
                               <div className="text-center">

@@ -1,0 +1,32 @@
+{
+  "sequence_length": 30,
+  "n_features": 10,
+  "lstm_units": [
+    64,
+    32
+  ],
+  "dropout_rate": 0.2,
+  "learning_rate": 0.001,
+  "batch_size": 32,
+  "epochs": 10,
+  "validation_split": 0.2,
+  "feature_names": [
+    "temperature",
+    "humidity",
+    "pressure",
+    "wind_speed",
+    "aqi",
+    "pm25",
+    "ocean_temp",
+    "precipitation",
+    "salinity",
+    "chlorophyll"
+  ],
+  "target_name": "pollution_level",
+  "created_at": null,
+  "last_trained": "2026-03-09T12:08:00.998475",
+  "training_samples": 2894,
+  "validation_mae": 8.549386377974841,
+  "validation_rmse": 10.670466438777463,
+  "region": "pacific"
+}

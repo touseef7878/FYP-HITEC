@@ -344,24 +344,9 @@ export default function UploadPage() {
         // Build API URL with optimization parameters
         let apiUrl = `${API_URL}${endpoint}?confidence=${confidence / 100}`;
         
-        // Add speed optimization for videos
+        // Process all frames for maximum accuracy (no frame skipping)
         if (isVideo) {
-          const fileSize = file.file.size / (1024 * 1024); // Size in MB
-          
-          // Auto-optimize based on file size and duration
-          if (fileSize > 10) {
-            apiUrl += "&frame_skip=2"; // Process every 2nd frame for large files
-            addLog(`🚀 Speed optimization: Processing every 2nd frame (large file: ${fileSize.toFixed(1)}MB)`);
-          } else if (fileSize > 5) {
-            apiUrl += "&frame_skip=1"; // Process every frame for medium files
-            addLog(`⚡ Processing every frame (medium file: ${fileSize.toFixed(1)}MB)`);
-          }
-          
-          // Limit frames for very long videos
-          if (fileSize > 20) {
-            apiUrl += "&max_frames=500"; // Limit to 500 processed frames for very large files
-            addLog(`⏱️ Frame limit: 500 frames max for performance`);
-          }
+          addLog(`🎯 Processing all frames for maximum accuracy`);
         }
         
         const startTime = Date.now();
@@ -473,6 +458,10 @@ export default function UploadPage() {
       
       // Store results in sessionStorage for immediate viewing (fallback)
       sessionStorage.setItem("detectionResults", JSON.stringify(results));
+      
+      // Trigger event to notify other pages (History, Dashboard) to reload
+      localStorage.setItem('detection_completed', Date.now().toString());
+      window.dispatchEvent(new Event('detectionComplete'));
       
       // IMMEDIATELY set completion state and stop processing
       setIsProcessing(false); // Stop processing FIRST

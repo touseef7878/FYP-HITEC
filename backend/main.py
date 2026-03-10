@@ -320,9 +320,12 @@ def load_yolo_model():
             # Try to load custom trained model
             try:
                 model = YOLO(WEIGHTS_PATH)
-                logger.info(f"✅ Custom YOLO Model loaded from {WEIGHTS_PATH}")
-                logger.info(f"   Model type: {model.model_name if hasattr(model, 'model_name') else 'Custom'}")
+                # Force CPU mode for better compatibility
+                model.to('cpu')
+                logger.info(f"✅ Custom YOLOv12n Model loaded from {WEIGHTS_PATH} (CPU mode)")
+                logger.info(f"   Model type: {model.model_name if hasattr(model, 'model_name') else 'YOLOv12n Custom'}")
                 logger.info(f"   Classes: {list(model.names.values()) if model.names else 'Unknown'}")
+                logger.info("   💡 Using your trained model - optimized for marine plastic detection!")
                 return  # Successfully loaded custom model
             except Exception as custom_error:
                 logger.warning(f"⚠️ Custom model at {WEIGHTS_PATH} failed to load: {custom_error}")
@@ -332,20 +335,31 @@ def load_yolo_model():
             logger.info(f"⚠️ No custom weights found at {WEIGHTS_PATH}")
         
         # Fallback to pretrained models
-        logger.info("🔄 Loading YOLOv8n pretrained model as fallback...")
+        logger.info("🔄 Loading YOLOv12n pretrained model as fallback (CPU optimized)...")
         try:
-            model = YOLO("yolov8n.pt")  # Use YOLOv8n as it's most stable
-            logger.info("✅ YOLOv8n pretrained model loaded successfully")
+            model = YOLO("yolov12n.pt")  # Use YOLOv12n - newest and most efficient
+            # Force CPU mode for better compatibility
+            model.to('cpu')
+            logger.info("✅ YOLOv12n pretrained model loaded successfully (CPU mode)")
             logger.info(f"   Classes: {list(model.names.values())[:10]}... (showing first 10 of {len(model.names)})")
+            logger.info("   💡 CPU mode active - processing will be slower but more compatible")
         except Exception as e:
-            logger.warning(f"Could not load YOLOv8n: {e}")
-            logger.info("🔄 Trying YOLOv11n...")
+            logger.warning(f"Could not load YOLOv12n: {e}")
+            logger.info("🔄 Trying YOLOv8n as fallback...")
             try:
-                model = YOLO("yolo11n.pt")
-                logger.info("✅ YOLOv11n pretrained model loaded successfully")
+                model = YOLO("yolov8n.pt")
+                model.to('cpu')
+                logger.info("✅ YOLOv8n pretrained model loaded successfully (CPU mode)")
             except Exception as e2:
-                logger.error(f"❌ All fallback models failed: {e2}")
-                model = None
+                logger.warning(f"Could not load YOLOv8n: {e2}")
+                logger.info("🔄 Trying YOLOv11n as last resort...")
+                try:
+                    model = YOLO("yolo11n.pt")
+                    model.to('cpu')
+                    logger.info("✅ YOLOv11n pretrained model loaded successfully (CPU mode)")
+                except Exception as e3:
+                    logger.error(f"❌ All fallback models failed: {e3}")
+                    model = None
                 
     except Exception as e:
         logger.error(f"❌ Critical error in model loading: {e}")
@@ -2097,8 +2111,6 @@ async def detect_objects(
 async def detect_video(
     file: UploadFile = File(...), 
     confidence: float = 0.25,
-    frame_skip: int = 1,  # Process every Nth frame for speed
-    max_frames: int = 0,  # Limit total frames processed (0 = no limit)
     current_user: dict = Depends(get_current_user)
 ):
     if model is None:
@@ -2203,33 +2215,26 @@ async def detect_video(
         colors = {}
         frames_with_detections = 0
         
-        logger.info("🔍 Starting optimized frame-by-frame detection...")
-        logger.info(f"   Frame skip: {frame_skip} (processing every {frame_skip} frame(s))")
-        if max_frames > 0:
-            logger.info(f"   Max frames: {max_frames}")
+        logger.info("🔍 Starting frame-by-frame detection (processing all frames)...")
+        logger.info(f"   Total frames to process: {total_frames}")
+        logger.info(f"   Estimated time: {total_frames * 0.15:.1f} seconds (CPU mode)")
         
-        # Process video frame by frame with optimizations
+        # Track processing time
+        processing_start = time.time()
+        last_log_time = processing_start
+        
+        # Process video frame by frame
         while True:
             ret, frame = cap.read()
             if not ret:
                 break
             
             frame_count += 1
-            
-            # Skip frames for speed optimization
-            if frame_count % frame_skip != 0:
-                out.write(frame)  # Write original frame without processing
-                continue
-            
-            # Limit total frames processed if specified
-            if max_frames > 0 and processed_frame_count >= max_frames:
-                out.write(frame)  # Write remaining frames without processing
-                continue
-            
             processed_frame_count += 1
             
-            # Run YOLO inference on frame
+            # Run YOLO inference on frame (CPU optimized)
             try:
+                # CPU-optimized inference without half precision
                 results = model(frame, conf=confidence, verbose=False)[0]
             except Exception as e:
                 logger.warning(f"Detection failed on frame {frame_count}: {e}")
@@ -2348,10 +2353,19 @@ async def detect_video(
             # Write annotated frame to output video
             out.write(annotated_frame)
             
-            # Log progress every 50 frames or at significant milestones
-            if frame_count % 50 == 0 or frame_count == total_frames:
+            # Log progress every 10 frames for better feedback
+            current_time = time.time()
+            if frame_count % 10 == 0 or frame_count == total_frames or (current_time - last_log_time) >= 2:
                 progress = (frame_count / total_frames) * 100
-                logger.info(f"   Progress: {frame_count}/{total_frames} frames ({progress:.1f}%) | Processed: {processed_frame_count} | Detections: {total_detections}")
+                elapsed = current_time - processing_start
+                fps_processing = frame_count / elapsed if elapsed > 0 else 0
+                eta = (total_frames - frame_count) / fps_processing if fps_processing > 0 else 0
+                
+                logger.info(f"   📊 Progress: {frame_count}/{total_frames} ({progress:.1f}%) | "
+                          f"Detections: {total_detections} | "
+                          f"Speed: {fps_processing:.1f} fps | "
+                          f"ETA: {eta:.0f}s")
+                last_log_time = current_time
         
         # Release resources
         cap.release()

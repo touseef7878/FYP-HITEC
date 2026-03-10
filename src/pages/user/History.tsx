@@ -15,6 +15,7 @@ import {
   Trash2,
   Eye,
   AlertTriangle,
+  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -72,6 +73,26 @@ export default function HistoryPage() {
     };
 
     loadHistoryData();
+    
+    // Listen for storage events to auto-reload when new detections are added
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'detection_completed') {
+        loadHistoryData();
+      }
+    };
+    
+    // Listen for custom events from same window
+    const handleDetectionComplete = () => {
+      loadHistoryData();
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('detectionComplete', handleDetectionComplete);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('detectionComplete', handleDetectionComplete);
+    };
   }, [toast]);
 
   const filteredData = historyData.filter((item) => {
@@ -200,6 +221,27 @@ export default function HistoryPage() {
     }
   };
 
+  const handleRefresh = async () => {
+    try {
+      setIsLoading(true);
+      const history = await dataService.getHistory();
+      setHistoryData(history);
+      toast({
+        title: "History Refreshed",
+        description: "Detection history has been updated",
+      });
+    } catch (error) {
+      logger.error('Error refreshing history:', error);
+      toast({
+        title: "Refresh Failed",
+        description: "Failed to refresh history. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <MainLayout>
@@ -271,6 +313,15 @@ export default function HistoryPage() {
                       <SelectItem value="month">This Month</SelectItem>
                     </SelectContent>
                   </Select>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={handleRefresh}
+                    disabled={isLoading}
+                  >
+                    <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+                    Refresh
+                  </Button>
                   {historyData.length > 0 && (
                     <Button 
                       variant="outline" 

@@ -108,9 +108,28 @@ export default function DashboardPage() {
         loadAnalyticsData();
       }
     }, 60000);
+    
+    // Listen for storage events to auto-reload when new detections are added
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'detection_completed') {
+        loadAnalyticsData();
+      }
+    };
+    
+    // Listen for custom events from same window
+    const handleDetectionComplete = () => {
+      loadAnalyticsData();
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('detectionComplete', handleDetectionComplete);
 
-    // Cleanup interval on component unmount
-    return () => clearInterval(interval);
+    // Cleanup interval and listeners on component unmount
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('detectionComplete', handleDetectionComplete);
+    };
   }, []);
 
   const handleRefresh = async () => {

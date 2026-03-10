@@ -247,7 +247,7 @@ export default function SettingsPage() {
           <div className="mb-8">
             <h1 className="section-header">Settings</h1>
             <p className="text-muted-foreground">
-              Customize your experience and manage preferences
+              Manage your account and application preferences
             </p>
           </div>
 
@@ -307,7 +307,7 @@ export default function SettingsPage() {
                   Appearance
                 </CardTitle>
                 <CardDescription>
-                  Customize the look and feel of the application
+                  Change the visual theme
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
@@ -348,7 +348,7 @@ export default function SettingsPage() {
                   Model Configuration
                 </CardTitle>
                 <CardDescription>
-                  Detection model settings (for future use)
+                  Current detection model information
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -359,7 +359,6 @@ export default function SettingsPage() {
                       <p className="font-medium">Current Model: YOLOv12n</p>
                       <p className="text-sm text-muted-foreground mt-1">
                         Custom trained on marine plastic waste dataset.
-                        Model switching will be available in future updates.
                       </p>
                     </div>
                   </div>
@@ -402,7 +401,7 @@ export default function SettingsPage() {
                   Data Management
                 </CardTitle>
                 <CardDescription>
-                  Manage your detection history and stored data
+                  Export, import, or delete your data
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
@@ -452,7 +451,7 @@ export default function SettingsPage() {
                       Clear Detection History
                     </h4>
                     <p className="text-sm text-muted-foreground mb-4">
-                      This will permanently delete all your detection history from your account.
+                      Permanently delete all detection history from your account.
                     </p>
                     <Button
                       variant="destructive"
@@ -474,8 +473,8 @@ export default function SettingsPage() {
                       ⚠️ Delete ALL Account Data
                     </h4>
                     <p className="text-sm text-muted-foreground mb-4">
-                      This will permanently delete ALL your data including detections, reports, 
-                      predictions, analytics, and associated files. This action cannot be undone.
+                      Permanently delete ALL data including detections, reports, predictions, 
+                      analytics, and files. This cannot be undone.
                     </p>
                     <Button
                       variant="destructive"

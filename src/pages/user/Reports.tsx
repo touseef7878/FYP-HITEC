@@ -317,7 +317,7 @@ export default function ReportsPage() {
           <div className="mb-8">
             <h1 className="section-header">Reports</h1>
             <p className="text-muted-foreground">
-              Generate and download comprehensive analysis reports
+              Generate and download PDF analysis reports
             </p>
           </div>
 
@@ -337,8 +337,7 @@ export default function ReportsPage() {
                   <div className="flex-1">
                     <h2 className="text-xl font-bold mb-2">Generate New Report</h2>
                     <p className="text-muted-foreground mb-4">
-                      Create a comprehensive PDF report with detection statistics,
-                      charts, and analysis from your data.
+                      Create a PDF report with detection statistics, charts, and analysis.
                     </p>
                     <div className="flex flex-wrap gap-2 mb-4">
                       <Badge variant="secondary">Detection Summary</Badge>

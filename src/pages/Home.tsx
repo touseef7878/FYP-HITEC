@@ -10,16 +10,16 @@ import { useAuth } from "@/contexts/AuthContext";
 import logoImg from "@/assets/images/marine-logo.png";
 const features = [{
   icon: Sparkles,
-  title: "AI-Powered Detection",
+  title: "Object Detection",
   description: "YOLOv12n model trained on marine plastic waste for accurate detection"
 }, {
   icon: TrendingUp,
-  title: "LSTM Predictions",
-  description: "Forecast pollution trends and hotspot accumulation zones"
+  title: "Trend Forecasting",
+  description: "Predict pollution trends and identify accumulation zones"
 }, {
   icon: Map,
-  title: "Interactive Heatmaps",
-  description: "Visualize pollution density across global marine regions"
+  title: "Interactive Maps",
+  description: "Visualize pollution density across marine regions"
 }, {
   icon: Shield,
   title: "Real-time Processing",
@@ -122,8 +122,9 @@ export default function HomePage() {
                   </span>
                 </h1>
                 
-                <p className="text-sm sm:text-lg lg:text-xl text-white/70 mb-6 sm:mb-8 max-w-2xl leading-relaxed">An intelligent system leveraging YOLOv12n for debris detection and LSTM networks for predictive analysis of marine plastic pollution patterns.<span className="text-cyan-300 font-medium">YOLOv12n</span> for real-time detection 
-                  and <span className="text-teal-300 font-medium">LSTM networks</span> for predictive analysis of marine plastic pollution patterns.
+                <p className="text-sm sm:text-lg lg:text-xl text-white/70 mb-6 sm:mb-8 max-w-2xl leading-relaxed">
+                  Computer vision and deep learning for real-time identification and tracking of marine debris. 
+                  Combines YOLOv12n detection with LSTM forecasting for pollution analysis.
                 </p>
                 
                 <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 mb-8 sm:mb-12">
@@ -204,9 +205,9 @@ export default function HomePage() {
         {/* Features Section */}
         <section className="mb-8 lg:mb-12">
           <div className="text-center mb-6 sm:mb-8">
-            <h2 className="text-xl sm:text-2xl font-bold mb-2">Platform Capabilities</h2>
+            <h2 className="text-xl sm:text-2xl font-bold mb-2">Key Features</h2>
             <p className="text-muted-foreground text-sm sm:text-base">
-              Advanced tools for marine pollution research and analysis
+              Tools for marine pollution research and analysis
             </p>
           </div>
           <motion.div variants={staggerContainer} initial="hidden" animate="show" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
@@ -269,7 +270,7 @@ export default function HomePage() {
                   <div>
                     <h3 className="font-semibold text-sm sm:text-base">View Predictions</h3>
                     <p className="text-xs sm:text-sm text-muted-foreground">
-                      LSTM-powered trend analysis
+                      Trend analysis and forecasting
                     </p>
                   </div>
                 </CardContent>

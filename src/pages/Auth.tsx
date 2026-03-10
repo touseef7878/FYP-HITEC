@@ -69,12 +69,12 @@ export default function AuthPage() {
           </div>
           
           <h2 className="text-4xl font-bold mb-6">
-            AI-Powered Ocean Protection
+            Marine Plastic Detection
           </h2>
           
           <p className="text-xl mb-12 text-blue-100">
-            Advanced marine plastic pollution detection and prediction system using 
-            cutting-edge computer vision and machine learning.
+            Detect and analyze marine plastic pollution using computer vision 
+            and machine learning technology.
           </p>
 
           <div className="space-y-6">
@@ -93,8 +93,8 @@ export default function AuthPage() {
                 <BarChart3 className="h-6 w-6" />
               </div>
               <div>
-                <h3 className="font-semibold">Predictive Analytics</h3>
-                <p className="text-blue-100">LSTM-powered pollution trend forecasting</p>
+                <h3 className="font-semibold">Trend Analysis</h3>
+                <p className="text-blue-100">LSTM-based pollution trend forecasting</p>
               </div>
             </div>
 
@@ -103,8 +103,8 @@ export default function AuthPage() {
                 <Users className="h-6 w-6" />
               </div>
               <div>
-                <h3 className="font-semibold">Multi-user Platform</h3>
-                <p className="text-blue-100">Collaborative research and data sharing</p>
+                <h3 className="font-semibold">Team Collaboration</h3>
+                <p className="text-blue-100">Multi-user platform for research and analysis</p>
               </div>
             </div>
           </div>
@@ -120,7 +120,7 @@ export default function AuthPage() {
               <Waves className="h-8 w-8 text-blue-600" />
               <h1 className="text-2xl font-bold text-gray-900">Marine Detection</h1>
             </div>
-            <p className="text-gray-600">AI-Powered Ocean Protection</p>
+            <p className="text-gray-600">Marine Plastic Detection System</p>
           </div>
 
           <AnimatePresence mode="wait">

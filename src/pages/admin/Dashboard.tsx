@@ -170,9 +170,9 @@ const AdminDashboard: React.FC = () => {
         <div className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-lg p-6 text-white">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold mb-2">Welcome back, {user?.username}</h1>
+              <h1 className="text-2xl font-bold mb-2">Welcome, {user?.username}</h1>
               <p className="text-blue-100">
-                Monitor and manage your marine detection system
+                System administration and monitoring
               </p>
             </div>
             <div className="flex gap-2">

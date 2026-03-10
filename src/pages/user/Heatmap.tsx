@@ -181,7 +181,7 @@ export default function HeatmapPage() {
           <div className="mb-8">
             <h1 className="section-header">Pollution Heatmap</h1>
             <p className="text-muted-foreground">
-              Interactive visualization of marine plastic pollution zones worldwide
+              View marine plastic pollution zones on an interactive map
             </p>
           </div>
           <Card className="glass-card">
@@ -201,7 +201,7 @@ export default function HeatmapPage() {
           <div>
             <h1 className="section-header">Pollution Heatmap</h1>
             <p className="text-muted-foreground">
-              Interactive visualization of marine plastic pollution zones worldwide
+              View marine plastic pollution zones on an interactive map
             </p>
           </div>
           <div className="flex gap-2">

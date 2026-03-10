@@ -526,7 +526,7 @@ export default function UploadPage() {
               <div>
                 <h1 className="section-header">Upload & Detect</h1>
                 <p className="text-muted-foreground">
-                  Upload images or videos for AI-powered marine plastic detection
+                  Upload images or videos to detect marine plastic debris
                 </p>
               </div>
               <div className="flex items-center gap-2">

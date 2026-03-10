@@ -152,7 +152,7 @@ export default function DashboardPage() {
           <div className="mb-8">
             <h1 className="section-header">Analytics Dashboard</h1>
             <p className="text-muted-foreground">
-              Real-time insights from marine plastic detection analysis
+              Comprehensive insights and metrics from detection analysis
             </p>
           </div>
           <Card className="glass-card">
@@ -174,7 +174,7 @@ export default function DashboardPage() {
             <div>
               <h1 className="section-header">Analytics Dashboard</h1>
               <p className="text-muted-foreground">
-                Real-time insights from marine plastic detection analysis
+                Comprehensive insights and metrics from detection analysis
               </p>
             </div>
             <Button onClick={handleRefresh} variant="outline">

@@ -229,12 +229,12 @@ export default function ResultsPage() {
                 </div>
                 <h3 className="text-lg font-semibold mb-2">No Results Found</h3>
                 <p className="text-muted-foreground mb-4">
-                  The detection results could not be loaded. This might happen if:
+                  Detection results could not be loaded. Possible reasons:
                 </p>
                 <ul className="text-sm text-muted-foreground text-left mb-4 space-y-1">
-                  <li>• The detection was deleted</li>
-                  <li>• You don't have permission to view it</li>
-                  <li>• The detection ID is invalid</li>
+                  <li>• Detection was deleted</li>
+                  <li>• No permission to view</li>
+                  <li>• Invalid detection ID</li>
                 </ul>
                 <div className="flex gap-2 justify-center">
                   <Button asChild variant="outline">

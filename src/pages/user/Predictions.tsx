@@ -492,71 +492,65 @@ export default function PredictionsPage() {
             <motion.div variants={fadeInUp} className="text-center mb-6">
               <h1 className="section-header mb-2 flex items-center justify-center gap-3">
                 <Brain className="h-8 w-8 text-primary" />
-                Marine Pollution Prediction - Refactored System
+                Marine Pollution Forecasting
               </h1>
               <p className="text-muted-foreground max-w-2xl mx-auto">
-                Advanced LSTM-based forecasting using cached environmental data. 
-                Fetch data once, train models, and generate fast predictions without API delays.
+                Pollution prediction using LSTM neural networks and environmental data analysis.
               </p>
             </motion.div>
 
-            {/* System Status Card */}
+            {/* System Overview Card */}
             <motion.div variants={fadeInUp}>
               <Card className="glass-card mb-6">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Zap className="h-5 w-5" />
-                    🚀 Simple Marine Pollution Prediction System
+                    How It Works
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid sm:grid-cols-1 lg:grid-cols-3 gap-4">
-                    <div className="flex items-center gap-2">
-                      <Download className="h-5 w-5 text-primary" />
-                      <div>
-                        <span className="text-sm font-medium">Step 1: Fetch Real Data</span>
-                        <p className="text-xs text-muted-foreground">Get environmental data from APIs (optional)</p>
+                  <div className="grid sm:grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div className="flex flex-col items-center text-center p-4 rounded-lg bg-muted/30">
+                      <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-3">
+                        <Download className="h-6 w-6 text-primary" />
                       </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Brain className="h-5 w-5 text-success" />
-                      <div>
-                        <span className="text-sm font-medium">Step 2: Train Model</span>
-                        <p className="text-xs text-muted-foreground">Uses real data if available, or synthetic data</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Play className="h-5 w-5 text-purple-500" />
-                      <div>
-                        <span className="text-sm font-medium">Step 3: Predict</span>
-                        <p className="text-xs text-muted-foreground">Generate pollution forecasts</p>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                    <div className="flex items-start gap-2">
-                      <Database className="h-4 w-4 text-blue-600 mt-0.5" />
-                      <div className="text-sm">
-                        <p className="font-medium text-blue-900 dark:text-blue-100">💡 How it works:</p>
-                        <p className="text-blue-700 dark:text-blue-300">
-                          <strong>Fetch Data:</strong> Gets real environmental data for the selected region and caches it.<br/>
-                          <strong>Train Model:</strong> Uses ALL regions - real cached data where available + synthetic data for empty regions.<br/>
-                          <strong>Predict:</strong> Uses the trained multi-region model to forecast pollution trends.
-                        </p>
-                        <p className="text-blue-600 dark:text-blue-400 mt-2 text-xs">
-                          🌍 Training combines data from all 4 regions: Pacific, Atlantic, Indian, Mediterranean
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="mt-3 p-2 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200 dark:border-green-800">
-                    <div className="flex items-center gap-2">
-                      <RefreshCw className="h-3 w-3 text-green-600" />
-                      <p className="text-xs text-green-700 dark:text-green-300">
-                        ✨ <strong>Fresh Start:</strong> Cache cleared on page load - click "Fetch Data" to get latest environmental data from APIs
+                      <h3 className="font-semibold mb-2">Data Collection</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Gather environmental data from multiple marine regions
                       </p>
+                    </div>
+                    
+                    <div className="flex flex-col items-center text-center p-4 rounded-lg bg-muted/30">
+                      <div className="w-12 h-12 rounded-full bg-success/10 flex items-center justify-center mb-3">
+                        <Brain className="h-6 w-6 text-success" />
+                      </div>
+                      <h3 className="font-semibold mb-2">Model Training</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Train LSTM models on historical pollution patterns
+                      </p>
+                    </div>
+                    
+                    <div className="flex flex-col items-center text-center p-4 rounded-lg bg-muted/30">
+                      <div className="w-12 h-12 rounded-full bg-purple-500/10 flex items-center justify-center mb-3">
+                        <Play className="h-6 w-6 text-purple-500" />
+                      </div>
+                      <h3 className="font-semibold mb-2">Generate Forecasts</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Predict future pollution levels with confidence intervals
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                    <div className="flex items-start gap-3">
+                      <Database className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                      <div className="text-sm">
+                        <p className="font-medium text-blue-900 dark:text-blue-100 mb-2">Multi-Region Analysis</p>
+                        <p className="text-blue-700 dark:text-blue-300">
+                          The system combines data from Pacific, Atlantic, Indian, and Mediterranean regions to create pollution forecasts. 
+                          The LSTM model learns from historical patterns to provide predictions.
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </CardContent>
@@ -640,9 +634,9 @@ export default function PredictionsPage() {
                     </div>
                   </div>
 
-                  {/* Action Buttons - Simple 3-Step Workflow */}
+                  {/* Action Buttons */}
                   <div className="mt-6">
-                    <h3 className="text-lg font-semibold mb-4">🚀 Simple 3-Step Workflow</h3>
+                    <h3 className="text-lg font-semibold mb-4">Prediction Steps</h3>
                     <div className="grid sm:grid-cols-1 lg:grid-cols-3 gap-4">
                       
                       {/* Step 1: Fetch Data */}
@@ -652,8 +646,8 @@ export default function PredictionsPage() {
                             <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-2">
                               <span className="text-xl font-bold text-primary">1</span>
                             </div>
-                            <h4 className="font-semibold">Fetch Real Data</h4>
-                            <p className="text-sm text-muted-foreground">Get environmental data from APIs</p>
+                            <h4 className="font-semibold">Collect Data</h4>
+                            <p className="text-sm text-muted-foreground">Gather environmental data</p>
                           </div>
                           
                           <Button
@@ -677,7 +671,7 @@ export default function PredictionsPage() {
                           
                           {currentRegionStatus?.dataset_info && (
                             <div className="mt-2 text-xs text-muted-foreground">
-                              ✅ {currentRegionStatus.dataset_info.total_records} records cached
+                              ✅ {currentRegionStatus.dataset_info.total_records} records available
                             </div>
                           )}
                         </div>
@@ -1000,7 +994,7 @@ export default function PredictionsPage() {
                   <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
                   <h3 className="text-lg font-semibold mb-2">Generating Predictions</h3>
                   <p className="text-muted-foreground">
-                    Processing cached environmental data and running LSTM model...
+                    Processing environmental data and running LSTM model...
                   </p>
                 </div>
               </Card>
@@ -1019,7 +1013,7 @@ export default function PredictionsPage() {
                 <Download className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
                 <h3 className="text-lg font-semibold mb-2">No Data Cached</h3>
                 <p className="text-muted-foreground mb-4">
-                  Environmental data needs to be fetched and cached before training or predictions.
+                  Environmental data needs to be fetched before training or predictions.
                 </p>
                 <Button onClick={() => handleFetchData(selectedRegion)} disabled={fetchingData}>
                   <Download className="h-4 w-4 mr-2" />
@@ -1040,7 +1034,7 @@ export default function PredictionsPage() {
                 <Brain className="h-8 w-8 mx-auto mb-3 text-muted-foreground" />
                 <h3 className="text-base font-semibold mb-2">Ready to Train Model</h3>
                 <p className="text-sm text-muted-foreground mb-3">
-                  Train an LSTM model to generate accurate pollution predictions. You can use real data (if fetched) or synthetic data.
+                  Train an LSTM model to generate pollution predictions. You can use real data or synthetic data.
                 </p>
                 <Button onClick={() => handleTraining(selectedRegion)} size="sm">
                   <Brain className="h-4 w-4 mr-2" />

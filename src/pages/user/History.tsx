@@ -272,7 +272,7 @@ export default function HistoryPage() {
           <div className="mb-8">
             <h1 className="section-header">Detection History</h1>
             <p className="text-muted-foreground">
-              Browse and manage your past detection results
+              View and manage your past detections
             </p>
           </div>
 

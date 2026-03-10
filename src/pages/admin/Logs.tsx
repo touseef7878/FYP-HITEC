@@ -168,7 +168,7 @@ const AdminLogs: React.FC = () => {
         <div className="mb-8">
           <h1 className="text-3xl font-bold tracking-tight">System Logs</h1>
           <p className="text-muted-foreground">
-            Monitor system activity and troubleshoot issues
+            View system activity and events
           </p>
         </div>
 

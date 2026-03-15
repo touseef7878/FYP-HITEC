@@ -2343,30 +2343,32 @@ async def detect_video(
         # Try to find FFmpeg executable
         ffmpeg_exe = None
 
-        # First: use 'where' (Windows) / 'which' (Unix) to search PATH
+        # First: use imageio-ffmpeg bundled binary (always available, no install needed)
         try:
-            where_cmd = 'where' if os.name == 'nt' else 'which'
-            where_result = subprocess.run([where_cmd, 'ffmpeg'], capture_output=True, text=True, timeout=5)
-            if where_result.returncode == 0:
-                ffmpeg_exe = where_result.stdout.strip().splitlines()[0].strip()
-                logger.info(f"✅ Found FFmpeg via {where_cmd}: {ffmpeg_exe}")
+            import imageio_ffmpeg
+            ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+            logger.info(f"✅ Using bundled FFmpeg: {ffmpeg_exe}")
         except Exception:
             pass
 
-        # Fallback: check known install paths
+        # Fallback: system PATH
         if not ffmpeg_exe:
-            ffmpeg_paths = [
-                'ffmpeg',
-                'C:\\ffmpeg\\bin\\ffmpeg.exe',
-                f'C:\\Users\\{os.environ.get("USERNAME", "")}\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.0.1-full_build\\bin\\ffmpeg.exe',
-                f'C:\\Users\\{os.environ.get("USERNAME", "")}\\AppData\\Local\\Microsoft\\WinGet\\Links\\ffmpeg.exe',
-            ]
-            for path in ffmpeg_paths:
+            try:
+                where_cmd = 'where' if os.name == 'nt' else 'which'
+                where_result = subprocess.run([where_cmd, 'ffmpeg'], capture_output=True, text=True, timeout=5)
+                if where_result.returncode == 0:
+                    ffmpeg_exe = where_result.stdout.strip().splitlines()[0].strip()
+                    logger.info(f"✅ Found FFmpeg in PATH: {ffmpeg_exe}")
+            except Exception:
+                pass
+
+        # Last resort: known install paths
+        if not ffmpeg_exe:
+            for path in ['C:\\ffmpeg\\bin\\ffmpeg.exe']:
                 try:
                     result = subprocess.run([path, '-version'], capture_output=True, text=True, timeout=5)
                     if result.returncode == 0:
                         ffmpeg_exe = path
-                        logger.info(f"✅ Found FFmpeg at: {path}")
                         break
                 except (FileNotFoundError, subprocess.TimeoutExpired):
                     continue

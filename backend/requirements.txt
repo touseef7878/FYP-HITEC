@@ -1,7 +1,7 @@
 fastapi>=0.104.0
 uvicorn>=0.24.0
 python-multipart>=0.0.6
-ultralytics>=8.4.0
+git+https://github.com/sunsmarterjie/yolov12.git
 pillow>=9.0.0
 opencv-python>=4.8.0
 numpy>=1.21.0

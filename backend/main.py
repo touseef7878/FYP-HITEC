@@ -322,8 +322,9 @@ def load_yolo_model():
             return
 
         model = YOLO(WEIGHTS_PATH)
-        model.to('cpu')
-        logger.info(f"✅ YOLOv12n model loaded from {WEIGHTS_PATH} (CPU mode)")
+        # NOTE: Do NOT call model.to('cpu') on YOLOv12 — it breaks AAttn's qkv attribute.
+        # Ultralytics handles device placement internally during inference.
+        logger.info(f"✅ YOLOv12n model loaded from {WEIGHTS_PATH}")
         logger.info(f"   Classes: {list(model.names.values()) if model.names else 'Unknown'}")
     except Exception as e:
         logger.error(f"❌ Failed to load model from {WEIGHTS_PATH}: {e}")
@@ -2195,7 +2196,6 @@ async def detect_video(
             
             # Run YOLO inference on frame (CPU optimized)
             try:
-                # CPU-optimized inference without half precision
                 results = model(frame, conf=confidence, verbose=False)[0]
             except Exception as e:
                 logger.warning(f"Detection failed on frame {frame_count}: {e}")
@@ -2341,22 +2341,35 @@ async def detect_video(
         ffmpeg_success = False
         
         # Try to find FFmpeg executable
-        ffmpeg_paths = [
-            'ffmpeg',  # If in PATH
-            'C:\\ffmpeg\\bin\\ffmpeg.exe',  # Manual installation
-            f'C:\\Users\\{os.environ.get("USERNAME", "")}\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.0.1-full_build\\bin\\ffmpeg.exe'  # WinGet installation
-        ]
-        
         ffmpeg_exe = None
-        for path in ffmpeg_paths:
-            try:
-                result = subprocess.run([path, '-version'], capture_output=True, text=True, timeout=5)
-                if result.returncode == 0:
-                    ffmpeg_exe = path
-                    logger.info(f"✅ Found FFmpeg at: {path}")
-                    break
-            except (FileNotFoundError, subprocess.TimeoutExpired):
-                continue
+
+        # First: use 'where' (Windows) / 'which' (Unix) to search PATH
+        try:
+            where_cmd = 'where' if os.name == 'nt' else 'which'
+            where_result = subprocess.run([where_cmd, 'ffmpeg'], capture_output=True, text=True, timeout=5)
+            if where_result.returncode == 0:
+                ffmpeg_exe = where_result.stdout.strip().splitlines()[0].strip()
+                logger.info(f"✅ Found FFmpeg via {where_cmd}: {ffmpeg_exe}")
+        except Exception:
+            pass
+
+        # Fallback: check known install paths
+        if not ffmpeg_exe:
+            ffmpeg_paths = [
+                'ffmpeg',
+                'C:\\ffmpeg\\bin\\ffmpeg.exe',
+                f'C:\\Users\\{os.environ.get("USERNAME", "")}\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.0.1-full_build\\bin\\ffmpeg.exe',
+                f'C:\\Users\\{os.environ.get("USERNAME", "")}\\AppData\\Local\\Microsoft\\WinGet\\Links\\ffmpeg.exe',
+            ]
+            for path in ffmpeg_paths:
+                try:
+                    result = subprocess.run([path, '-version'], capture_output=True, text=True, timeout=5)
+                    if result.returncode == 0:
+                        ffmpeg_exe = path
+                        logger.info(f"✅ Found FFmpeg at: {path}")
+                        break
+                except (FileNotFoundError, subprocess.TimeoutExpired):
+                    continue
         
         if ffmpeg_exe:
             try:
@@ -2411,14 +2424,9 @@ async def detect_video(
                     fallback_width = int(fallback_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
                     fallback_height = int(fallback_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
                     
-                    # Create MP4 writer with better browser compatibility
-                    fallback_fourcc = cv2.VideoWriter_fourcc(*'H264')  # Try H264 first
+                    # Create MP4 writer - use mp4v for reliable compatibility
+                    fallback_fourcc = cv2.VideoWriter_fourcc(*'mp4v')
                     fallback_out = cv2.VideoWriter(final_output_path, fallback_fourcc, fallback_fps, (fallback_width, fallback_height))
-                    
-                    # If H264 fails, try mp4v
-                    if not fallback_out.isOpened():
-                        fallback_fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-                        fallback_out = cv2.VideoWriter(final_output_path, fallback_fourcc, fallback_fps, (fallback_width, fallback_height))
                     
                     if fallback_out.isOpened():
                         # Copy frames from AVI to MP4

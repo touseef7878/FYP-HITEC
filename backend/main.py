@@ -316,53 +316,18 @@ model = None
 def load_yolo_model():
     global model
     try:
-        if os.path.exists(WEIGHTS_PATH):
-            # Try to load custom trained model
-            try:
-                model = YOLO(WEIGHTS_PATH)
-                # Force CPU mode for better compatibility
-                model.to('cpu')
-                logger.info(f"✅ Custom YOLOv12n Model loaded from {WEIGHTS_PATH} (CPU mode)")
-                logger.info(f"   Model type: {model.model_name if hasattr(model, 'model_name') else 'YOLOv12n Custom'}")
-                logger.info(f"   Classes: {list(model.names.values()) if model.names else 'Unknown'}")
-                logger.info("   💡 Using your trained model - optimized for marine plastic detection!")
-                return  # Successfully loaded custom model
-            except Exception as custom_error:
-                logger.warning(f"⚠️ Custom model at {WEIGHTS_PATH} failed to load: {custom_error}")
-                logger.info("   This is likely due to version incompatibility or custom architecture")
-                logger.info("   Falling back to pretrained model...")
-        else:
-            logger.info(f"⚠️ No custom weights found at {WEIGHTS_PATH}")
-        
-        # Fallback to pretrained models
-        logger.info("🔄 Loading YOLOv12n pretrained model as fallback (CPU optimized)...")
-        try:
-            model = YOLO("yolov12n.pt")  # Use YOLOv12n - newest and most efficient
-            # Force CPU mode for better compatibility
-            model.to('cpu')
-            logger.info("✅ YOLOv12n pretrained model loaded successfully (CPU mode)")
-            logger.info(f"   Classes: {list(model.names.values())[:10]}... (showing first 10 of {len(model.names)})")
-            logger.info("   💡 CPU mode active - processing will be slower but more compatible")
-        except Exception as e:
-            logger.warning(f"Could not load YOLOv12n: {e}")
-            logger.info("🔄 Trying YOLOv8n as fallback...")
-            try:
-                model = YOLO("yolov8n.pt")
-                model.to('cpu')
-                logger.info("✅ YOLOv8n pretrained model loaded successfully (CPU mode)")
-            except Exception as e2:
-                logger.warning(f"Could not load YOLOv8n: {e2}")
-                logger.info("🔄 Trying YOLOv11n as last resort...")
-                try:
-                    model = YOLO("yolo11n.pt")
-                    model.to('cpu')
-                    logger.info("✅ YOLOv11n pretrained model loaded successfully (CPU mode)")
-                except Exception as e3:
-                    logger.error(f"❌ All fallback models failed: {e3}")
-                    model = None
-                
+        if not os.path.exists(WEIGHTS_PATH):
+            logger.error(f"❌ Weights file not found at {WEIGHTS_PATH}")
+            model = None
+            return
+
+        model = YOLO(WEIGHTS_PATH)
+        model.to('cpu')
+        logger.info(f"✅ YOLOv12n model loaded from {WEIGHTS_PATH} (CPU mode)")
+        logger.info(f"   Classes: {list(model.names.values()) if model.names else 'Unknown'}")
     except Exception as e:
-        logger.error(f"❌ Critical error in model loading: {e}")
+        logger.error(f"❌ Failed to load model from {WEIGHTS_PATH}: {e}")
+        logger.error("   Ensure ultralytics>=8.4.0 is installed: pip install 'ultralytics>=8.4.0'")
         model = None
 
 def clear_all_cache():
@@ -413,11 +378,7 @@ async def health_check():
         }
         model_status = "loaded"
         
-        # Check if custom model or fallback
-        if os.path.exists(WEIGHTS_PATH):
-            model_message = "Using pretrained fallback model (custom model incompatible)"
-        else:
-            model_message = "Using pretrained model (no custom weights found)"
+        model_message = "Using YOLOv12n custom weights (best.pt)"
     else:
         model_info = {"loaded": False}
         model_status = "failed"

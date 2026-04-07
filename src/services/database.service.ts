@@ -3,7 +3,9 @@
  * Handles API calls to the SQLite database backend
  */
 
-const API_URL = "http://localhost:8000";
+import ENV from '@/config/env';
+
+const API_URL = ENV.API_URL;
 
 export interface DatabaseDetectionResult {
   id: number;

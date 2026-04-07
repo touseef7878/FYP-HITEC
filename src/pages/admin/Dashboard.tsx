@@ -28,9 +28,10 @@ import { Progress } from '@/components/ui/progress';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import ENV from '@/config/env';
 
 // Backend API URL
-const API_URL = "http://localhost:8000";
+const API_URL = ENV.API_URL;
 
 interface SystemStats {
   active_users: number;

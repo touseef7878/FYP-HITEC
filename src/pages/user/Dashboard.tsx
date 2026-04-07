@@ -1,6 +1,5 @@
 import { motion } from "framer-motion";
 import { useState, useEffect } from "react";
-import logger from '@/utils/logger';
 import {
   BarChart3,
   TrendingUp,
@@ -77,7 +76,7 @@ export default function DashboardPage() {
       // Generate fresh analytics in background (non-blocking)
       dataService.generateAnalytics(); // Fire and forget
     } catch (error) {
-      logger.error('Error loading analytics data:', error);
+      console.error('Error loading analytics data:', error);
       
       // Handle different error types
       if (error instanceof Error) {

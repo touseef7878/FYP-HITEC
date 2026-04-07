@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo, memo } from "react";
+import { useState, useCallback, useEffect, memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import {
@@ -28,9 +28,9 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import ENV from "@/config/env";
 
-// Backend API URL - change this if your backend runs on a different port
-const API_URL = "http://localhost:8000";
+const API_URL = ENV.API_URL;
 
 interface UploadFile {
   file: File;
@@ -279,9 +279,6 @@ export default function UploadPage() {
     addLog(`Added ${selectedFiles.length} file(s) to queue`);
   };
 
-  // OPTIMIZED: Memoize file list to prevent unnecessary re-renders
-  const fileList = useMemo(() => files, [files]);
-  
   const removeFile = useCallback((id: string) => {
     setFiles((prev) => prev.filter((f) => f.id !== id));
     addLog("Removed file from queue");
@@ -399,19 +396,6 @@ export default function UploadPage() {
             f.id === file.id ? { ...f, detectionId: detectionId } : f
           )
         );
-        
-        // Auto-generate analytics after successful detection
-        try {
-          await fetch(`${API_URL}/api/analytics/generate`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-            },
-          });
-          addLog(`📊 Analytics updated automatically`);
-        } catch (analyticsError) {
-          addLog(`⚠️ Analytics update failed (non-critical)`);
-        }
         
         const actualTime = (Date.now() - startTime) / 1000;
         processedTime += actualTime;
@@ -644,7 +628,7 @@ export default function UploadPage() {
                     <CardTitle className="text-lg">Upload Queue</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    {fileList.map((file) => (
+                    {files.map((file) => (
                       <FileItem
                         key={file.id}
                         file={file}

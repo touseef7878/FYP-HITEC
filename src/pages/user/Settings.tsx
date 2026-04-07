@@ -13,6 +13,10 @@ import { useAuth } from "@/contexts/AuthContext";
 import { dataService } from "@/services/data.service";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import logger from "@/utils/logger";
+import ENV from "@/config/env";
+
+const API_URL = ENV.API_URL;
 
 export default function SettingsPage() {
   const { theme, toggleTheme } = useTheme();
@@ -54,7 +58,7 @@ export default function SettingsPage() {
     try {
       const token = localStorage.getItem('auth_token');
       if (token) {
-        const response = await fetch('http://localhost:8000/api/user/history/clear', {
+        const response = await fetch(`${API_URL}/api/user/history/clear`, {
           method: 'DELETE',
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -108,7 +112,7 @@ export default function SettingsPage() {
         throw new Error('Authentication required');
       }
 
-      const response = await fetch('http://localhost:8000/api/user/data/all', {
+      const response = await fetch(`${API_URL}/api/user/data/all`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -153,7 +157,7 @@ export default function SettingsPage() {
         throw new Error('Authentication required');
       }
 
-      const response = await fetch('http://localhost:8000/api/user/data/export', {
+      const response = await fetch(`${API_URL}/api/user/data/export`, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },

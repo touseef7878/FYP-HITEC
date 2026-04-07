@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import logger from '@/utils/logger';
 import { Link } from "react-router-dom";
 import {
   Search,
@@ -40,6 +39,9 @@ import { PageTransition, staggerContainer, fadeInUp } from "@/components/layout/
 import { MainLayout } from "@/components/layout/MainLayout";
 import { dataService, HistoryItem } from "@/services/data.service";
 import { useToast } from "@/hooks/use-toast";
+import ENV from "@/config/env";
+
+const API_URL = ENV.API_URL;
 
 export default function HistoryPage() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -61,7 +63,7 @@ export default function HistoryPage() {
         const history = await dataService.getHistory();
         setHistoryData(history);
       } catch (error) {
-        logger.error('Error loading history data:', error);
+        console.error('Error loading history data:', error);
         toast({
           title: "Error Loading History",
           description: "Failed to load detection history. Please try again.",
@@ -137,7 +139,7 @@ export default function HistoryPage() {
       // Call backend API to delete from database
       const token = localStorage.getItem('auth_token');
       if (token && itemToDelete.detectionId) {
-        const response = await fetch(`http://localhost:8000/api/user/detections/${itemToDelete.detectionId}`, {
+        const response = await fetch(`${API_URL}/api/user/detections/${itemToDelete.detectionId}`, {
           method: 'DELETE',
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -163,7 +165,7 @@ export default function HistoryPage() {
       });
 
     } catch (error: any) {
-      logger.error('Error deleting item:', error);
+      console.error('Error deleting item:', error);
       toast({
         title: "Delete Failed",
         description: error.message || "Failed to delete detection. Please try again.",
@@ -185,7 +187,7 @@ export default function HistoryPage() {
       // Call backend API to clear all history
       const token = localStorage.getItem('auth_token');
       if (token) {
-        const response = await fetch('http://localhost:8000/api/user/history/clear', {
+        const response = await fetch(`${API_URL}/api/user/history/clear`, {
           method: 'DELETE',
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -210,7 +212,7 @@ export default function HistoryPage() {
       });
 
     } catch (error: any) {
-      logger.error('Error clearing history:', error);
+      console.error('Error clearing history:', error);
       toast({
         title: "Clear Failed",
         description: error.message || "Failed to clear history. Please try again.",
@@ -231,7 +233,7 @@ export default function HistoryPage() {
         description: "Detection history has been updated",
       });
     } catch (error) {
-      logger.error('Error refreshing history:', error);
+      console.error('Error refreshing history:', error);
       toast({
         title: "Refresh Failed",
         description: "Failed to refresh history. Please try again.",

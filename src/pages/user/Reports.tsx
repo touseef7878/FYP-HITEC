@@ -33,8 +33,9 @@ import { MainLayout } from "@/components/layout/MainLayout";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { downloadPDFReport, viewPDFReport } from "@/utils/generateReport";
+import ENV from "@/config/env";
 
-const API_URL = "http://localhost:8000";
+const API_URL = ENV.API_URL;
 
 interface Report {
   id: string;

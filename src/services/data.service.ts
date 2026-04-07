@@ -4,7 +4,6 @@
  * Now integrated with SQLite database backend
  */
 
-import logger from './logger';
 import ENV from '@/config/env';
 
 // Backend API URL
@@ -448,43 +447,6 @@ class DataService {
         });
       }
     }
-  }
-
-  /**
-   * Debug analytics data
-   */
-  async debugAnalytics(): Promise<any> {
-    try {
-      const token = localStorage.getItem('auth_token');
-      if (token) {
-        const response = await fetch(`${API_URL}/api/analytics/debug`, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
-        });
-        if (response.ok) {
-          const data = await response.json();
-          return data;
-        }
-      }
-    } catch (error) {
-      console.error('Error debugging analytics:', error);
-    }
-    return null;
-  }
-  async getDatabaseStats(): Promise<any> {
-    try {
-      const response = await fetch(`${API_URL}/api/database/stats`);
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          return data.stats;
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching database stats:', error);
-    }
-    return {};
   }
 
   /**

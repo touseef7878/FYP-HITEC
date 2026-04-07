@@ -25,8 +25,9 @@ import AdminLayout from '@/components/layout/AdminLayout';
 import { PageTransition } from '@/components/layout/PageTransition';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import ENV from '@/config/env';
 
-const API_URL = "http://localhost:8000";
+const API_URL = ENV.API_URL;
 
 interface LogEntry {
   id: number;

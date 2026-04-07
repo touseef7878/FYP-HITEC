@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import logger from '@/utils/logger';
 import {
   TrendingUp,
   TrendingDown,
@@ -47,6 +46,7 @@ import { Slider } from "@/components/ui/slider";
 import { PageTransition, staggerContainer, fadeInUp } from "@/components/layout/PageTransition";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { useToast } from "@/hooks/use-toast";
+import ENV from "@/config/env";
 import {
   LineChart,
   Line,
@@ -61,7 +61,7 @@ import {
 } from "recharts";
 
 // API base URL
-const API_BASE = "http://localhost:8000";
+const API_BASE = ENV.API_URL;
 
 // Types
 interface PredictionData {
@@ -204,7 +204,7 @@ export default function PredictionsPage() {
         });
       }
     } catch (error) {
-      logger.error("Error loading regions:", error);
+      console.error("Error loading regions:", error);
       toast({
         title: "Connection Error",
         description: "Failed to connect to the server",
@@ -225,7 +225,7 @@ export default function PredictionsPage() {
         }));
       }
     } catch (error) {
-      logger.error(`Error loading status for ${region}:`, error);
+      console.error(`Error loading status for ${region}:`, error);
     }
   };
 
@@ -259,7 +259,7 @@ export default function PredictionsPage() {
         throw new Error(data.message || 'Failed to fetch data');
       }
     } catch (error) {
-      logger.error("Error fetching data:", error);
+      console.error("Error fetching data:", error);
       toast({
         title: "Data Fetch Error",
         description: error instanceof Error ? error.message : "Failed to fetch environmental data. You can still train with synthetic data.",
@@ -304,7 +304,7 @@ export default function PredictionsPage() {
         throw new Error(data.detail || 'Training failed');
       }
     } catch (error) {
-      logger.error("Error training model:", error);
+      console.error("Error training model:", error);
       toast({
         title: "Training Error",
         description: error instanceof Error ? error.message : "Failed to train model",
@@ -340,7 +340,7 @@ export default function PredictionsPage() {
         throw new Error(data.detail || 'Prediction failed');
       }
     } catch (error) {
-      logger.error("Error fetching predictions:", error);
+      console.error("Error fetching predictions:", error);
       
       // Check if the error is due to no trained model
       const errorMessage = error instanceof Error ? error.message : "Failed to generate predictions";
@@ -425,7 +425,7 @@ export default function PredictionsPage() {
         }));
       }
     } catch (error) {
-      logger.error(`Error fetching analysis for ${region}:`, error);
+      console.error(`Error fetching analysis for ${region}:`, error);
       // Set default analysis on error
       setRegionAnalyses(prev => ({
         ...prev,

@@ -4,21 +4,19 @@ AI-powered platform for marine plastic pollution detection and environmental tre
 
 **HITEC University Taxila - Final Year Project 2026**
 
-⚡ **Performance Optimized** - 60-70% faster with advanced caching and lazy loading
-
 ---
 
 ## 📋 Table of Contents
 
 - [Features](#-features)
-- [Performance Optimizations](#-performance-optimizations)
 - [Tech Stack](#-tech-stack)
 - [Installation](#-installation)
 - [Running the Application](#-running-the-application)
 - [Project Structure](#-project-structure)
 - [Usage Guide](#-usage-guide)
 - [API Documentation](#-api-documentation)
-- [Testing](#-testing)
+- [Security](#-security-features)
+- [Troubleshooting](#-troubleshooting)
 - [Team](#-team)
 
 ---
@@ -27,7 +25,7 @@ AI-powered platform for marine plastic pollution detection and environmental tre
 
 ### Core Features
 - **YOLOv12n Object Detection** - Real-time detection of marine plastic in images and videos
-- **LSTM Predictions** - Forecast pollution trends for 7-90 days ahead
+- **LSTM Predictions** - Forecast pollution trends for 7-90 days ahead across 4 marine regions
 - **User Authentication** - JWT-based auth with USER/ADMIN roles
 - **Interactive Heatmaps** - Visualize pollution density across marine regions
 - **PDF Reports** - Auto-generated detection and analysis reports
@@ -35,46 +33,20 @@ AI-powered platform for marine plastic pollution detection and environmental tre
 - **Dark/Light Theme** - Responsive design for all devices
 
 ### Detection Capabilities
-- Image upload with drag-drop interface
-- Video processing with frame-by-frame analysis
+- Image and video upload with drag-drop interface
+- Frame-by-frame video analysis
 - Adjustable confidence threshold (10-90%)
-- Real-time progress tracking
-- Detection history with search/filter
+- Real-time progress tracking with time estimation
+- Detection history with search/filter/delete
 - Before/after comparison slider
-- **Lazy video loading** - Videos load only when clicked
+- Lazy video loading (0MB preload vs 50-200MB)
 
 ### LSTM Prediction System
-- Multi-region support (Pacific, Atlantic, Indian, Mediterranean)
-- Environmental data integration (temperature, humidity, wind, AQI)
+- Multi-region support: Pacific, Atlantic, Indian Ocean, Mediterranean
+- Environmental data integration (temperature, humidity, wind, AQI, ocean temp)
 - 7-90 day predictions with confidence intervals
-- Model training interface with epoch control
-
----
-
-## ⚡ Performance Optimizations
-
-### Frontend Optimizations ✅
-1. **Dashboard** - Non-blocking data loading (87% faster - 3.2s → 0.4s)
-2. **Upload Page** - Memoized components (87% fewer re-renders - 60+ → 8)
-3. **Interactive Map** - Incremental marker updates (90% less lag - 500ms → 50ms)
-4. **Video Player** - Lazy loading (0MB preload vs 50-200MB)
-5. **Images** - Native lazy loading attribute
-6. **Request Cancellation** - AbortController prevents memory leaks
-7. **Tailwind CSS** - Optimized content paths for smaller bundle
-
-### Backend Optimizations ✅
-8. **GZip Compression** - 3-5x smaller API responses
-9. **Connection Pooling** - 10 database connections (90% faster queries - 200ms → 20ms)
-10. **Database Indexes** - 28 performance indexes on frequently queried columns
-
-### Performance Metrics
-| Metric | Before | After | Improvement |
-|--------|--------|-------|-------------|
-| Dashboard Load | 3.2s | 0.4s | **-87%** |
-| Memory Usage | 420MB | 176MB | **-58%** |
-| Map Interaction | 500ms | 50ms | **-90%** |
-| Database Queries | 200ms | 20ms | **-90%** |
-| Upload Re-renders | 60+ | 8 | **-87%** |
+- Model training with configurable epochs (10-100)
+- Synthetic data fallback when real data is unavailable
 
 ---
 
@@ -83,37 +55,34 @@ AI-powered platform for marine plastic pollution detection and environmental tre
 ### Frontend
 - React 18 + TypeScript
 - Vite (build tool with SWC)
-- Tailwind CSS + shadcn/ui (optimized)
-- React Query (state management & caching)
+- Tailwind CSS + shadcn/ui
+- React Query (caching, stale-time 5min)
 - Recharts (data visualization)
-- Leaflet (interactive maps with lazy rendering)
+- Leaflet (interactive maps)
 - Framer Motion (animations)
+- All pages lazy-loaded via `React.lazy`
 
 ### Backend
 - FastAPI (Python web framework)
-- SQLite (database with connection pooling)
+- SQLite with connection pooling (10 connections)
 - YOLOv12n (object detection)
 - TensorFlow/Keras (LSTM models)
-- OpenCV (image processing)
-- JWT (authentication)
-- GZip compression middleware
+- OpenCV (image/video processing)
+- JWT authentication
+- GZip compression middleware (3-5x smaller responses)
+- 28 database performance indexes
 
-### Performance Features
-- Connection pooling (10 connections)
-- Database indexes (28 indexes)
-- Request cancellation (AbortController)
-- Lazy loading (images & videos)
-- Memoized components (React.memo)
-- Non-blocking data fetching
-- Compressed API responses
+### Configuration
+- All API URLs centralized in `src/config/env.ts` via `VITE_API_URL`
+- No hardcoded `localhost:8000` in any frontend file
 
 ---
 
 ## 📦 Installation
 
 ### Prerequisites
-- Python 3.8 or higher
-- Node.js 16 or higher
+- Python 3.8+
+- Node.js 16+
 - npm or yarn
 
 ### Step 1: Clone Repository
@@ -124,119 +93,67 @@ cd marine-detection-system
 
 ### Step 2: Backend Setup
 
-#### 2.1 Install Python Dependencies
 ```bash
 cd backend
 pip install -r requirements.txt
 ```
 
-#### 2.2 Configure Environment Variables (CRITICAL!)
+Configure environment variables:
 ```bash
-# Copy the example file
-cp .env.example .env
-
 # Generate a secure JWT secret key
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
-Edit `backend/.env` and set:
+Edit `backend/.env`:
 ```env
 JWT_SECRET_KEY=<paste-the-generated-key-here>
 ALLOWED_ORIGINS=http://localhost:8080,http://localhost:5173
 ```
 
-**⚠️ IMPORTANT**: The application will NOT start without a valid JWT_SECRET_KEY (minimum 32 characters).
-
-#### 2.3 Initialize Database (IMPORTANT!)
+Initialize the database:
 ```bash
-# Run from backend/ folder
 python init_db.py
 ```
 
-This creates `backend/marine_detection.db` with:
-- 10 tables (users, detections, predictions, etc.)
-- **28 performance indexes** for fast queries
-- **Connection pooling** enabled (10 connections)
-- Default admin account (username: `admin`, password: `admin123`)
-- Default demo user (username: `demo_user`, password: `user123`)
+This creates `marine_detection.db` with 10 tables, 28 performance indexes, connection pooling, and default accounts:
+- Admin: `admin` / `admin123`
+- Demo user: `demo_user` / `user123`
 
-**⚠️ IMPORTANT**: Run this command to create the optimized database with all indexes!
-
-#### 2.4 Add YOLO Model Weights
-Place your `best.pt` file in `backend/weights/` folder.
+Add YOLO weights: place `best.pt` in `backend/weights/`.
 
 ### Step 3: Frontend Setup
 
 ```bash
-# Go back to root directory
 cd ..
-
-# Install dependencies
 npm install
-
-# Optional: Configure frontend environment
-cp .env.example .env
 ```
 
-Edit `.env` if needed (defaults work for local development):
-```env
-VITE_API_URL=http://localhost:8000
-```
+Optionally configure `VITE_API_URL` in `.env` (defaults to `http://localhost:8000`).
 
 ---
 
 ## 🚀 Running the Application
 
-### Development Mode
+Open two terminals:
 
-You need TWO terminal windows:
-
-#### Terminal 1 - Backend Server
+**Terminal 1 - Backend:**
 ```bash
-# Navigate to backend folder
 cd backend
-
-# Start FastAPI server
 python main.py
 ```
+Runs at: http://localhost:8000
 
-Server will start at: **http://localhost:8000**
-
-You should see:
-```
-INFO:     Uvicorn running on http://0.0.0.0:8000
-✅ Custom YOLO Model loaded from backend/weights/best.pt
-✅ Connection pool initialized with 10 connections
-🚀 Refactored API server started
-```
-
-#### Terminal 2 - Frontend Server
+**Terminal 2 - Frontend:**
 ```bash
-# From root directory
 npm run dev
 ```
-
-Frontend will start at: **http://localhost:8080**
-
-You should see:
-```
-VITE v5.4.21  ready in XXX ms
-
-➜  Local:   http://localhost:8080/
-```
+Runs at: http://localhost:8080
 
 ### Production Build
-
-#### Build Frontend
 ```bash
-npm run build
-npm run preview
-```
-
-#### Run Backend in Production
-```bash
-cd backend
-uvicorn main:app --host 0.0.0.0 --port 8000
+npm run build && npm run preview
+# Backend:
+cd backend && uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
 ---
@@ -245,300 +162,156 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 
 ```
 marine-detection-system/
-│
-├── backend/                      # Backend Application
-│   ├── core/                     # Core logic
-│   │   ├── database.py          # Database manager
-│   │   └── security.py          # Authentication & JWT
-│   ├── models/                   # ML Models
+├── backend/
+│   ├── core/
+│   │   ├── database.py          # SQLite manager with connection pooling
+│   │   └── security.py          # JWT auth
+│   ├── models/
 │   │   └── lstm.py              # LSTM implementation
-│   ├── services/                 # Business services
-│   │   ├── data_cache.service.py
-│   │   └── environmental_data.service.py
-│   ├── utils/                    # Utilities
-│   │   ├── noaa_api.py          # NOAA API client
-│   │   └── waqi_api.py          # WAQI API client
-│   ├── data/                     # Data storage
-│   │   ├── cache/               # Cached datasets
-│   │   ├── uploads/             # User uploads
-│   │   └── processed/           # Processed videos
-│   ├── weights/                  # Model weights
+│   ├── services/
+│   │   ├── data_cache_service.py        # NOAA/WAQI data caching
+│   │   └── environmental_data_service.py
+│   ├── utils/
+│   │   ├── noaa_api.py
+│   │   └── waqi_api.py
+│   ├── weights/
 │   │   └── best.pt              # YOLO weights (add this)
-│   ├── .env.example             # Environment template
-│   ├── .env                     # Your config (create this)
-│   ├── init_db.py               # Database initialization
-│   ├── main.py                  # Application entry point
-│   ├── requirements.txt         # Python dependencies
-│   └── marine_detection.db      # SQLite database (auto-created)
+│   ├── init_db.py
+│   ├── main.py
+│   ├── requirements.txt
+│   └── marine_detection.db      # Auto-created
 │
-├── src/                          # Frontend Application
-│   ├── components/              # React components
-│   │   ├── common/              # Shared components
-│   │   ├── features/            # Feature-specific
-│   │   ├── layout/              # Layout components
-│   │   ├── auth/                # Auth components
-│   │   └── ui/                  # UI library (shadcn)
-│   ├── pages/                   # Page components
-│   │   ├── admin/               # Admin pages
-│   │   ├── user/                # User pages
-│   │   └── *.tsx                # Public pages
-│   ├── hooks/                   # Custom React hooks
-│   ├── services/                # API services
-│   ├── utils/                   # Utility functions
-│   ├── contexts/                # React contexts
-│   ├── config/                  # Configuration
-│   ├── styles/                  # Global styles
-│   ├── App.tsx                  # Main app component
-│   └── main.tsx                 # Entry point
-│
-├── docs/                         # Documentation
-│   ├── guides/                  # User guides
-│   │   ├── INSTALLATION.md
-│   │   ├── DEPLOYMENT.md
-│   │   └── VIDEO_DETECTION_GUIDE.md
-│   ├── api/                     # API documentation
-│   │   └── API_DOCUMENTATION.md
-│   └── ENVIRONMENT_SETUP.md     # Environment setup guide
-│
-├── public/                       # Static assets
-├── .env.example                 # Frontend env template
-├── package.json                 # Node dependencies
-├── vite.config.ts               # Vite configuration
-├── tailwind.config.ts           # Tailwind configuration
-├── CHANGELOG.md                 # Version history
-├── QUICK_START.md               # Quick setup guide
-├── PROJECT_STRUCTURE_NEW.md     # Detailed structure
-└── README.md                    # This file
+└── src/
+    ├── components/
+    │   ├── auth/                # LoginForm, RegisterForm
+    │   ├── common/              # ErrorBoundary, VideoPlayer, NavLink, ThemeToggle
+    │   ├── features/            # InteractiveMap, FishBackground
+    │   ├── layout/              # MainLayout, AdminLayout, PageTransition
+    │   └── ui/                  # shadcn/ui components
+    ├── config/
+    │   └── env.ts               # Centralized env config (VITE_API_URL)
+    ├── contexts/
+    │   └── AuthContext.tsx
+    ├── hooks/
+    ├── pages/
+    │   ├── admin/               # Dashboard, Logs, Users
+    │   ├── user/                # Upload, Results, Dashboard, History,
+    │   │                        # Heatmap, Predictions, Reports, Settings
+    │   ├── Auth.tsx
+    │   ├── Home.tsx
+    │   └── NotFound.tsx
+    ├── services/
+    │   ├── data.service.ts      # Analytics, history, hotspots
+    │   └── database.service.ts  # Backend API wrapper
+    ├── utils/
+    │   ├── cn.ts
+    │   ├── generateReport.ts
+    │   └── logger.ts            # Production-safe logger
+    └── App.tsx                  # Lazy-loaded routes
 ```
 
 ---
 
-## � Usage Guide
+## 📖 Usage Guide
 
-### 1. Access the Application
+### 1. Login
+Open http://localhost:8080 and log in with the credentials above.
 
-Open your browser and go to: **http://localhost:8080**
+### 2. Upload & Detect
+1. Go to **Upload**
+2. Drag-drop an image or video
+3. Adjust confidence threshold
+4. Click **Start Detection**
+5. Auto-redirects to results after processing
 
-### 2. Login
+### 3. View History
+Go to **History** to browse, filter, and delete past detections.
 
-**Admin Account:**
-- Username: `admin`
-- Password: `admin123`
+### 4. Generate Predictions
+1. Go to **Predictions**
+2. Select a region
+3. **Step 1**: Fetch Data (one-time per region)
+4. **Step 2**: Train Model (configure epochs)
+5. **Step 3**: Generate Predictions (7-90 days)
 
-**Demo User:**
-- Username: `demo_user`
-- Password: `user123`
+### 5. Generate Reports
+Go to **Reports**, select date range, click **Generate Report**, download PDF.
 
-### 3. Upload and Detect
-
-1. Login as a user
-2. Go to **Upload** page
-3. Drag and drop an image or video
-4. Adjust confidence threshold (10-90%)
-5. Click **Detect**
-6. View results with bounding boxes and labels
-
-### 4. View History
-
-1. Go to **History** page
-2. See all your past detections
-3. Filter by date or search
-4. Download annotated results
-
-### 5. Generate Predictions
-
-1. Go to **Predictions** page
-2. Select a region (Pacific, Atlantic, Indian, Mediterranean)
-3. Click **Fetch Data** (one-time only per region)
-4. Click **Train Model** (configure epochs)
-5. Click **Generate Predictions** (7-90 days ahead)
-6. View trend analysis and forecasts
-
-### 6. Generate Reports
-
-1. Go to **Reports** page
-2. Select date range
-3. Click **Generate Report**
-4. Download PDF report
-
-### 7. Admin Features (Admin Only)
-
-1. Login as admin
-2. Go to **Admin Dashboard**
-3. View system statistics
-4. Manage users (view, deactivate, change roles)
-5. View activity logs
-6. Perform system maintenance
+### 6. Admin Panel (Admin Only)
+- View system stats, manage users, review activity logs
 
 ---
 
 ## 🔗 API Documentation
 
-### Access Interactive API Docs
-
-When the backend is running, visit:
-
-- **Swagger UI**: http://localhost:8000/docs
-- **ReDoc**: http://localhost:8000/redoc
-- **Health Check**: http://localhost:8000/health
+Interactive docs when backend is running:
+- Swagger UI: http://localhost:8000/docs
+- Health Check: http://localhost:8000/health
 
 ### Key Endpoints
 
-#### Authentication
 ```
-POST /api/auth/register    - Register new user
-POST /api/auth/login       - Login user
-GET  /api/auth/profile     - Get user profile
-POST /api/auth/logout      - Logout user
-```
+# Auth
+POST /api/auth/register
+POST /api/auth/login
+GET  /api/auth/me
 
-#### Detection
-```
-POST /detect               - Detect objects in image
-POST /detect-video         - Process video file
-GET  /api/history          - Get detection history
-```
+# Detection
+POST /detect
+POST /detect-video
+GET  /api/history
 
-#### LSTM Predictions
-```
-GET  /api/data/regions     - Get available regions
-POST /api/data/fetch       - Fetch environmental data
-POST /api/train            - Train LSTM model
-POST /api/predict          - Generate predictions
-```
+# Predictions
+GET  /api/data/regions
+POST /api/data/fetch
+POST /api/train
+POST /api/predict
 
-#### Admin
-```
-GET  /api/admin/users      - Get all users
-PUT  /api/admin/users/:id  - Update user
-GET  /api/admin/logs       - Get system logs
-GET  /api/admin/stats      - Get system statistics
-```
-
-For detailed API documentation, see: [docs/api/API_DOCUMENTATION.md](docs/api/API_DOCUMENTATION.md)
-
----
-
-## 🔧 Common Commands
-
-### Development
-```bash
-# Start backend (from backend/ folder)
-python main.py
-
-# Start frontend (from root folder)
-npm run dev
-
-# Type checking
-npm run type-check
-
-# Linting
-npm run lint
-```
-
-### Build
-```bash
-# Build frontend
-npm run build
-
-# Preview production build
-npm run preview
-```
-
-### Database
-```bash
-# Initialize database (from backend/ folder)
-python init_db.py
-
-# Reset database (WARNING: deletes all data)
-rm marine_detection.db
-python init_db.py
-```
-
-### Testing
-```bash
-# Test backend syntax
-python -m py_compile main.py
-
-# Test frontend build
-npm run build
+# Admin
+GET  /api/admin/stats
+GET  /api/admin/users
+GET  /api/admin/logs
 ```
 
 ---
 
 ## 🔒 Security Features
 
-- **JWT Authentication** with 32+ character secret key requirement
-- **CORS Protection** with explicit origin whitelist
-- **Password Hashing** using SHA-256 with salt
-- **Session Management** with automatic cleanup
-- **Input Validation** on all API endpoints
-- **SQL Injection Protection** with parameterized queries
-- **Connection Pooling** prevents connection exhaustion attacks
-- **GZip Compression** reduces bandwidth usage
+- JWT authentication (32+ char secret key required)
+- CORS with explicit origin whitelist
+- Password hashing (SHA-256 + salt)
+- SQL injection protection (parameterized queries)
+- Connection pooling prevents exhaustion attacks
+- GZip compression reduces bandwidth
 
 ---
 
 ## 🐛 Troubleshooting
 
-### Backend won't start
+**Backend won't start** - "JWT_SECRET_KEY required"
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+# Add output to backend/.env as JWT_SECRET_KEY=...
+```
 
-**Error**: "JWT_SECRET_KEY environment variable is required"
-
-**Solution**:
-1. Generate key: `python -c "import secrets; print(secrets.token_urlsafe(32))"`
-2. Add to `backend/.env`: `JWT_SECRET_KEY=<your-generated-key>`
-
-### CORS errors
-
-**Error**: "CORS policy blocked"
-
-**Solution**: Add your frontend URL to `ALLOWED_ORIGINS` in `backend/.env`
+**CORS errors**
 ```env
+# backend/.env
 ALLOWED_ORIGINS=http://localhost:8080,http://localhost:5173
 ```
 
-### Database errors
-
-**Error**: "No such table" or "No such column"
-
-**Solution**: Re-initialize database with optimizations
+**Database errors** - "No such table"
 ```bash
 cd backend
-rm marine_detection.db  # Delete old database
-python init_db.py       # Create new optimized database
+rm marine_detection.db
+python init_db.py
 ```
 
-### Performance issues
-
-**Problem**: Slow dashboard or queries
-
-**Solution**: Ensure database indexes are created
+**Module not found**
 ```bash
-cd backend
-python init_db.py  # This creates 28 performance indexes
-```
-
-### Import errors
-
-**Error**: "Module not found"
-
-**Solution**: Install dependencies
-```bash
-# Backend
-cd backend
-pip install -r requirements.txt
-
-# Frontend
+pip install -r backend/requirements.txt
 npm install
 ```
-
----
-
-## 📚 Additional Documentation
-
-- **[ENDPOINT_TEST_CHECKLIST.md](ENDPOINT_TEST_CHECKLIST.md)** - Complete testing checklist
-- **[CHANGELOG.md](CHANGELOG.md)** - Version history and changes (if exists)
 
 ---
 
@@ -554,20 +327,4 @@ npm install
 
 ## 📄 License
 
-This project is developed for academic research and marine conservation purposes at HITEC University Taxila.
-
----
-
-## 🌟 Key Highlights
-
-✅ Production-ready full-stack application  
-✅ Advanced ML integration (YOLO + LSTM)  
-✅ Complete authentication system  
-✅ Responsive UI with dark/light themes  
-✅ Real-time processing with progress tracking  
-✅ Interactive data visualization  
-✅ Comprehensive admin dashboard  
-✅ PDF report generation  
-✅ Multi-region pollution prediction  
-
-**Ready for deployment and real-world marine conservation use! 🌊**
+Developed for academic research and marine conservation at HITEC University Taxila.

@@ -273,7 +273,8 @@ export default function ReportsPage() {
     switch (type) {
       case 'detection': return 'YOLO Detection';
       case 'prediction': return 'LSTM Prediction';
-      case 'both': return 'Comprehensive';
+      case 'both':
+      case 'custom': return 'Comprehensive';
       default: return type;
     }
   };
@@ -282,7 +283,8 @@ export default function ReportsPage() {
     switch (type) {
       case 'detection': return 'default';
       case 'prediction': return 'secondary';
-      case 'both': return 'outline';
+      case 'both':
+      case 'custom': return 'outline';
       default: return 'default';
     }
   };

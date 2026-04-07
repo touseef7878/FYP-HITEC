@@ -210,7 +210,6 @@ export default function ReportsPage() {
     
     setIsDeleting(true);
     try {
-      const token = localStorage.getItem('auth_token');
       if (!token) {
         toast({
           title: "Authentication Required",
@@ -254,19 +253,19 @@ export default function ReportsPage() {
     }
   };
 
-  const handleViewReport = (reportTitle: string) => {
-    viewPDFReport(reportTitle);
+  const handleViewReport = (report: Report) => {
+    viewPDFReport(report.title, report.id);
     toast({
       title: "Opening Report",
-      description: "Report opened in new tab.",
+      description: "Generating PDF from report data...",
     });
   };
 
-  const handleDownloadReport = (reportTitle: string) => {
-    downloadPDFReport(reportTitle);
+  const handleDownloadReport = (report: Report) => {
+    downloadPDFReport(report.title, report.id);
     toast({
-      title: "Report Downloaded",
-      description: `${reportTitle} has been downloaded.`,
+      title: "Downloading Report",
+      description: `${report.title} is being generated...`,
     });
   };
 
@@ -495,7 +494,7 @@ export default function ReportsPage() {
                         <Button 
                           variant="ghost" 
                           size="icon"
-                          onClick={() => handleViewReport(report.title)}
+                          onClick={() => handleViewReport(report)}
                           title="View Report"
                         >
                           <Eye className="h-4 w-4" />
@@ -503,7 +502,7 @@ export default function ReportsPage() {
                         <Button 
                           variant="ghost" 
                           size="icon"
-                          onClick={() => handleDownloadReport(report.title)}
+                          onClick={() => handleDownloadReport(report)}
                           title="Download Report"
                         >
                           <Download className="h-4 w-4" />

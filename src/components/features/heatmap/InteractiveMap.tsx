@@ -34,6 +34,7 @@ export function InteractiveMap({ hotspots, onHotspotClick }: InteractiveMapProps
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const markersRef = useRef<Map<string, { circle: L.Circle; marker: L.Marker }>>(new Map());
+  const layersRef = useRef<Record<string, L.TileLayer>>({});
   const [currentLayer, setCurrentLayer] = useState<'satellite' | 'street' | 'ocean'>('ocean');
 
   useEffect(() => {
@@ -68,12 +69,8 @@ export function InteractiveMap({ hotspots, onHotspotClick }: InteractiveMapProps
     // Add default layer
     oceanLayer.addTo(map);
 
-    // Store layers for switching
-    (map as any)._layers = {
-      ocean: oceanLayer,
-      satellite: satelliteLayer,
-      street: streetLayer,
-    };
+    // Store layers in ref (not on map internals)
+    layersRef.current = { ocean: oceanLayer, satellite: satelliteLayer, street: streetLayer };
 
     return () => {
       if (mapInstanceRef.current) {
@@ -196,27 +193,20 @@ export function InteractiveMap({ hotspots, onHotspotClick }: InteractiveMapProps
 
     // Fit map to show all hotspots if any exist
     if (hotspots.length > 0) {
-      const group = new L.FeatureGroup(
-        hotspots.map(h => L.marker([h.lat, h.lng]))
-      );
-      map.fitBounds(group.getBounds().pad(0.1));
+      const bounds = L.latLngBounds(hotspots.map(h => [h.lat, h.lng] as L.LatLngTuple));
+      map.fitBounds(bounds.pad(0.1));
     }
-  }, [hotspots]); // OPTIMIZED: Removed onHotspotClick from dependencies
+  }, [hotspots]);
 
   const switchLayer = (layerType: 'satellite' | 'street' | 'ocean') => {
     if (!mapInstanceRef.current) return;
-
     const map = mapInstanceRef.current;
-    const layers = (map as any)._layers;
+    const layers = layersRef.current;
 
-    // Remove current layer
-    Object.values(layers).forEach((layer: any) => {
-      if (map.hasLayer(layer)) {
-        map.removeLayer(layer);
-      }
+    Object.values(layers).forEach((layer) => {
+      if (map.hasLayer(layer)) map.removeLayer(layer);
     });
 
-    // Add new layer
     layers[layerType].addTo(map);
     setCurrentLayer(layerType);
   };
@@ -231,12 +221,9 @@ export function InteractiveMap({ hotspots, onHotspotClick }: InteractiveMapProps
 
   const resetView = () => {
     if (!mapInstanceRef.current) return;
-    
     if (hotspots.length > 0) {
-      const group = new L.FeatureGroup(
-        hotspots.map(h => L.marker([h.lat, h.lng]))
-      );
-      mapInstanceRef.current.fitBounds(group.getBounds().pad(0.1));
+      const bounds = L.latLngBounds(hotspots.map(h => [h.lat, h.lng] as L.LatLngTuple));
+      mapInstanceRef.current.fitBounds(bounds.pad(0.1));
     } else {
       mapInstanceRef.current.setView([20, 0], 2);
     }

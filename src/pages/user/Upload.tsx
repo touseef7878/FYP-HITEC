@@ -29,6 +29,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import ENV from "@/config/env";
+import { DetectionResult, dataService } from "@/services/data.service";
 
 const API_URL = ENV.API_URL;
 
@@ -39,33 +40,6 @@ interface UploadFile {
   status: "pending" | "uploading" | "processing" | "complete" | "error";
   errorMessage?: string;
   detectionId?: number;
-}
-
-interface DetectionResult {
-  success: boolean;
-  filename: string;
-  totalDetections: number;
-  detections: {
-    class: string;
-    confidence: number;
-    bbox: { x1: number; y1: number; x2: number; y2: number };
-  }[];
-  summary: {
-    class: string;
-    count: number;
-    avgConfidence: number;
-  }[];
-  annotatedImage?: string;
-  originalImage?: string;
-  annotatedVideo?: string;
-  originalVideo?: string;
-  annotatedVideoUrl?: string;
-  originalVideoUrl?: string;
-  totalFrames?: number;
-  processedFrames?: number;
-  fps?: number;
-  duration?: number;
-  resolution?: string;
 }
 
 // OPTIMIZED: Memoized file item component to prevent unnecessary re-renders
@@ -362,30 +336,12 @@ export default function UploadPage() {
           )
         );
 
-        // Simulate progress updates during processing
-        const progressInterval = setInterval(() => {
-          const elapsed = (Date.now() - startTime) / 1000;
-          const progress = Math.min(90, 60 + (elapsed / fileEstimatedTime) * 30);
-          
-          setFiles((prev) =>
-            prev.map((f) =>
-              f.id === file.id ? { ...f, progress: Math.round(progress) } : f
-            )
-          );
-          
-          // Update overall progress
-          const overallProgress = ((processedTime + elapsed) / totalEstimatedTime) * 100;
-          setProcessingProgress(Math.min(95, overallProgress));
-        }, 500);
-
         if (!response.ok) {
-          clearInterval(progressInterval);
           const error = await response.json();
           throw new Error(error.detail || "Detection failed");
         }
 
         const result = await response.json();
-        clearInterval(progressInterval);
         
         // Store detection_id in the file object
         const detectionId = result.detection_id;
@@ -396,11 +352,63 @@ export default function UploadPage() {
             f.id === file.id ? { ...f, detectionId: detectionId } : f
           )
         );
+
+        // For videos: poll for completion since processing is async
+        let finalResult = result;
+        if (isVideo && result.status === "processing" && detectionId) {
+          addLog(`🎬 Video queued for processing (ID: ${detectionId}). Polling for completion...`);
+          
+          finalResult = await new Promise<DetectionResult>((resolve, reject) => {
+            const pollInterval = setInterval(async () => {
+              try {
+                const statusRes = await fetch(`${API_URL}/api/detections/${detectionId}/status`, {
+                  headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (!statusRes.ok) return;
+                const statusData = await statusRes.json();
+                
+                const progress = statusData.progress ?? 0;
+                setFiles((prev) =>
+                  prev.map((f) =>
+                    f.id === file.id ? { ...f, progress: Math.max(60, progress) } : f
+                  )
+                );
+                
+                if (statusData.status === 'completed') {
+                  clearInterval(pollInterval);
+                  addLog(`✅ Video processing complete!`);
+                  resolve({
+                    success: true,
+                    filename: statusData.filename || file.file.name,
+                    totalDetections: statusData.total_detections || 0,
+                    detections: [],
+                    summary: [],
+                    annotatedVideoUrl: statusData.annotated_video_url,
+                    originalVideoUrl: statusData.original_video_url,
+                    videoId: statusData.video_id,
+                    result_id: String(detectionId),
+                  } as DetectionResult);
+                } else if (statusData.status === 'failed') {
+                  clearInterval(pollInterval);
+                  reject(new Error(statusData.error || 'Video processing failed'));
+                }
+              } catch (e) {
+                // Silently continue polling on network errors
+              }
+            }, 2000); // Poll every 2 seconds
+            
+            // Timeout after 10 minutes
+            setTimeout(() => {
+              clearInterval(pollInterval);
+              reject(new Error('Video processing timed out after 10 minutes'));
+            }, 600000);
+          });
+        }
         
         const actualTime = (Date.now() - startTime) / 1000;
         processedTime += actualTime;
         
-        results.push(result);
+        results.push(finalResult);
 
         if (isVideo) {
           addLog(`✓ Video processed: ${result.totalDetections} objects detected in ${result.totalFrames} frames`);

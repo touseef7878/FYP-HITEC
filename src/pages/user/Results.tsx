@@ -22,9 +22,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { dataService, DetectionResult } from "@/services/data.service";
 import { VideoPlayer } from "@/components/common/VideoPlayer";
+import ENV from "@/config/env";
 
-// Backend API URL - change this if your backend runs on a different port
-const API_URL = "http://localhost:8000";
+// Backend API URL
+const API_URL = ENV.API_URL;
 
 // Empty fallback data structure
 const emptyResult: DetectionResult = {

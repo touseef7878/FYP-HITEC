@@ -184,6 +184,23 @@ class PredictionRequest(BaseModel):
 # Initialize LSTM model
 lstm_model = EnvironmentalLSTM()
 
+# Thread pool for CPU-bound tasks (video processing, LSTM training)
+from concurrent.futures import ThreadPoolExecutor
+_video_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="video_worker")
+
+# Analytics cache: user_id -> (data, timestamp)
+_analytics_cache: Dict[int, tuple] = {}
+_ANALYTICS_CACHE_TTL = 300  # 5 minutes
+
+async def _update_analytics_background(user_id: int) -> None:
+    """Fire-and-forget analytics update — never blocks the response"""
+    try:
+        await asyncio.sleep(0)  # yield to event loop first
+        # Invalidate cache so next request gets fresh data
+        _analytics_cache.pop(user_id, None)
+    except Exception:
+        pass
+
 # Mount static files (for favicon)
 static_path = os.path.join(os.path.dirname(__file__), "..", "public")
 if os.path.exists(static_path):
@@ -332,10 +349,10 @@ def load_yolo_model():
         model = None
 
 def clear_all_cache():
-    """Clear all cached data and models on server startup for fresh data"""
+    """Clear all cached data and models — call ONLY when explicitly requested, NOT on startup"""
     import glob
     
-    logger.info("🧹 Clearing all cached data for fresh start...")
+    logger.info("🧹 Clearing all cached data...")
     
     # Clear data cache
     cache_files = glob.glob(os.path.join(data_cache_service.cache_dir, "*.csv"))
@@ -355,14 +372,14 @@ def clear_all_cache():
         except Exception as e:
             logger.warning(f"Could not remove {file}: {e}")
     
-    logger.info("✅ Cache cleared - ready for fresh data fetching!")
+    logger.info("✅ Cache cleared!")
 
 @app.on_event("startup")
 async def startup():
-    # Clear all cached data on server startup for fresh data
-    clear_all_cache()
-    load_yolo_model()
-    logger.info("🚀 Refactored API server started with fresh cache")
+    # Load YOLO model in thread pool — non-blocking, won't delay request handling
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, load_yolo_model)
+    logger.info("🚀 API server started")
 
 @app.get("/health")
 async def health_check():
@@ -586,12 +603,16 @@ async def train_lstm_model(request: TrainingRequest):
         combined_df = pd.concat(all_training_data, ignore_index=True)
         logger.info(f"🔗 Combined training data: {len(combined_df)} total records from {len(all_training_data)} regions")
         
-        # Train model using combined data
-        logger.info(f"🧠 Training LSTM model using combined multi-region data...")
-        training_result = lstm_model.train_from_cached_data(
-            region=request.region,  # Primary region for model saving
-            cached_df=combined_df,
-            epochs=request.epochs
+        # Train model in thread pool — non-blocking, won't freeze the API
+        logger.info(f"🧠 Training LSTM model using combined multi-region data (non-blocking)...")
+        loop = asyncio.get_event_loop()
+        training_result = await loop.run_in_executor(
+            None,
+            lambda: lstm_model.train_from_cached_data(
+                region=request.region,
+                cached_df=combined_df,
+                epochs=request.epochs
+            )
         )
         
         if training_result['success']:
@@ -1849,13 +1870,6 @@ async def detect_objects(
             annotated_base64=f"data:image/png;base64,{annotated_base64}"
         )
         
-        # Trigger analytics generation for this user
-        try:
-            analytics_response = await get_analytics(current_user=current_user)
-            logger.info(f"Analytics updated for user {current_user['user_id']} after detection")
-        except Exception as e:
-            logger.warning(f"Failed to update analytics after detection: {e}")
-        
         # Prepare summary
         summary = []
         for class_name, data in class_counts.items():
@@ -1871,12 +1885,8 @@ async def detect_objects(
         
         logger.info(f"Detection completed for user {current_user['username']}: {len(detections)} objects found in {processing_time:.2f}s")
         
-        # Generate analytics automatically after detection
-        try:
-            analytics_response = await get_analytics(current_user=current_user)
-            logger.info(f"Analytics updated for user {current_user['username']}")
-        except Exception as e:
-            logger.warning(f"Failed to update analytics after detection: {e}")
+        # Fire-and-forget analytics update — non-blocking
+        asyncio.create_task(_update_analytics_background(current_user['user_id']))
         
         return JSONResponse({
             "success": True,
@@ -1900,458 +1910,328 @@ async def detect_video(
     confidence: float = 0.25,
     current_user: dict = Depends(get_current_user)
 ):
+    """
+    Non-blocking video detection.
+    Saves upload, creates DB record, processes in background thread.
+    Returns immediately — poll /api/detections/{detection_id}/status for progress.
+    """
     if model is None:
-        raise HTTPException(
-            status_code=503, 
-            detail="Model not loaded. Please place your weights at backend/weights/best.pt and restart the server."
-        )
+        raise HTTPException(status_code=503, detail="Model not loaded. Place weights at backend/weights/best.pt and restart.")
     
-    # Validate file type
     if not file.content_type or not file.content_type.startswith('video/'):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid file type: {file.content_type}. Only video files are supported."
-        )
+        raise HTTPException(status_code=400, detail=f"Invalid file type: {file.content_type}. Only video files are supported.")
     
-    # Validate confidence parameter
     if not 0.01 <= confidence <= 1.0:
-        raise HTTPException(
-            status_code=400,
-            detail="Confidence must be between 0.01 and 1.0"
-        )
-    
-    temp_input_path = None
-    temp_output_path = None
-    start_time = time.time()
+        raise HTTPException(status_code=400, detail="Confidence must be between 0.01 and 1.0")
     
     try:
-        logger.info(f"🎬 Starting video detection for user {current_user['username']}: {file.filename}")
-        logger.info(f"   File type: {file.content_type}")
-        logger.info(f"   Confidence threshold: {confidence}")
-        
-        # Create temporary files
-        temp_input_fd, temp_input_path = tempfile.mkstemp(suffix='.mp4')
-        temp_output_fd, temp_output_path = tempfile.mkstemp(suffix='.mp4')
-        
-        # Close file descriptors (we'll use paths directly)
-        os.close(temp_input_fd)
-        os.close(temp_output_fd)
-        
-        # Write uploaded video to temp file
         contents = await file.read()
-        file_size_mb = len(contents) / (1024 * 1024)
-        logger.info(f"   File size: {file_size_mb:.1f} MB")
-        
-        with open(temp_input_path, 'wb') as f:
-            f.write(contents)
-        
-        # Generate unique video ID for file naming
+        file_size_bytes = len(contents)
+        file_size_mb = file_size_bytes / (1024 * 1024)
         video_id = str(uuid.uuid4())
+        file_ext = file.filename.rsplit('.', 1)[-1] if '.' in file.filename else 'mp4'
         
-        # Save original video to processed_videos directory for serving
-        original_filename = f"original_{video_id}.{file.filename.split('.')[-1]}"
+        # Save upload to disk immediately
+        original_filename = f"original_{video_id}.{file_ext}"
         original_video_path = os.path.join(processed_videos_path, original_filename)
+        with open(original_video_path, 'wb') as f:
+            f.write(contents)
+        del contents  # Free memory
         
-        # Copy original video to processed_videos directory
-        shutil.copy2(temp_input_path, original_video_path)
-        logger.info(f"💾 Original video saved: {original_video_path}")
+        logger.info(f"🎬 Video upload saved: {original_filename} ({file_size_mb:.1f} MB)")
         
-        # Open video with OpenCV
-        cap = cv2.VideoCapture(temp_input_path)
+        # Create pending DB record
+        detection_id = db.create_detection(
+            user_id=current_user['user_id'],
+            filename=file.filename,
+            file_type='video',
+            file_size=file_size_bytes,
+            total_detections=0,
+            confidence_threshold=confidence,
+            processing_time=None,
+            metadata={'video_id': video_id, 'status': 'processing', 'progress': 0, 'original_filename': original_filename}
+        )
+        
+        if not detection_id:
+            raise HTTPException(status_code=500, detail="Failed to create detection record")
+        
+        db.update_detection_status(detection_id, 'processing', metadata={
+            'video_id': video_id, 'status': 'processing', 'progress': 0, 'original_filename': original_filename
+        })
+        
+        # Launch background processing — non-blocking
+        loop = asyncio.get_event_loop()
+        loop.run_in_executor(
+            _video_executor,
+            _process_video_sync,
+            original_video_path, video_id, detection_id,
+            confidence, current_user['user_id'], file.filename, file_ext
+        )
+        
+        logger.info(f"✅ Video queued for background processing: detection_id={detection_id}")
+        
+        return JSONResponse({
+            "success": True,
+            "detection_id": detection_id,
+            "video_id": video_id,
+            "status": "processing",
+            "filename": file.filename,
+            "message": "Video processing started. Poll /api/detections/{detection_id}/status for updates."
+        })
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Video upload error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def _process_video_sync(
+    input_path: str, video_id: str, detection_id: int,
+    confidence: float, user_id: int, original_filename: str, file_ext: str
+):
+    """
+    Synchronous video processing — runs in thread pool, never blocks the event loop.
+    Processes all frames with YOLO, saves annotated video, updates DB on completion.
+    """
+    import time as _time
+    start_time = _time.time()
+    cap = None
+    out = None
+    temp_raw_path = None
+    
+    try:
+        logger.info(f"🎬 [Thread] Processing video {video_id} (detection_id={detection_id})")
+        
+        cap = cv2.VideoCapture(input_path)
         if not cap.isOpened():
-            raise HTTPException(status_code=400, detail="Could not open video file. Please ensure it's a valid video format.")
+            raise RuntimeError("Could not open video file")
         
-        # Get video properties
-        fps = int(cap.get(cv2.CAP_PROP_FPS))
+        fps = int(cap.get(cv2.CAP_PROP_FPS)) or 25
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         duration = total_frames / fps if fps > 0 else 0
         
-        logger.info(f"📹 Video properties:")
-        logger.info(f"   Resolution: {width}x{height}")
-        logger.info(f"   FPS: {fps}")
-        logger.info(f"   Total frames: {total_frames}")
-        logger.info(f"   Duration: {duration:.1f}s")
-        
-        # Validate video properties
         if fps <= 0 or width <= 0 or height <= 0 or total_frames <= 0:
-            raise HTTPException(status_code=400, detail="Invalid video properties detected")
+            raise RuntimeError(f"Invalid video properties: {width}x{height} @ {fps}fps, {total_frames} frames")
         
-        # Professional approach: Use OpenCV for detection, FFmpeg for final encoding
-        # Step 1: Create temporary video with XVID (reliable for OpenCV)
-        temp_raw_path = temp_output_path.replace('.mp4', '_temp.avi')
+        logger.info(f"   📹 {width}x{height} @ {fps}fps, {total_frames} frames, {duration:.1f}s")
+        
+        temp_raw_path = input_path.replace(f'.{file_ext}', '_annotated_temp.avi')
         fourcc = cv2.VideoWriter_fourcc(*'XVID')
         out = cv2.VideoWriter(temp_raw_path, fourcc, fps, (width, height))
         
         if not out.isOpened():
-            logger.error("❌ Failed to initialize video writer with XVID codec")
-            raise HTTPException(status_code=500, detail="Failed to create output video writer")
+            raise RuntimeError("Failed to initialize video writer")
         
-        logger.info(f"✅ Video writer initialized successfully")
-        logger.info(f"   Output resolution: {width}x{height}")
-        logger.info(f"   Output FPS: {fps}")
-        logger.info(f"   Output path: {temp_output_path}")
-        
-        # Initialize processing variables
         frame_count = 0
-        processed_frame_count = 0
         total_detections = 0
         all_detections = []
         class_counts = {}
         colors = {}
         frames_with_detections = 0
+        last_progress_update = _time.time()
         
-        logger.info("🔍 Starting frame-by-frame detection (processing all frames)...")
-        logger.info(f"   Total frames to process: {total_frames}")
-        logger.info(f"   Estimated time: {total_frames * 0.15:.1f} seconds (CPU mode)")
-        
-        # Track processing time
-        processing_start = time.time()
-        last_log_time = processing_start
-        
-        # Process video frame by frame
         while True:
             ret, frame = cap.read()
             if not ret:
                 break
             
             frame_count += 1
-            processed_frame_count += 1
-            
-            # Run YOLO inference on frame (CPU optimized)
-            try:
-                results = model(frame, conf=confidence, verbose=False)[0]
-            except Exception as e:
-                logger.warning(f"Detection failed on frame {frame_count}: {e}")
-                # Write original frame if detection fails
-                out.write(frame)
-                continue
-            
-            # Process detections for this frame
             frame_detections = []
             frame_detection_count = 0
             
+            try:
+                results = model(frame, conf=confidence, verbose=False)[0]
+            except Exception as e:
+                logger.warning(f"Frame {frame_count} detection failed: {e}")
+                out.write(frame)
+                continue
+            
             if results.boxes is not None and len(results.boxes) > 0:
                 frames_with_detections += 1
-                
                 for box in results.boxes:
                     class_id = int(box.cls[0])
                     class_name = results.names[class_id]
-                    conf = float(box.conf[0])
+                    conf_val = float(box.conf[0])
                     bbox = box.xyxy[0].tolist()
                     
-                    detection = {
+                    det = {
                         "frame": frame_count,
                         "timestamp": round((frame_count - 1) / fps, 2),
                         "class": class_name,
-                        "confidence": round(conf * 100, 1),
-                        "bbox": {
-                            "x1": int(bbox[0]),
-                            "y1": int(bbox[1]),
-                            "x2": int(bbox[2]),
-                            "y2": int(bbox[3])
-                        }
+                        "confidence": round(conf_val * 100, 1),
+                        "bbox": {"x1": int(bbox[0]), "y1": int(bbox[1]), "x2": int(bbox[2]), "y2": int(bbox[3])}
                     }
-                    
-                    frame_detections.append(detection)
-                    all_detections.append(detection)
+                    frame_detections.append(det)
+                    all_detections.append(det)
                     total_detections += 1
                     frame_detection_count += 1
                     
-                    # Count by class
                     if class_name not in class_counts:
                         class_counts[class_name] = {"count": 0, "total_confidence": 0, "frames": set()}
                     class_counts[class_name]["count"] += 1
-                    class_counts[class_name]["total_confidence"] += conf * 100
+                    class_counts[class_name]["total_confidence"] += conf_val * 100
                     class_counts[class_name]["frames"].add(frame_count)
                     
-                    # Generate consistent color for each class
                     if class_name not in colors:
-                        hash_val = hash(class_name)
-                        colors[class_name] = (
-                            (hash_val & 0xFF),
-                            ((hash_val >> 8) & 0xFF),
-                            ((hash_val >> 16) & 0xFF)
-                        )
+                        h = hash(class_name)
+                        colors[class_name] = (h & 0xFF, (h >> 8) & 0xFF, (h >> 16) & 0xFF)
             
-            # Draw bounding boxes on frame
-            annotated_frame = frame.copy()
+            # Annotate frame
+            annotated = frame.copy()
+            info_text = f"Frame {frame_count}/{total_frames} | {frame_detection_count} detections"
+            cv2.putText(annotated, info_text, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,255), 2)
+            cv2.putText(annotated, info_text, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,0,0), 1)
             
-            # Add frame info overlay
-            frame_info = f"Frame {frame_count}/{total_frames} | {frame_detection_count} detections"
-            cv2.putText(
-                annotated_frame,
-                frame_info,
-                (10, 25),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.6,
-                (255, 255, 255),
-                2
-            )
-            cv2.putText(
-                annotated_frame,
-                frame_info,
-                (10, 25),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.6,
-                (0, 0, 0),
-                1
-            )
-            
-            # Draw detections
             for det in frame_detections:
-                class_name = det["class"]
-                color = colors[class_name]
-                bbox = det["bbox"]
-                
-                # Draw rectangle with thicker border for better visibility
-                cv2.rectangle(
-                    annotated_frame,
-                    (bbox["x1"], bbox["y1"]),
-                    (bbox["x2"], bbox["y2"]),
-                    color,
-                    3
-                )
-                
-                # Draw label background
-                label = f"{class_name} {det['confidence']}%"
-                (label_w, label_h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
-                cv2.rectangle(
-                    annotated_frame,
-                    (bbox["x1"], bbox["y1"] - label_h - 15),
-                    (bbox["x1"] + label_w + 10, bbox["y1"]),
-                    color,
-                    -1
-                )
-                
-                # Draw label text with better visibility
-                cv2.putText(
-                    annotated_frame,
-                    label,
-                    (bbox["x1"] + 5, bbox["y1"] - 8),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.6,
-                    (255, 255, 255),
-                    2
-                )
+                color = colors[det["class"]]
+                b = det["bbox"]
+                cv2.rectangle(annotated, (b["x1"], b["y1"]), (b["x2"], b["y2"]), color, 3)
+                label = f"{det['class']} {det['confidence']}%"
+                (lw, lh), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+                cv2.rectangle(annotated, (b["x1"], b["y1"]-lh-15), (b["x1"]+lw+10, b["y1"]), color, -1)
+                cv2.putText(annotated, label, (b["x1"]+5, b["y1"]-8), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,255), 2)
             
-            # Write annotated frame to output video
-            out.write(annotated_frame)
+            out.write(annotated)
             
-            # Log progress every 10 frames for better feedback
-            current_time = time.time()
-            if frame_count % 10 == 0 or frame_count == total_frames or (current_time - last_log_time) >= 2:
-                progress = (frame_count / total_frames) * 100
-                elapsed = current_time - processing_start
-                fps_processing = frame_count / elapsed if elapsed > 0 else 0
-                eta = (total_frames - frame_count) / fps_processing if fps_processing > 0 else 0
-                
-                logger.info(f"   📊 Progress: {frame_count}/{total_frames} ({progress:.1f}%) | "
-                          f"Detections: {total_detections} | "
-                          f"Speed: {fps_processing:.1f} fps | "
-                          f"ETA: {eta:.0f}s")
-                last_log_time = current_time
+            # Update progress in DB every 2 seconds
+            now = _time.time()
+            if now - last_progress_update >= 2.0:
+                progress = int((frame_count / total_frames) * 100)
+                db.update_detection_status(detection_id, 'processing', metadata={
+                    'video_id': video_id, 'status': 'processing', 'progress': progress,
+                    'original_filename': f"original_{video_id}.{file_ext}",
+                })
+                last_progress_update = now
         
-        # Release resources
         cap.release()
         out.release()
+        cap = None
+        out = None
         
-        # Generate unique filename for processed video
+        # Convert AVI → MP4 with FFmpeg
         processed_filename = f"processed_{video_id}.mp4"
         final_output_path = os.path.join(processed_videos_path, processed_filename)
-        
-        # Step 2: Convert AVI to optimized MP4 using FFmpeg
-        logger.info("🎬 Converting to optimized MP4 format...")
         ffmpeg_success = False
-        
-        # Try to find FFmpeg executable
         ffmpeg_exe = None
-
-        # First: use imageio-ffmpeg bundled binary (always available, no install needed)
+        
         try:
             import imageio_ffmpeg
             ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
-            logger.info(f"✅ Using bundled FFmpeg: {ffmpeg_exe}")
         except Exception:
             pass
-
-        # Fallback: system PATH
+        
         if not ffmpeg_exe:
             try:
                 where_cmd = 'where' if os.name == 'nt' else 'which'
-                where_result = subprocess.run([where_cmd, 'ffmpeg'], capture_output=True, text=True, timeout=5)
-                if where_result.returncode == 0:
-                    ffmpeg_exe = where_result.stdout.strip().splitlines()[0].strip()
-                    logger.info(f"✅ Found FFmpeg in PATH: {ffmpeg_exe}")
+                r = subprocess.run([where_cmd, 'ffmpeg'], capture_output=True, text=True, timeout=5)
+                if r.returncode == 0:
+                    ffmpeg_exe = r.stdout.strip().splitlines()[0].strip()
             except Exception:
                 pass
-
-        # Last resort: known install paths
-        if not ffmpeg_exe:
-            for path in ['C:\\ffmpeg\\bin\\ffmpeg.exe']:
-                try:
-                    result = subprocess.run([path, '-version'], capture_output=True, text=True, timeout=5)
-                    if result.returncode == 0:
-                        ffmpeg_exe = path
-                        break
-                except (FileNotFoundError, subprocess.TimeoutExpired):
-                    continue
         
-        if ffmpeg_exe:
+        if ffmpeg_exe and os.path.exists(temp_raw_path):
             try:
-                # FFmpeg command for high-quality, web-optimized MP4
-                ffmpeg_cmd = [
-                    ffmpeg_exe,
-                    '-i', temp_raw_path,  # Input: temporary AVI file
-                    '-c:v', 'libx264',    # Video codec: H.264
-                    '-preset', 'medium',   # Encoding speed vs compression trade-off
-                    '-crf', '23',         # Quality: 23 is high quality (18-28 range)
-                    '-c:a', 'aac',        # Audio codec: AAC
-                    '-b:a', '128k',       # Audio bitrate
-                    '-movflags', '+faststart',  # Web optimization: metadata at beginning
-                    '-pix_fmt', 'yuv420p', # Pixel format for compatibility
-                    '-y',                 # Overwrite output file if exists
-                    final_output_path     # Output: final MP4 file
+                cmd = [
+                    ffmpeg_exe, '-y', '-i', temp_raw_path,
+                    '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+                    '-movflags', '+faststart', '-pix_fmt', 'yuv420p',
+                    final_output_path
                 ]
-                
-                # Run FFmpeg conversion
-                result = subprocess.run(
-                    ffmpeg_cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=300  # 5 minute timeout
-                )
-                
-                if result.returncode == 0:
-                    logger.info("✅ FFmpeg conversion successful!")
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+                if result.returncode == 0 and os.path.exists(final_output_path):
                     ffmpeg_success = True
-                    # Clean up temporary AVI file
-                    if os.path.exists(temp_raw_path):
-                        os.unlink(temp_raw_path)
-                else:
-                    logger.error(f"❌ FFmpeg conversion failed: {result.stderr}")
-                    
-            except subprocess.TimeoutExpired:
-                logger.error("❌ FFmpeg conversion timed out")
+                    os.remove(temp_raw_path)
+                    temp_raw_path = None
+                    logger.info(f"✅ FFmpeg conversion successful: {processed_filename}")
             except Exception as e:
-                logger.error(f"❌ FFmpeg conversion error: {e}")
-        else:
-            logger.error("❌ FFmpeg not found in any expected location")
+                logger.warning(f"FFmpeg conversion failed: {e}")
         
-        # Fallback: Use OpenCV to convert AVI to MP4 if FFmpeg failed
-        if not ffmpeg_success:
-            logger.info("🔄 Using OpenCV fallback conversion to MP4...")
+        if not ffmpeg_success and temp_raw_path and os.path.exists(temp_raw_path):
+            # OpenCV fallback
             try:
-                # Read the AVI file with OpenCV
-                fallback_cap = cv2.VideoCapture(temp_raw_path)
-                if fallback_cap.isOpened():
-                    # Get video properties
-                    fallback_fps = int(fallback_cap.get(cv2.CAP_PROP_FPS))
-                    fallback_width = int(fallback_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                    fallback_height = int(fallback_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                    
-                    # Create MP4 writer - use mp4v for reliable compatibility
-                    fallback_fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-                    fallback_out = cv2.VideoWriter(final_output_path, fallback_fourcc, fallback_fps, (fallback_width, fallback_height))
-                    
-                    if fallback_out.isOpened():
-                        # Copy frames from AVI to MP4
-                        while True:
-                            ret, frame = fallback_cap.read()
-                            if not ret:
-                                break
-                            fallback_out.write(frame)
-                        
-                        fallback_cap.release()
-                        fallback_out.release()
-                        
-                        # Clean up temporary AVI file
-                        if os.path.exists(temp_raw_path):
-                            os.unlink(temp_raw_path)
-                        
-                        logger.info("✅ OpenCV fallback conversion successful!")
-                    else:
-                        logger.error("❌ OpenCV MP4 writer failed")
-                        # Last resort: just move the AVI file but warn user
-                        shutil.move(temp_raw_path, final_output_path.replace('.mp4', '.avi'))
-                        final_output_path = final_output_path.replace('.mp4', '.avi')
-                        processed_filename = processed_filename.replace('.mp4', '.avi')
-                        logger.warning("⚠️ Video saved as AVI - may not play in all browsers")
-                else:
-                    logger.error("❌ Could not read temporary AVI file")
-                    raise Exception("Fallback conversion failed")
-                    
-            except Exception as fallback_error:
-                logger.error(f"❌ OpenCV fallback failed: {fallback_error}")
-                # Last resort: just move the AVI file but warn user
-                if os.path.exists(temp_raw_path):
-                    shutil.move(temp_raw_path, final_output_path.replace('.mp4', '.avi'))
-                    final_output_path = final_output_path.replace('.mp4', '.avi')
-                    processed_filename = processed_filename.replace('.mp4', '.avi')
-                    logger.warning("⚠️ Video saved as AVI - may not play in all browsers")
+                fb_cap = cv2.VideoCapture(temp_raw_path)
+                fb_fps = int(fb_cap.get(cv2.CAP_PROP_FPS))
+                fb_w = int(fb_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                fb_h = int(fb_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                fb_out = cv2.VideoWriter(final_output_path, cv2.VideoWriter_fourcc(*'mp4v'), fb_fps, (fb_w, fb_h))
+                while True:
+                    ret, frm = fb_cap.read()
+                    if not ret:
+                        break
+                    fb_out.write(frm)
+                fb_cap.release()
+                fb_out.release()
+                os.remove(temp_raw_path)
+                temp_raw_path = None
+                ffmpeg_success = True
+                logger.info("✅ OpenCV fallback conversion successful")
+            except Exception as e:
+                logger.warning(f"OpenCV fallback failed: {e}")
+                shutil.move(temp_raw_path, final_output_path.replace('.mp4', '.avi'))
+                processed_filename = processed_filename.replace('.mp4', '.avi')
+                final_output_path = final_output_path.replace('.mp4', '.avi')
+                temp_raw_path = None
         
-        temp_output_path = None  # Prevent cleanup of moved file
+        processing_time = _time.time() - start_time
+        detection_rate = (frames_with_detections / frame_count * 100) if frame_count > 0 else 0
+        avg_dets = total_detections / frame_count if frame_count > 0 else 0
         
-        # Log successful save with clear message
-        logger.info(f"💾 Processed video saved successfully!")
-        logger.info(f"   📁 Local path: {final_output_path}")
-        logger.info(f"   🌐 Access URL: /processed-video/{processed_filename}")
-        logger.info(f"   📊 File size: {os.path.getsize(final_output_path) / (1024*1024):.1f} MB")
-        
-        # Prepare enhanced summary
         summary = []
         for class_name, data in class_counts.items():
             avg_conf = data["total_confidence"] / data["count"]
-            frames_appeared = len(data["frames"])
+            frames_app = len(data["frames"])
             summary.append({
                 "class": class_name,
                 "count": data["count"],
                 "avgConfidence": round(avg_conf, 1),
-                "framesAppeared": frames_appeared,
-                "appearanceRate": round((frames_appeared / total_frames) * 100, 1)
+                "framesAppeared": frames_app,
+                "appearanceRate": round(frames_app / frame_count * 100, 1) if frame_count > 0 else 0
             })
-        
-        # Sort by count descending
         summary.sort(key=lambda x: x["count"], reverse=True)
         
-        # Convert original video to base64 for small videos (< 10MB)
-        original_video_base64 = None
-        if len(contents) < 10 * 1024 * 1024:  # 10MB limit
-            original_video_base64 = base64.b64encode(contents).decode()
+        import json as _json
+        full_result = {
+            "success": True,
+            "filename": original_filename,
+            "totalDetections": total_detections,
+            "detections": all_detections[:500],
+            "summary": summary,
+            "totalFrames": total_frames,
+            "processedFrames": frame_count,
+            "framesWithDetections": frames_with_detections,
+            "detectionRate": round(detection_rate, 1),
+            "avgDetectionsPerFrame": round(avg_dets, 2),
+            "fps": fps,
+            "duration": round(duration, 2),
+            "resolution": f"{width}x{height}",
+            "annotatedVideoUrl": f"/processed-video/{processed_filename}",
+            "originalVideoUrl": f"/processed-video/original_{video_id}.{file_ext}",
+            "videoId": video_id,
+            "processingStats": {
+                "uniqueClasses": len(class_counts),
+                "detectionRate": round(detection_rate, 1),
+                "avgDetectionsPerFrame": round(avg_dets, 2),
+                "framesWithDetections": frames_with_detections
+            }
+        }
         
-        # Calculate processing statistics
-        detection_rate = (frames_with_detections / total_frames) * 100 if total_frames > 0 else 0
-        avg_detections_per_frame = total_detections / total_frames if total_frames > 0 else 0
-        
-        logger.info(f"✅ Video processing complete!")
-        logger.info(f"   Processed: {frame_count} frames")
-        logger.info(f"   Total detections: {total_detections}")
-        logger.info(f"   Frames with detections: {frames_with_detections} ({detection_rate:.1f}%)")
-        logger.info(f"   Average detections per frame: {avg_detections_per_frame:.2f}")
-        logger.info(f"   Unique classes detected: {len(class_counts)}")
-        
-        # Calculate processing time
-        processing_time = time.time() - start_time
-        
-        # Save to database
-        detection_id = db.create_detection(
-            user_id=current_user['user_id'],
-            filename=file.filename,
-            file_type='video',
-            file_path=final_output_path,
-            file_size=len(contents),
+        # Update DB record with final results
+        db.update_detection_status(
+            detection_id, 'completed',
             total_detections=total_detections,
-            confidence_threshold=confidence,
             processing_time=processing_time,
             metadata={
-                'video_id': video_id,
-                'total_frames': total_frames,
-                'fps': fps,
-                'duration': duration,
-                'resolution': f"{width}x{height}",
-                'detection_rate': detection_rate,
-                'classes_detected': list(class_counts.keys())
+                'video_id': video_id, 'status': 'completed', 'progress': 100,
+                'original_filename': f"original_{video_id}.{file_ext}",
+                'processed_filename': processed_filename,
+                'total_frames': total_frames, 'fps': fps,
+                'duration': round(duration, 2), 'resolution': f"{width}x{height}",
+                'detection_rate': round(detection_rate, 1),
+                'classes_detected': list(class_counts.keys()),
+                'raw_result': _json.dumps(full_result)
             }
         )
         
@@ -2361,86 +2241,90 @@ async def detect_video(
                 detection_id=detection_id,
                 class_name=det['class'],
                 confidence=det['confidence'] / 100.0,
-                bbox_x1=det['bbox']['x1'],
-                bbox_y1=det['bbox']['y1'],
-                bbox_x2=det['bbox']['x2'],
-                bbox_y2=det['bbox']['y2'],
+                bbox_x1=det['bbox']['x1'], bbox_y1=det['bbox']['y1'],
+                bbox_x2=det['bbox']['x2'], bbox_y2=det['bbox']['y2'],
                 frame_number=det.get('frame', 0)
             )
         
-        # Save video metadata
         db.save_video_metadata(
             detection_id=detection_id,
-            total_frames=total_frames,
-            processed_frames=frame_count,
-            fps=fps,
-            duration=duration,
-            resolution=f"{width}x{height}",
-            original_path=original_video_path,
-            annotated_path=final_output_path
+            total_frames=total_frames, processed_frames=frame_count,
+            fps=fps, duration=duration, resolution=f"{width}x{height}",
+            original_path=input_path, annotated_path=final_output_path
         )
         
-        logger.info(f"💾 Detection saved to database (ID: {detection_id})")
+        logger.info(f"✅ [Thread] Video processing complete: {total_detections} detections in {processing_time:.1f}s")
         
-        # Generate analytics automatically after video detection
+    except Exception as e:
+        logger.error(f"❌ [Thread] Video processing failed for {video_id}: {e}", exc_info=True)
         try:
-            analytics_response = await get_analytics(current_user=current_user)
-            logger.info(f"Analytics updated for user {current_user['username']}")
-        except Exception as e:
-            logger.warning(f"Failed to update analytics after video detection: {e}")
+            db.update_detection_status(detection_id, 'failed', error_message=str(e), metadata={
+                'video_id': video_id, 'status': 'failed', 'error': str(e)
+            })
+        except Exception:
+            pass
+    finally:
+        if cap:
+            try:
+                cap.release()
+            except Exception:
+                pass
+        if out:
+            try:
+                out.release()
+            except Exception:
+                pass
+        if temp_raw_path and os.path.exists(temp_raw_path):
+            try:
+                os.remove(temp_raw_path)
+            except Exception:
+                pass
+
+
+@app.get("/api/detections/{detection_id}/status")
+async def get_detection_status(
+    detection_id: int,
+    current_user: dict = Depends(get_current_user)
+):
+    """Poll video processing status. Returns progress 0-100 and status."""
+    try:
+        detection = db.get_detection_by_id(detection_id)
+        if not detection:
+            raise HTTPException(status_code=404, detail="Detection not found")
+        if detection['user_id'] != current_user['user_id'] and current_user['role'] != 'ADMIN':
+            raise HTTPException(status_code=403, detail="Not authorized")
         
-        return JSONResponse({
-            "success": True,
+        meta = detection.get('metadata', {})
+        status = meta.get('status', detection.get('status', 'unknown'))
+        progress = meta.get('progress', 100 if status == 'completed' else 0)
+        
+        response = {
             "detection_id": detection_id,
-            "filename": file.filename,
-            "totalDetections": total_detections,
-            "totalFrames": frame_count,
-            "processedFrames": frame_count,
-            "framesWithDetections": frames_with_detections,
-            "detectionRate": round(detection_rate, 1),
-            "avgDetectionsPerFrame": round(avg_detections_per_frame, 2),
-            "fps": fps,
-            "duration": round(duration, 2),
-            "resolution": f"{width}x{height}",
-            "fileSizeMB": round(file_size_mb, 1),
-            "processingTime": round(processing_time, 2),
-            "detections": all_detections,
-            "summary": summary,
-            "annotatedVideoUrl": f"/processed-video/{processed_filename}",
-            "originalVideoUrl": f"/processed-video/{original_filename}",
-            "originalVideo": f"data:video/mp4;base64,{original_video_base64}" if original_video_base64 else None,
-            "videoId": video_id,
-            "processingStats": {
-                "uniqueClasses": len(class_counts),
-                "detectionRate": round(detection_rate, 1),
-                "avgDetectionsPerFrame": round(avg_detections_per_frame, 2),
-                "framesWithDetections": frames_with_detections
-            }
-        })
+            "status": status,
+            "progress": progress,
+            "filename": detection.get('filename'),
+            "file_type": detection.get('file_type'),
+        }
+        
+        if status == 'completed':
+            response.update({
+                "total_detections": detection.get('total_detections', 0),
+                "processing_time": detection.get('processing_time'),
+                "annotated_video_url": f"/processed-video/{meta.get('processed_filename', '')}",
+                "original_video_url": f"/processed-video/{meta.get('original_filename', '')}",
+                "video_id": meta.get('video_id'),
+            })
+        elif status == 'failed':
+            response["error"] = meta.get('error', 'Processing failed')
+        
+        return response
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Video processing error: {e}")
-        raise HTTPException(status_code=500, detail=f"Video processing failed: {str(e)}")
-    finally:
-        # Cleanup temporary files
-        if temp_input_path and os.path.exists(temp_input_path):
-            try:
-                os.unlink(temp_input_path)
-            except Exception as e:
-                logger.warning(f"Could not cleanup temp input file: {e}")
-        if temp_output_path and os.path.exists(temp_output_path):
-            try:
-                os.unlink(temp_output_path)
-            except Exception as e:
-                logger.warning(f"Could not cleanup temp output file: {e}")
-        # Cleanup temporary AVI file if it still exists
-        if 'temp_raw_path' in locals() and temp_raw_path and os.path.exists(temp_raw_path):
-            try:
-                os.unlink(temp_raw_path)
-            except Exception as e:
-                logger.warning(f"Could not cleanup temp AVI file: {e}")
+        logger.error(f"Error getting detection status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 # ============================================================================
 # ANALYTICS ENDPOINTS
@@ -2455,8 +2339,15 @@ async def get_analytics(
     try:
         user_id = current_user['user_id']
         
-        # Get user's detections from last N days
-        detections = db.get_user_detections(user_id, limit=1000)
+        # Check in-memory cache first (5 min TTL)
+        now_ts = time.time()
+        if user_id in _analytics_cache:
+            cached_data, cached_ts = _analytics_cache[user_id]
+            if now_ts - cached_ts < _ANALYTICS_CACHE_TTL:
+                return cached_data
+        
+        # Get user's detections filtered by days
+        detections = db.get_user_detections(user_id, limit=1000, days=days)
         
         if not detections:
             return {
@@ -2475,161 +2366,115 @@ async def get_analytics(
             }
         
         # Calculate analytics
-        from datetime import datetime, timedelta
-        import json
-        
-        now = datetime.now()
-        week_ago = now - timedelta(days=7)
-        
-        # Basic stats - calculate avg_confidence from detection_results
+        from datetime import datetime as _dt, timedelta
+        import json as _json
+
+        now_dt = _dt.now()
+        week_ago = now_dt - timedelta(days=7)
+
         total_detections = sum(d.get('total_detections', 0) for d in detections)
-        
-        # Calculate average confidence from detection_results
+
+        # ── Efficient single-pass: collect all detection_results in one query per detection
+        # Build class counts, confidence, and trend data simultaneously
         all_confidences = []
+        class_counts: dict = {}
+        trend_data: dict = {}
+
         for detection in detections:
-            detection_id = detection['id']
+            det_id = detection['id']
+            created_raw = detection.get('created_at', '')
+            date_str = created_raw[:10] if created_raw else ''
+
+            # Trend grouping
+            if date_str:
+                if date_str not in trend_data:
+                    trend_data[date_str] = {"detections": 0, "confidences": []}
+                trend_data[date_str]["detections"] += detection.get('total_detections', 0)
+
             try:
-                results = db.get_detection_results(detection_id, user_id)
-                for result in results:
-                    all_confidences.append(result['confidence'] * 100)  # Convert to percentage
+                results = db.get_detection_results(det_id, user_id)
+                if results:
+                    for r in results:
+                        conf = r['confidence'] * 100
+                        all_confidences.append(conf)
+                        if date_str:
+                            trend_data[date_str]["confidences"].append(conf)
+                        cn = r['class_name']
+                        class_counts[cn] = class_counts.get(cn, 0) + 1
+                else:
+                    # Fallback: parse metadata for class info
+                    meta = detection.get('metadata', {})
+                    if isinstance(meta, str):
+                        try:
+                            meta = _json.loads(meta)
+                        except Exception:
+                            meta = {}
+                    for cn in meta.get('classes_detected', []):
+                        class_counts[cn] = class_counts.get(cn, 0) + 1
+                    if not meta.get('classes_detected') and detection.get('total_detections', 0) > 0:
+                        class_counts['plastic'] = class_counts.get('plastic', 0) + detection.get('total_detections', 1)
             except Exception as e:
-                logger.warning(f"Failed to get detection results for confidence calculation: {e}")
-        
+                logger.warning(f"Analytics: failed to get results for detection {det_id}: {e}")
+                if detection.get('total_detections', 0) > 0:
+                    class_counts['plastic'] = class_counts.get('plastic', 0) + detection.get('total_detections', 1)
+
         avg_confidence = sum(all_confidences) / len(all_confidences) if all_confidences else 0
-        
-        # This week count
+
+        # This-week count — safe parse for SQLite timestamps (space or T separator)
+        def _parse_dt(s: str):
+            if not s:
+                return None
+            try:
+                return _dt.fromisoformat(s.replace('Z', '').replace(' ', 'T').split('+')[0])
+            except Exception:
+                return None
+
         this_week = sum(
-            d.get('total_detections', 0) 
-            for d in detections 
-            if datetime.fromisoformat(d['created_at'].replace('Z', '+00:00')) >= week_ago
+            d.get('total_detections', 0)
+            for d in detections
+            if (_parse_dt(d.get('created_at', '')) or _dt.min) >= week_ago
         )
-        
-        # Trend data (group by date)
-        trend_data = {}
-        for detection in detections:
-            date_str = detection['created_at'][:10]  # Get YYYY-MM-DD
-            if date_str not in trend_data:
-                trend_data[date_str] = {"detections": 0, "confidence": []}
-            trend_data[date_str]["detections"] += detection.get('total_detections', 0)
-            if detection.get('avg_confidence'):
-                trend_data[date_str]["confidence"].append(detection['avg_confidence'])
-        
-        # Convert to list format
-        trend_list = []
-        for date_str, data in sorted(trend_data.items()):
-            avg_conf = sum(data["confidence"]) / len(data["confidence"]) if data["confidence"] else 0
-            trend_list.append({
-                "date": date_str,
-                "detections": data["detections"],
-                "confidence": round(avg_conf, 1)
-            })
-        
-        # Class distribution and object counts
-        class_counts = {}
+
+        # Trend list
         colors = [
-            "hsl(203, 77%, 26%)", "hsl(170, 50%, 45%)", "hsl(177, 59%, 41%)", 
+            "hsl(203, 77%, 26%)", "hsl(170, 50%, 45%)", "hsl(177, 59%, 41%)",
             "hsl(160, 84%, 39%)", "hsl(38, 92%, 50%)", "hsl(25, 95%, 53%)",
             "hsl(271, 81%, 56%)", "hsl(348, 83%, 47%)", "hsl(221, 83%, 53%)", "hsl(142, 71%, 45%)"
         ]
-        
-        # Get detection results for class analysis - improved aggregation
-        for detection in detections:
-            detection_id = detection['id']
-            try:
-                results = db.get_detection_results(detection_id, user_id)
-                if results:
-                    # Use actual detection results from database
-                    for result in results:
-                        class_name = result['class_name']
-                        if class_name not in class_counts:
-                            class_counts[class_name] = 0
-                        class_counts[class_name] += 1
-                else:
-                    # Fallback: use detection metadata if no results found
-                    metadata = detection.get('metadata', {})
-                    if isinstance(metadata, str):
-                        try:
-                            metadata = json.loads(metadata)
-                        except:
-                            metadata = {}
-                    
-                    # Try different metadata formats
-                    classes_detected = metadata.get('classes_detected', [])
-                    if not classes_detected:
-                        # Try summary format
-                        summary = metadata.get('summary', [])
-                        if isinstance(summary, list):
-                            for item in summary:
-                                if isinstance(item, dict) and 'class' in item:
-                                    class_name = item['class']
-                                    count = item.get('count', 1)
-                                    if class_name not in class_counts:
-                                        class_counts[class_name] = 0
-                                    class_counts[class_name] += count
-                        else:
-                            # Default fallback - assume some plastic detected
-                            if detection.get('total_detections', 0) > 0:
-                                class_name = "plastic"
-                                if class_name not in class_counts:
-                                    class_counts[class_name] = 0
-                                class_counts[class_name] += detection.get('total_detections', 1)
-                    else:
-                        for class_name in classes_detected:
-                            if class_name not in class_counts:
-                                class_counts[class_name] = 0
-                            class_counts[class_name] += 1
-                            
-            except Exception as e:
-                logger.warning(f"Failed to get detection results for detection {detection_id}: {e}")
-                # Final fallback - use total detections as generic plastic
-                if detection.get('total_detections', 0) > 0:
-                    class_name = "plastic"
-                    if class_name not in class_counts:
-                        class_counts[class_name] = 0
-                    class_counts[class_name] += detection.get('total_detections', 1)
-        
-        # Create class distribution
+        trend_list = []
+        for date_str, data in sorted(trend_data.items()):
+            avg_c = sum(data["confidences"]) / len(data["confidences"]) if data["confidences"] else 0
+            trend_list.append({"date": date_str, "detections": data["detections"], "confidence": round(avg_c, 1)})
+
+        # Class distribution
+        if not class_counts and total_detections > 0:
+            class_counts["plastic"] = total_detections
+
         class_distribution = []
         object_counts = []
-        color_index = 0
-        
-        # Ensure we have at least some data to show
-        if not class_counts and total_detections > 0:
-            # If we have detections but no class data, create a generic entry
-            class_counts["plastic"] = total_detections
-        
-        for class_name, count in sorted(class_counts.items(), key=lambda x: x[1], reverse=True):
-            class_distribution.append({
-                "name": class_name,
-                "value": count,
-                "color": colors[color_index % len(colors)]
-            })
-            object_counts.append({
-                "class": class_name,
-                "count": count
-            })
-            color_index += 1
-        
+        for i, (cn, count) in enumerate(sorted(class_counts.items(), key=lambda x: x[1], reverse=True)):
+            class_distribution.append({"name": cn, "value": count, "color": colors[i % len(colors)]})
+            object_counts.append({"class": cn, "count": count})
+
         analytics_data = {
             "stats": {
                 "totalDetections": total_detections,
                 "avgConfidence": round(avg_confidence, 1),
                 "thisWeek": this_week,
-                "detectionRate": 100,  # Assuming 100% for now
+                "detectionRate": 100,
             },
-            "trendData": trend_list[-30:],  # Last 30 days
+            "trendData": trend_list[-30:],
             "classDistribution": class_distribution,
             "objectCounts": object_counts,
         }
-        
-        # Save analytics to database
-        db.save_analytics_data(user_id, analytics_data)
-        
-        return {
-            "success": True,
-            "analytics": analytics_data
-        }
-        
+
+        result = {"success": True, "analytics": analytics_data}
+
+        # Store in memory cache
+        _analytics_cache[user_id] = (result, time.time())
+
+        return result
+
     except Exception as e:
         logger.error(f"Error getting analytics: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -2638,16 +2483,14 @@ async def get_analytics(
 async def generate_analytics(
     current_user: dict = Depends(get_current_user)
 ):
-    """Generate analytics data after a detection"""
+    """Invalidate analytics cache and return fresh data"""
     try:
-        # This will be called automatically after each detection
-        # to update analytics in real-time
-        analytics_response = await get_analytics(current_user=current_user)
-        return {
-            "success": True,
-            "message": "Analytics generated successfully",
-            "analytics": analytics_response["analytics"]
-        }
+        user_id = current_user['user_id']
+        # Invalidate cache so next GET returns fresh data
+        _analytics_cache.pop(user_id, None)
+        # Return fresh analytics
+        result = await get_analytics(days=30, current_user=current_user)
+        return {"success": True, "message": "Analytics refreshed", "analytics": result.get("analytics")}
     except Exception as e:
         logger.error(f"Error generating analytics: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -2663,12 +2506,36 @@ async def get_user_reports(
     """Get user's generated reports"""
     try:
         user_id = current_user['user_id']
-        reports = db.get_user_reports(user_id)
+        raw_reports = db.get_user_reports(user_id)
         
-        return {
-            "success": True,
-            "reports": reports
-        }
+        # Normalize report fields for frontend
+        reports = []
+        for r in raw_reports:
+            meta = r.get('metadata', {})
+            if isinstance(meta, str):
+                import json as _j
+                try:
+                    meta = _j.loads(meta)
+                except Exception:
+                    meta = {}
+            
+            # Compute approximate size from metadata data length
+            data_size = len(str(meta.get('data', {})))
+            size_kb = max(1, data_size // 1024)
+            size_str = f"{size_kb} KB" if size_kb < 1024 else f"{size_kb // 1024:.1f} MB"
+            
+            reports.append({
+                "id": r['id'],
+                "title": r.get('title', 'Untitled Report'),
+                "report_type": r.get('report_type', 'detection'),
+                "created_at": r.get('created_at', ''),
+                "status": meta.get('status', 'ready'),
+                "size": size_str,
+                "data_range_start": r.get('data_range_start'),
+                "data_range_end": r.get('data_range_end'),
+            })
+        
+        return {"success": True, "reports": reports}
         
     except Exception as e:
         logger.error(f"Error getting reports: {e}")
@@ -2773,11 +2640,20 @@ async def generate_report(
                 
                 avg_confidence = sum(all_confidences) / len(all_confidences) if all_confidences else 0
                 
-                # This week count
+                # This week count — safe parse for SQLite timestamps
+                def _safe_parse(s):
+                    if not s:
+                        return None
+                    try:
+                        from datetime import datetime as _dt2
+                        return _dt2.fromisoformat(s.replace('Z', '').replace(' ', 'T').split('+')[0])
+                    except Exception:
+                        return None
+
                 this_week = sum(
-                    d.get('total_detections', 0) 
-                    for d in detections 
-                    if datetime.fromisoformat(d['created_at'].replace('Z', '+00:00')) >= week_ago
+                    d.get('total_detections', 0)
+                    for d in detections
+                    if (_safe_parse(d.get('created_at', '')) or datetime.min) >= week_ago
                 )
                 
                 # Class distribution with detailed analysis
@@ -3163,19 +3039,91 @@ async def get_user_history(
                     except:
                         metadata = {}
                 
-                # Safely parse date and time
+                # Safely parse date and time — handles both SQLite space format and ISO T format
                 created_at = detection.get('created_at', '')
                 date_str = ''
                 time_str = ''
                 
                 if created_at:
-                    if 'T' in created_at:
-                        parts = created_at.split('T')
+                    # Normalize: replace space with T for consistent splitting
+                    normalized = created_at.replace(' ', 'T')
+                    if 'T' in normalized:
+                        parts = normalized.split('T')
                         date_str = parts[0]
                         time_str = parts[1][:8] if len(parts) > 1 else ''
                     else:
                         date_str = created_at[:10] if len(created_at) >= 10 else created_at
                 
+                # Get video metadata if it's a video
+                video_meta = None
+                if detection.get('file_type') == 'video':
+                    try:
+                        video_meta = db.get_video_metadata(detection['id'])
+                    except Exception:
+                        pass
+
+                # Parse metadata JSON
+                import json as _json2
+                meta = detection.get('metadata', {})
+                if isinstance(meta, str):
+                    try:
+                        meta = _json2.loads(meta)
+                    except Exception:
+                        meta = {}
+
+                # Build the result object (matches DetectionResult interface)
+                result_obj = {
+                    "success": True,
+                    "filename": detection.get('filename', 'Unknown'),
+                    "totalDetections": detection.get('total_detections', 0),
+                    "detections": [
+                        {
+                            "class": r['class_name'],
+                            "confidence": round(r['confidence'] * 100, 1),
+                            "bbox": {"x1": r['bbox_x1'], "y1": r['bbox_y1'], "x2": r['bbox_x2'], "y2": r['bbox_y2']},
+                            "frame": r.get('frame_number', 0)
+                        } for r in detection_results
+                    ],
+                    "summary": [
+                        {
+                            "class": cn,
+                            "count": sum(1 for r in detection_results if r['class_name'] == cn),
+                            "avgConfidence": round(
+                                sum(r['confidence'] * 100 for r in detection_results if r['class_name'] == cn) /
+                                max(1, sum(1 for r in detection_results if r['class_name'] == cn)), 1
+                            )
+                        } for cn in classes
+                    ],
+                    "processingTime": detection.get('processing_time', 0),
+                    "result_id": str(detection['id']),
+                }
+
+                # Add video-specific fields
+                if video_meta:
+                    video_id = meta.get('video_id', '')
+                    processed_fn = meta.get('processed_filename', '')
+                    original_fn = meta.get('original_filename', '')
+                    result_obj.update({
+                        "totalFrames": video_meta.get('total_frames', 0),
+                        "processedFrames": video_meta.get('processed_frames', 0),
+                        "fps": video_meta.get('fps', 0),
+                        "duration": video_meta.get('duration', 0),
+                        "resolution": video_meta.get('resolution', ''),
+                        "framesWithDetections": meta.get('frames_with_detections', 0),
+                        "detectionRate": meta.get('detection_rate', 0),
+                        "avgDetectionsPerFrame": meta.get('avg_detections_per_frame', 0),
+                        "videoId": video_id,
+                        "annotatedVideoUrl": f"/processed-video/{processed_fn}" if processed_fn else None,
+                        "originalVideoUrl": f"/processed-video/{original_fn}" if original_fn else None,
+                    })
+
+                # Add image fields
+                if detection.get('file_type') == 'image':
+                    result_obj.update({
+                        "annotatedImage": detection.get('annotated_image_base64', ''),
+                        "originalImage": detection.get('original_image_base64', ''),
+                    })
+
                 history_item = {
                     "id": str(detection['id']),
                     "filename": detection.get('filename', 'Unknown'),
@@ -3189,33 +3137,8 @@ async def get_user_history(
                     "file_type": detection.get('file_type', 'image'),
                     "total_detections": detection.get('total_detections', 0),
                     "avg_confidence": round(avg_confidence, 1),
-                    "result": {
-                        "success": True,
-                        "filename": detection.get('filename', 'Unknown'),
-                        "totalDetections": detection.get('total_detections', 0),
-                        "detections": [
-                            {
-                                "class": r['class_name'],
-                                "confidence": round(r['confidence'] * 100, 1),
-                                "bbox": {
-                                    "x1": r['bbox_x1'],
-                                    "y1": r['bbox_y1'],
-                                    "x2": r['bbox_x2'],
-                                    "y2": r['bbox_y2']
-                                },
-                                "frame": r.get('frame_number', 0)
-                            } for r in detection_results
-                        ],
-                        "summary": [
-                            {
-                                "class": class_name,
-                                "count": len([r for r in detection_results if r['class_name'] == class_name]),
-                                "avgConfidence": round(sum([r['confidence'] * 100 for r in detection_results if r['class_name'] == class_name]) / len([r for r in detection_results if r['class_name'] == class_name]), 1) if [r for r in detection_results if r['class_name'] == class_name] else 0
-                            } for class_name in classes
-                        ],
-                        "processingTime": detection.get('processing_time', 0),
-                        "result_id": str(detection['id'])
-                    }
+                    "raw_result": _json2.dumps(result_obj),  # For data.service.ts mapHistoryItem
+                    "result": result_obj,
                 }
                 
                 history.append(history_item)

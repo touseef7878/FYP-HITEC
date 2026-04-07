@@ -1,4 +1,4 @@
-﻿"""
+"""
 Database Module
 Handles all database operations for the marine detection system
 OPTIMIZED: Added connection pooling for better performance
@@ -96,17 +96,39 @@ class DatabaseManager:
                     conn.close()
     
     def hash_password(self, password: str) -> str:
-        """Hash password with salt"""
-        salt = secrets.token_hex(16)
-        password_hash = hashlib.sha256((password + salt).encode()).hexdigest()
-        return f"{salt}:{password_hash}"
-    
-    def verify_password(self, password: str, password_hash: str) -> bool:
-        """Verify password against hash"""
+        """Hash password using bcrypt (secure, slow by design)"""
         try:
-            salt, hash_value = password_hash.split(':')
-            return hashlib.sha256((password + salt).encode()).hexdigest() == hash_value
-        except:
+            import bcrypt
+            return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        except ImportError:
+            # Fallback: pbkdf2 if bcrypt not installed (still better than sha256)
+            import hashlib, secrets
+            salt = secrets.token_hex(16)
+            dk = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 260000)
+            return f"pbkdf2:{salt}:{dk.hex()}"
+
+    def verify_password(self, password: str, password_hash: str) -> bool:
+        """Verify password against bcrypt or pbkdf2 hash"""
+        try:
+            if password_hash.startswith('$2b$') or password_hash.startswith('$2a$'):
+                import bcrypt
+                return bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8'))
+            elif password_hash.startswith('pbkdf2:'):
+                import hashlib
+                _, salt, stored_hash = password_hash.split(':', 2)
+                dk = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 260000)
+                return dk.hex() == stored_hash
+            else:
+                # Legacy sha256 format — accept but log warning
+                logger.warning("Legacy SHA-256 password hash detected. User should reset password.")
+                parts = password_hash.split(':')
+                if len(parts) == 2:
+                    salt, hash_value = parts
+                    import hashlib
+                    return hashlib.sha256((password + salt).encode()).hexdigest() == hash_value
+                return False
+        except Exception as e:
+            logger.error(f"Password verification error: {e}")
             return False
     
     # ==================== USER MANAGEMENT ====================
@@ -208,74 +230,7 @@ class DatabaseManager:
             logger.error(f"Get user failed: {e}")
             return None
     
-    def get_all_users(self, admin_user_id: int) -> List[Dict]:
-        """Get all users (admin only)"""
-        try:
-            # Verify admin role
-            admin = self.get_user_by_id(admin_user_id)
-            if not admin or admin['role'] != 'ADMIN':
-                return []
-            
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT id, username, email, role, created_at, last_login, is_active
-                    FROM users ORDER BY created_at DESC
-                """)
-                
-                users = []
-                for row in cursor.fetchall():
-                    users.append({
-                        'id': row['id'],
-                        'username': row['username'],
-                        'email': row['email'],
-                        'role': row['role'],
-                        'created_at': row['created_at'],
-                        'last_login': row['last_login'],
-                        'is_active': bool(row['is_active'])
-                    })
-                
-                return users
-                
-        except Exception as e:
-            logger.error(f"Get all users failed: {e}")
-            return []
-    
-    def update_user_profile(self, user_id: int, profile_data: Dict) -> bool:
-        """Update user profile data"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    UPDATE users SET profile_data = ? WHERE id = ?
-                """, (json.dumps(profile_data), user_id))
-                
-                conn.commit()
-                return cursor.rowcount > 0
-                
-        except Exception as e:
-            logger.error(f"Update profile failed: {e}")
-            return False
-    
-    def deactivate_user(self, admin_user_id: int, target_user_id: int) -> bool:
-        """Deactivate user (admin only)"""
-        try:
-            # Verify admin role
-            admin = self.get_user_by_id(admin_user_id)
-            if not admin or admin['role'] != 'ADMIN':
-                return False
-            
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    UPDATE users SET is_active = 0 WHERE id = ? AND id != ?
-                """, (target_user_id, admin_user_id))  # Prevent admin from deactivating themselves
-                
-                conn.commit()
-                return cursor.rowcount > 0
-                
-        except Exception as e:
-            logger.error(f"Deactivate user failed: {e}")
+    # NOTE: get_all_users, update_user_profile, deactivate_user defined later in file with correct signatures
             return False
     
     # ==================== DETECTION MANAGEMENT ====================
@@ -1136,53 +1091,7 @@ class DatabaseManager:
             logger.error(f"Cleanup old logs failed: {e}")
             return 0
     
-    def get_all_users(self) -> List[Dict]:
-        """Get all users (admin only)"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                cursor.execute("""
-                    SELECT id, username, email, role, created_at, last_login, is_active
-                    FROM users
-                    ORDER BY created_at DESC
-                """)
-                
-                users = []
-                for row in cursor.fetchall():
-                    users.append(dict(row))
-                
-                return users
-                
-        except Exception as e:
-            logger.error(f"Get all users failed: {e}")
-            return []
-    
-    def deactivate_user(self, user_id: int) -> bool:
-        """Deactivate a user account"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                cursor.execute("""
-                    UPDATE users SET is_active = 0 WHERE id = ?
-                """, (user_id,))
-                
-                success = cursor.rowcount > 0
-                conn.commit()
-                
-                if success:
-                    # Also revoke all sessions
-                    cursor.execute("""
-                        UPDATE sessions SET is_active = 0 WHERE user_id = ?
-                    """, (user_id,))
-                    conn.commit()
-                
-                return success
-                
-        except Exception as e:
-            logger.error(f"Deactivate user failed: {e}")
-            return False
+    # get_all_users, deactivate_user defined later with correct signatures
     
     def get_user_by_username(self, username: str) -> Optional[Dict]:
         """Get user by username"""

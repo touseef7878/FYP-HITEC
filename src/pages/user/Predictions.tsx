@@ -173,18 +173,14 @@ export default function PredictionsPage() {
 
   // Fetch initial data on component mount
   useEffect(() => {
-    loadAvailableRegions();
-    // Load status for all regions
-    regions.forEach(region => {
-      loadRegionStatus(region.id);
-    });
-    
-    // Load region analyses with a small delay to ensure status is loaded first
-    setTimeout(() => {
-      regions.forEach(region => {
-        loadRegionAnalysis(region.id);
-      });
-    }, 1000);
+    const init = async () => {
+      await loadAvailableRegions();
+      // Load all region statuses in parallel
+      await Promise.all(regions.map(region => loadRegionStatus(region.id)));
+      // Now statuses are loaded — analyses can safely use them
+      await Promise.all(regions.map(region => loadRegionAnalysis(region.id)));
+    };
+    init();
   }, []);
 
   // Only fetch predictions manually - no automatic fetching

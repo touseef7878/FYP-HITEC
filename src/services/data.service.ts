@@ -117,8 +117,8 @@ const CLASS_COLORS = [
 
 class DataService {
   private static instance: DataService;
-  private useDatabase: boolean = true; // Flag to enable/disable database usage
-  private abortControllers: Map<string, AbortController> = new Map(); // OPTIMIZED: Request cancellation
+  private useDatabase: boolean = true;
+  private abortControllers: Map<string, AbortController> = new Map();
 
   public static getInstance(): DataService {
     if (!DataService.instance) {
@@ -127,9 +127,6 @@ class DataService {
     return DataService.instance;
   }
   
-  /**
-   * OPTIMIZED: Cancel ongoing request
-   */
   private cancelRequest(key: string): void {
     const controller = this.abortControllers.get(key);
     if (controller) {
@@ -138,14 +135,56 @@ class DataService {
     }
   }
   
-  /**
-   * OPTIMIZED: Create new abort controller for request
-   */
   private createAbortController(key: string): AbortController {
-    this.cancelRequest(key); // Cancel previous request
+    this.cancelRequest(key);
     const controller = new AbortController();
     this.abortControllers.set(key, controller);
     return controller;
+  }
+
+  /** Map a raw DB history item to HistoryItem — single source of truth */
+  private mapHistoryItem(item: any): HistoryItem {
+    let parsedResult: any = {};
+    try {
+      parsedResult = item.raw_result ? JSON.parse(item.raw_result) : {};
+    } catch { parsedResult = {}; }
+
+    const result: DetectionResult = {
+      ...parsedResult,
+      filename: item.filename,
+      totalDetections: item.total_detections || 0,
+      detections: parsedResult.detections || [],
+      summary: parsedResult.summary || [],
+      annotatedVideoUrl: parsedResult.annotatedVideoUrl || item.annotated_video_url,
+      videoId: parsedResult.videoId || item.video_id,
+      totalFrames: parsedResult.totalFrames || item.total_frames,
+      processedFrames: parsedResult.processedFrames,
+      framesWithDetections: parsedResult.framesWithDetections,
+      detectionRate: parsedResult.detectionRate,
+      avgDetectionsPerFrame: parsedResult.avgDetectionsPerFrame,
+      fps: parsedResult.fps,
+      duration: parsedResult.duration,
+      resolution: parsedResult.resolution,
+      fileSizeMB: parsedResult.fileSizeMB,
+      success: true,
+    };
+
+    return {
+      id: item.id.toString(),
+      detectionId: item.id,
+      filename: item.filename,
+      type: item.file_type as "image" | "video",
+      date: new Date(item.upload_date).toISOString().split('T')[0],
+      time: new Date(item.upload_date).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }),
+      objects: item.total_detections || 0,
+      confidence: Math.round(item.avg_confidence || 0),
+      classes: item.classes || [],
+      result,
+      upload_date: item.upload_date,
+      file_type: item.file_type,
+      total_detections: item.total_detections,
+      avg_confidence: item.avg_confidence,
+    };
   }
 
   /**
@@ -202,56 +241,7 @@ class DataService {
           if (response.ok) {
             const data = await response.json();
             if (data.success) {
-              // Update cache in background
-              const freshHistory = data.history.map((item: any) => {
-                let parsedResult: any = {};
-                try {
-                  parsedResult = item.raw_result ? JSON.parse(item.raw_result) : {};
-                } catch (e) {
-                  parsedResult = {};
-                }
-                
-                const result = {
-                  ...parsedResult,
-                  filename: item.filename,
-                  totalDetections: item.total_detections || 0,
-                  annotatedVideoUrl: parsedResult.annotatedVideoUrl || item.annotated_video_url,
-                  videoId: parsedResult.videoId || item.video_id,
-                  totalFrames: parsedResult.totalFrames || item.total_frames,
-                  processedFrames: parsedResult.processedFrames,
-                  framesWithDetections: parsedResult.framesWithDetections,
-                  detectionRate: parsedResult.detectionRate,
-                  avgDetectionsPerFrame: parsedResult.avgDetectionsPerFrame,
-                  fps: parsedResult.fps,
-                  duration: parsedResult.duration,
-                  resolution: parsedResult.resolution,
-                  fileSizeMB: parsedResult.fileSizeMB,
-                  detections: parsedResult.detections || [],
-                  summary: parsedResult.summary || [],
-                  success: true
-                };
-                
-                return {
-                  id: item.id.toString(),
-                  detectionId: item.id,
-                  filename: item.filename,
-                  type: item.file_type as "image" | "video",
-                  date: new Date(item.upload_date).toISOString().split('T')[0],
-                  time: new Date(item.upload_date).toLocaleTimeString("en-US", { 
-                    hour: "2-digit", 
-                    minute: "2-digit", 
-                    hour12: false 
-                  }),
-                  objects: item.total_detections || 0,
-                  confidence: Math.round(item.avg_confidence || 0),
-                  classes: item.classes || [],
-                  result: result,
-                  upload_date: item.upload_date,
-                  file_type: item.file_type,
-                  total_detections: item.total_detections,
-                  avg_confidence: item.avg_confidence
-                };
-              });
+              const freshHistory = data.history.map((item: any) => this.mapHistoryItem(item));
               localStorage.setItem('detectionHistory', JSON.stringify(freshHistory.slice(0, 50)));
             }
           }
@@ -291,58 +281,7 @@ class DataService {
           if (response.ok) {
             const data = await response.json();
             if (data.success) {
-              // Convert database format to frontend format
-              const freshHistory = data.history.map((item: any) => {
-                let parsedResult: any = {};
-                try {
-                  parsedResult = item.raw_result ? JSON.parse(item.raw_result) : {};
-                } catch (e) {
-                  parsedResult = {};
-                }
-                
-                const result = {
-                  ...parsedResult,
-                  filename: item.filename,
-                  totalDetections: item.total_detections || 0,
-                  annotatedVideoUrl: parsedResult.annotatedVideoUrl || item.annotated_video_url,
-                  videoId: parsedResult.videoId || item.video_id,
-                  totalFrames: parsedResult.totalFrames || item.total_frames,
-                  processedFrames: parsedResult.processedFrames,
-                  framesWithDetections: parsedResult.framesWithDetections,
-                  detectionRate: parsedResult.detectionRate,
-                  avgDetectionsPerFrame: parsedResult.avgDetectionsPerFrame,
-                  fps: parsedResult.fps,
-                  duration: parsedResult.duration,
-                  resolution: parsedResult.resolution,
-                  fileSizeMB: parsedResult.fileSizeMB,
-                  detections: parsedResult.detections || [],
-                  summary: parsedResult.summary || [],
-                  success: true
-                };
-                
-                return {
-                  id: item.id.toString(),
-                  detectionId: item.id,
-                  filename: item.filename,
-                  type: item.file_type as "image" | "video",
-                  date: new Date(item.upload_date).toISOString().split('T')[0],
-                  time: new Date(item.upload_date).toLocaleTimeString("en-US", { 
-                    hour: "2-digit", 
-                    minute: "2-digit", 
-                    hour12: false 
-                  }),
-                  objects: item.total_detections || 0,
-                  confidence: Math.round(item.avg_confidence || 0),
-                  classes: item.classes || [],
-                  result: result,
-                  upload_date: item.upload_date,
-                  file_type: item.file_type,
-                  total_detections: item.total_detections,
-                  avg_confidence: item.avg_confidence
-                };
-              });
-              
-              // Update localStorage with fresh data for next time
+              const freshHistory = data.history.map((item: any) => this.mapHistoryItem(item));
               localStorage.setItem('detectionHistory', JSON.stringify(freshHistory.slice(0, 50)));
               return freshHistory;
             }

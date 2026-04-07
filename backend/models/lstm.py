@@ -369,6 +369,11 @@ class EnvironmentalLSTM:
         # Scale features
         features_scaled = self.feature_scaler.transform(recent_data.values)
         
+        # Determine which feature index corresponds to pollution_level (for autoregressive update)
+        feature_names = self.config['feature_names']
+        # pollution_level is the target, not in feature_names — we update the most correlated feature (aqi)
+        aqi_idx = feature_names.index('aqi') if 'aqi' in feature_names else 0
+        
         # Generate predictions
         predictions = []
         current_sequence = features_scaled.copy()
@@ -382,9 +387,10 @@ class EnvironmentalLSTM:
             pred_original = self.target_scaler.inverse_transform([[pred_scaled]])[0, 0]
             predictions.append(float(pred_original))
             
-            # Update sequence for next prediction
+            # Update sequence: copy last row, update the aqi feature with predicted value
+            # This is correct autoregressive update — don't shift the entire feature vector
             next_features = current_sequence[-1].copy()
-            next_features = np.append(next_features[1:], pred_scaled)
+            next_features[aqi_idx] = pred_scaled  # Update correlated feature, not shift array
             current_sequence = np.vstack([current_sequence, next_features])
         
         # Generate prediction dates

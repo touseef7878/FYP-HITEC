@@ -52,12 +52,28 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           setToken(storedToken);
           setUser(JSON.parse(storedUser));
           
-          // Verify token is still valid
-          await refreshUser();
+          // Verify token is still valid against the server
+          try {
+            const response = await fetch(`${API_URL}/api/auth/me`, {
+              headers: { 'Authorization': `Bearer ${storedToken}` },
+            });
+            if (response.ok) {
+              const userData = await response.json();
+              setUser(userData);
+              localStorage.setItem('auth_user', JSON.stringify(userData));
+            } else {
+              // Token invalid — clear storage
+              localStorage.removeItem('auth_token');
+              localStorage.removeItem('auth_user');
+              setToken(null);
+              setUser(null);
+            }
+          } catch {
+            // Network error — keep cached user, don't force logout
+          }
         }
       } catch (error) {
         logger.error('Auth initialization failed:', error);
-        // Clear invalid data
         localStorage.removeItem('auth_token');
         localStorage.removeItem('auth_user');
       } finally {
@@ -66,7 +82,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
 
     initAuth();
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // intentionally empty — runs once on mount only
 
   const login = async (username: string, password: string): Promise<boolean> => {
     try {

@@ -1,505 +1,408 @@
+/**
+ * PDF Report Generator
+ * Uses real data from the backend API report object.
+ * Falls back to localStorage analytics for detection stats.
+ */
+
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import ENV from "@/config/env";
 
-// Get real data from localStorage or return empty defaults
-function getDetectionStats() {
+const API_URL = ENV.API_URL;
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function getLocalAnalytics() {
   try {
-    const analyticsData = localStorage.getItem('analyticsData');
-    if (analyticsData) {
-      const data = JSON.parse(analyticsData);
-      return data.stats || {
-        totalDetections: 0,
-        avgConfidence: 0,
-        thisWeek: 0,
-        detectionRate: 0,
-      };
-    }
-  } catch (error) {
-    console.error('Error loading analytics data:', error);
+    const raw = localStorage.getItem("analyticsData");
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
   }
-  
-  return {
-    totalDetections: 0,
-    avgConfidence: 0,
-    thisWeek: 0,
-    detectionRate: 0,
-  };
 }
 
-function getClassDistribution() {
+function getLocalHistory() {
   try {
-    const analyticsData = localStorage.getItem('analyticsData');
-    if (analyticsData) {
-      const data = JSON.parse(analyticsData);
-      return data.classDistribution || [];
-    }
-  } catch (error) {
-    console.error('Error loading class distribution:', error);
-  }
-  
-  return [];
-}
-
-function getWeeklyTrend() {
-  try {
-    const analyticsData = localStorage.getItem('analyticsData');
-    if (analyticsData) {
-      const data = JSON.parse(analyticsData);
-      return data.trendData || [];
-    }
-  } catch (error) {
-    console.error('Error loading trend data:', error);
-  }
-  
-  return [];
-}
-
-function getDetectionHistory() {
-  try {
-    const history = localStorage.getItem('detectionHistory');
-    return history ? JSON.parse(history) : [];
-  } catch (error) {
-    console.error('Error loading detection history:', error);
+    const raw = localStorage.getItem("detectionHistory");
+    return raw ? JSON.parse(raw) : [];
+  } catch {
     return [];
   }
 }
 
-function getPollutionHotspots() {
-  try {
-    const hotspots = localStorage.getItem('pollutionHotspots');
-    return hotspots ? JSON.parse(hotspots) : [];
-  } catch (error) {
-    console.error('Error loading hotspots:', error);
-    return [];
-  }
-}
+// ── Core PDF builder ──────────────────────────────────────────────────────────
 
-// Get LSTM prediction data (mock for now - would come from PredictionsPage)
-function getLSTMPredictions() {
-  try {
-    const predictions = localStorage.getItem('lstmPredictions');
-    if (predictions) {
-      return JSON.parse(predictions);
-    }
-  } catch (error) {
-    console.error('Error loading LSTM predictions:', error);
-  }
-  
-  // Return mock LSTM data structure
-  return {
-    regions: [
-      {
-        name: "Pacific Ocean",
-        currentLevel: 65.2,
-        predictedLevel: 72.8,
-        trendChange: 11.6,
-        riskLevel: "High",
-        confidence: 87.3,
-        predictions: [
-          { date: "2024-02-01", level: 65.2, confidence: 89 },
-          { date: "2024-02-15", level: 68.1, confidence: 86 },
-          { date: "2024-03-01", level: 70.5, confidence: 84 },
-          { date: "2024-03-15", level: 72.8, confidence: 82 }
-        ]
-      },
-      {
-        name: "Atlantic Ocean",
-        currentLevel: 42.7,
-        predictedLevel: 45.3,
-        trendChange: 6.1,
-        riskLevel: "Moderate",
-        confidence: 91.2,
-        predictions: [
-          { date: "2024-02-01", level: 42.7, confidence: 92 },
-          { date: "2024-02-15", level: 43.8, confidence: 91 },
-          { date: "2024-03-01", level: 44.6, confidence: 90 },
-          { date: "2024-03-15", level: 45.3, confidence: 89 }
-        ]
-      }
-    ],
-    modelInfo: {
-      version: "v2.1.0",
-      accuracy: 89.4,
-      trainingData: "2 years",
-      lastTrained: "2024-01-15"
-    }
-  };
-}
-
-function createPDFDocument(reportName: string): jsPDF {
+function buildPDF(reportTitle: string, reportData: any): jsPDF {
   const doc = new jsPDF();
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
-  const currentDate = new Date().toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+  const pw = doc.internal.pageSize.getWidth();
+  const ph = doc.internal.pageSize.getHeight();
+  const today = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
 
-  const detectionStats = getDetectionStats();
-  const classDistribution = getClassDistribution();
-  const weeklyTrend = getWeeklyTrend();
-  const detectionHistory = getDetectionHistory();
-  const hotspots = getPollutionHotspots();
-  const lstmData = getLSTMPredictions();
+  // Pull data from backend report or fall back to localStorage
+  const detAnalytics = reportData?.detection_analytics;
+  const predAnalytics = reportData?.prediction_analytics;
+  const recommendations: any[] = reportData?.recommendations || [];
+  const execSummary: string = reportData?.executive_summary || "";
+  const reportType: string = reportData?.report_type || "detection";
 
-  let yPos = 20;
+  // Fallback to localStorage analytics for detection stats
+  const localAnalytics = getLocalAnalytics();
+  const localHistory = getLocalHistory();
 
-  // ===== HEADER =====
+  const detStats = detAnalytics?.summary || localAnalytics?.stats || {
+    total_detections: localAnalytics?.stats?.totalDetections || 0,
+    avg_confidence: localAnalytics?.stats?.avgConfidence || 0,
+    detections_this_week: localAnalytics?.stats?.thisWeek || 0,
+    total_files_processed: localHistory.length,
+  };
+
+  const classAnalysis: any[] = detAnalytics?.class_analysis ||
+    (localAnalytics?.classDistribution || []).map((c: any) => ({
+      class_name: c.name,
+      total_count: c.value,
+      percentage: detStats.total_detections > 0
+        ? ((c.value / detStats.total_detections) * 100).toFixed(1)
+        : "0",
+      avg_confidence: 0,
+    }));
+
+  const regionalStats: any[] = predAnalytics?.regional_analysis || [];
+  const predSummary = predAnalytics?.summary || {};
+  const riskAssessment = predAnalytics?.risk_assessment || {};
+
+  let y = 20;
+
+  // ── Header ──────────────────────────────────────────────────────────────────
   doc.setFillColor(20, 78, 106);
-  doc.rect(0, 0, pageWidth, 50, "F");
-  
+  doc.rect(0, 0, pw, 50, "F");
   doc.setTextColor(255, 255, 255);
-  doc.setFontSize(28);
+  doc.setFontSize(22);
   doc.setFont("helvetica", "bold");
-  doc.text("MARINE PLASTIC DETECTION", 14, 25);
-  
-  doc.setFontSize(16);
+  doc.text("MARINE PLASTIC DETECTION", 14, 22);
+  doc.setFontSize(13);
   doc.setFont("helvetica", "normal");
-  doc.text("Comprehensive Analysis Report", 14, 35);
-  
-  doc.setFontSize(10);
-  doc.text(currentDate, pageWidth - 14, 20, { align: "right" });
-  doc.text(reportName, pageWidth - 14, 30, { align: "right" });
-  doc.text("OceanGuard AI Platform", pageWidth - 14, 40, { align: "right" });
+  doc.text("Comprehensive Analysis Report", 14, 33);
+  doc.setFontSize(9);
+  doc.text(today, pw - 14, 18, { align: "right" });
+  doc.text(reportTitle, pw - 14, 28, { align: "right" });
+  doc.text("OceanGuard AI Platform", pw - 14, 38, { align: "right" });
 
-  yPos = 65;
+  y = 62;
 
-  // ===== EXECUTIVE SUMMARY =====
-  doc.setTextColor(0, 0, 0);
-  doc.setFontSize(18);
-  doc.setFont("helvetica", "bold");
+  // ── Executive Summary ────────────────────────────────────────────────────────
   doc.setTextColor(20, 78, 106);
-  doc.text("EXECUTIVE SUMMARY", 14, yPos);
-  
-  yPos += 12;
-  doc.setFontSize(11);
+  doc.setFontSize(15);
+  doc.setFont("helvetica", "bold");
+  doc.text("EXECUTIVE SUMMARY", 14, y);
+  y += 8;
+
+  const summaryText = execSummary ||
+    (detStats.total_detections === 0
+      ? "No detection data available yet. Perform detections to populate this report."
+      : `Analysis of ${detStats.total_detections} marine debris detections across ${detStats.total_files_processed} sessions with ${Number(detStats.avg_confidence).toFixed(1)}% average confidence.`);
+
+  doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
   doc.setTextColor(60, 60, 60);
-  
-  const summaryText = detectionStats.totalDetections === 0 
-    ? "This report presents the current state of marine plastic detection analysis. No detection data is currently available. The system is ready to process images and videos for plastic waste identification and environmental impact assessment."
-    : `This comprehensive report analyzes marine plastic pollution through AI-powered detection and predictive modeling. Our analysis covers ${detectionStats.totalDetections.toLocaleString()} detected objects across ${detectionHistory.length} detection sessions, with an average confidence of ${detectionStats.avgConfidence.toFixed(1)}%. The report includes both real-time detection results and LSTM-based pollution forecasting for strategic environmental planning.`;
+  const splitSummary = doc.splitTextToSize(summaryText, pw - 28);
+  doc.text(splitSummary, 14, y);
+  y += splitSummary.length * 5 + 12;
 
-  const splitText = doc.splitTextToSize(summaryText, pageWidth - 28);
-  doc.text(splitText, 14, yPos);
-  yPos += splitText.length * 5 + 10;
-
-  // ===== DETECTION ANALYSIS SECTION =====
-  doc.setFontSize(16);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(20, 78, 106);
-  doc.text("1. DETECTION ANALYSIS", 14, yPos);
-  yPos += 10;
-
-  // Key Statistics
-  doc.setFontSize(14);
-  doc.text("1.1 Key Performance Metrics", 14, yPos);
-  yPos += 8;
-
-  const statsData = [
-    ["Total Objects Detected", detectionStats.totalDetections.toLocaleString()],
-    ["Average Detection Confidence", `${detectionStats.avgConfidence.toFixed(1)}%`],
-    ["Detections This Week", detectionStats.thisWeek.toString()],
-    ["System Detection Rate", `${detectionStats.detectionRate.toFixed(1)}%`],
-    ["Total Detection Sessions", detectionHistory.length.toString()],
-    ["Active Pollution Hotspots", hotspots.length.toString()]
-  ];
-
-  autoTable(doc, {
-    startY: yPos,
-    head: [["Metric", "Value"]],
-    body: statsData,
-    theme: "striped",
-    headStyles: { 
-      fillColor: [20, 78, 106],
-      textColor: [255, 255, 255],
-      fontSize: 11,
-      fontStyle: 'bold'
-    },
-    bodyStyles: { fontSize: 10 },
-    margin: { left: 14, right: 14 },
-    tableWidth: 'auto',
-  });
-
-  yPos = (doc as any).lastAutoTable.finalY + 15;
-
-  // Class Distribution Analysis
-  if (classDistribution.length > 0) {
-    if (yPos > 220) {
-      doc.addPage();
-      yPos = 20;
-    }
-
+  // ── Section 1: YOLO Detection Analysis ──────────────────────────────────────
+  if (reportType === "detection" || reportType === "both" || reportType === "custom") {
+    doc.setTextColor(20, 78, 106);
     doc.setFontSize(14);
     doc.setFont("helvetica", "bold");
-    doc.setTextColor(20, 78, 106);
-    doc.text("1.2 Plastic Waste Classification", 14, yPos);
-    yPos += 8;
+    doc.text("1. YOLO DETECTION ANALYSIS", 14, y);
+    y += 8;
 
-    const classData = classDistribution.map((item) => [
-      item.name,
-      item.value.toString(),
-      `${((item.value / detectionStats.totalDetections) * 100).toFixed(1)}%`,
-    ]);
+    // Key metrics table
+    doc.setFontSize(12);
+    doc.text("1.1 Key Performance Metrics", 14, y);
+    y += 6;
 
     autoTable(doc, {
-      startY: yPos,
-      head: [["Plastic Type", "Count", "Percentage"]],
-      body: classData,
+      startY: y,
+      head: [["Metric", "Value"]],
+      body: [
+        ["Total Objects Detected", String(detStats.total_detections || 0)],
+        ["Average Detection Confidence", `${Number(detStats.avg_confidence || 0).toFixed(1)}%`],
+        ["Detections This Week", String(detStats.detections_this_week || 0)],
+        ["Total Files Processed", String(detStats.total_files_processed || localHistory.length)],
+        ["Avg Processing Time (s)", String(Number(detStats.avg_processing_time || 0).toFixed(2))],
+        ["Pollution Severity", detAnalytics?.environmental_impact?.pollution_severity || "N/A"],
+        ["Confidence Reliability", detAnalytics?.environmental_impact?.confidence_reliability || "N/A"],
+      ],
       theme: "striped",
-      headStyles: { 
-        fillColor: [20, 78, 106],
-        textColor: [255, 255, 255],
-        fontSize: 11,
-        fontStyle: 'bold'
-      },
-      bodyStyles: { fontSize: 10 },
+      headStyles: { fillColor: [20, 78, 106], textColor: [255, 255, 255], fontSize: 10, fontStyle: "bold" },
+      bodyStyles: { fontSize: 9 },
       margin: { left: 14, right: 14 },
     });
+    y = (doc as any).lastAutoTable.finalY + 12;
 
-    yPos = (doc as any).lastAutoTable.finalY + 15;
+    // Class distribution
+    if (classAnalysis.length > 0) {
+      if (y > 220) { doc.addPage(); y = 20; }
+      doc.setFontSize(12);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(20, 78, 106);
+      doc.text("1.2 Plastic Waste Classification", 14, y);
+      y += 6;
 
-    // Visual Distribution Chart
-    if (yPos > 180) {
-      doc.addPage();
-      yPos = 20;
+      autoTable(doc, {
+        startY: y,
+        head: [["Plastic Type", "Count", "% of Total", "Avg Confidence"]],
+        body: classAnalysis.map((c: any) => [
+          c.class_name,
+          String(c.total_count),
+          `${c.percentage}%`,
+          `${Number(c.avg_confidence || 0).toFixed(1)}%`,
+        ]),
+        theme: "striped",
+        headStyles: { fillColor: [20, 78, 106], textColor: [255, 255, 255], fontSize: 10, fontStyle: "bold" },
+        bodyStyles: { fontSize: 9 },
+        margin: { left: 14, right: 14 },
+      });
+      y = (doc as any).lastAutoTable.finalY + 12;
+
+      // Bar chart visualization
+      if (y > 200) { doc.addPage(); y = 20; }
+      doc.setFontSize(12);
+      doc.text("1.3 Distribution Visualization", 14, y);
+      y += 8;
+      const maxCount = Math.max(...classAnalysis.map((c: any) => c.total_count || 0), 1);
+      classAnalysis.slice(0, 8).forEach((item: any, i: number) => {
+        const bw = ((item.total_count || 0) / maxCount) * 110;
+        doc.setFillColor(240, 240, 240);
+        doc.rect(70, y + i * 14, 110, 10, "F");
+        doc.setFillColor(46, 160, 134);
+        doc.rect(70, y + i * 14, bw, 10, "F");
+        doc.setFontSize(8);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(60, 60, 60);
+        doc.text(item.class_name, 14, y + i * 14 + 7);
+        doc.text(String(item.total_count), 73 + bw, y + i * 14 + 7);
+      });
+      y += classAnalysis.slice(0, 8).length * 14 + 12;
     }
 
+    // Recent detections timeline
+    const timeline: any[] = detAnalytics?.detection_timeline || localHistory.slice(0, 10);
+    if (timeline.length > 0) {
+      if (y > 200) { doc.addPage(); y = 20; }
+      doc.setFontSize(12);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(20, 78, 106);
+      doc.text("1.4 Recent Detection Timeline", 14, y);
+      y += 6;
+
+      autoTable(doc, {
+        startY: y,
+        head: [["File / ID", "Date", "Objects Found", "Processing Time (s)"]],
+        body: timeline.map((d: any) => [
+          d.filename || String(d.id || ""),
+          (d.date || d.upload_date || "").toString().slice(0, 10),
+          String(d.objects_found ?? d.objects ?? 0),
+          String(Number(d.processing_time || 0).toFixed(2)),
+        ]),
+        theme: "striped",
+        headStyles: { fillColor: [20, 78, 106], textColor: [255, 255, 255], fontSize: 10, fontStyle: "bold" },
+        bodyStyles: { fontSize: 8 },
+        margin: { left: 14, right: 14 },
+      });
+      y = (doc as any).lastAutoTable.finalY + 12;
+    }
+  }
+
+  // ── Section 2: LSTM Prediction Analysis ─────────────────────────────────────
+  if (reportType === "prediction" || reportType === "both" || reportType === "custom") {
+    if (y > 200) { doc.addPage(); y = 20; }
+    doc.setTextColor(20, 78, 106);
     doc.setFontSize(14);
-    doc.text("1.3 Distribution Visualization", 14, yPos);
-    yPos += 10;
+    doc.setFont("helvetica", "bold");
+    doc.text("2. LSTM POLLUTION PREDICTION ANALYSIS", 14, y);
+    y += 8;
 
-    const maxCount = Math.max(...classDistribution.map((c) => c.value || 0));
-    const barHeight = 12;
-    const maxBarWidth = 120;
+    // Prediction summary
+    doc.setFontSize(12);
+    doc.text("2.1 Prediction Summary", 14, y);
+    y += 6;
 
-    classDistribution.forEach((item, index) => {
-      const barWidth = maxCount > 0 ? ((item.value || 0) / maxCount) * maxBarWidth : 0;
-      
-      // Bar background
-      doc.setFillColor(240, 240, 240);
-      doc.rect(70, yPos + index * 16, maxBarWidth, barHeight, "F");
-      
-      // Bar
-      doc.setFillColor(46, 160, 134);
-      doc.rect(70, yPos + index * 16, barWidth, barHeight, "F");
-      
-      // Label
-      doc.setFontSize(9);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(60, 60, 60);
-      doc.text(item.name, 14, yPos + index * 16 + 8);
-      
-      // Value
-      doc.text((item.value || 0).toString(), 72 + barWidth + 3, yPos + index * 16 + 8);
+    autoTable(doc, {
+      startY: y,
+      head: [["Metric", "Value"]],
+      body: [
+        ["Total Predictions Generated", String(predSummary.total_predictions || 0)],
+        ["Ocean Regions Analyzed", String(predSummary.regions_analyzed || 0)],
+        ["Overall Avg Pollution Level", `${Number(predSummary.overall_avg_pollution || 0).toFixed(1)}`],
+        ["Analysis Period", predSummary.date_range || "N/A"],
+        ["Model Version", predSummary.model_version || "N/A"],
+        ["Prediction Reliability", predSummary.prediction_reliability || "N/A"],
+        ["Overall Ocean Health", riskAssessment.overall_ocean_health || "N/A"],
+        ["Highest Risk Region", riskAssessment.highest_risk_region || "N/A"],
+      ],
+      theme: "striped",
+      headStyles: { fillColor: [20, 78, 106], textColor: [255, 255, 255], fontSize: 10, fontStyle: "bold" },
+      bodyStyles: { fontSize: 9 },
+      margin: { left: 14, right: 14 },
     });
+    y = (doc as any).lastAutoTable.finalY + 12;
 
-    yPos += classDistribution.length * 16 + 15;
+    // Regional analysis
+    if (regionalStats.length > 0) {
+      if (y > 200) { doc.addPage(); y = 20; }
+      doc.setFontSize(12);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(20, 78, 106);
+      doc.text("2.2 Regional Pollution Forecasts", 14, y);
+      y += 6;
+
+      autoTable(doc, {
+        startY: y,
+        head: [["Region", "Avg Pollution", "Max", "Min", "Trend", "Risk Level", "Predictions"]],
+        body: regionalStats.map((r: any) => [
+          r.region,
+          Number(r.avg_pollution_level || 0).toFixed(1),
+          Number(r.max_pollution_level || 0).toFixed(1),
+          Number(r.min_pollution_level || 0).toFixed(1),
+          r.trend || "N/A",
+          r.risk_level || "N/A",
+          String(r.total_predictions || 0),
+        ]),
+        theme: "striped",
+        headStyles: { fillColor: [20, 78, 106], textColor: [255, 255, 255], fontSize: 9, fontStyle: "bold" },
+        bodyStyles: { fontSize: 8 },
+        margin: { left: 14, right: 14 },
+      });
+      y = (doc as any).lastAutoTable.finalY + 12;
+    }
+
+    // Future outlook
+    const outlook = predAnalytics?.future_outlook;
+    if (outlook) {
+      if (y > 220) { doc.addPage(); y = 20; }
+      doc.setFontSize(12);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(20, 78, 106);
+      doc.text("2.3 Future Outlook", 14, y);
+      y += 6;
+
+      autoTable(doc, {
+        startY: y,
+        head: [["Trend Category", "Regions"]],
+        body: [
+          ["Increasing Pollution", (outlook.increasing_trend_regions || []).join(", ") || "None"],
+          ["Decreasing Pollution", (outlook.decreasing_trend_regions || []).join(", ") || "None"],
+          ["Stable Pollution", (outlook.stable_regions || []).join(", ") || "None"],
+          ["Critical Risk Regions", (riskAssessment.critical_regions || []).join(", ") || "None"],
+        ],
+        theme: "striped",
+        headStyles: { fillColor: [20, 78, 106], textColor: [255, 255, 255], fontSize: 10, fontStyle: "bold" },
+        bodyStyles: { fontSize: 9 },
+        margin: { left: 14, right: 14 },
+      });
+      y = (doc as any).lastAutoTable.finalY + 12;
+    }
   }
 
-  // ===== LSTM PREDICTIONS SECTION =====
-  if (yPos > 200) {
-    doc.addPage();
-    yPos = 20;
+  // ── Section 3: Recommendations ───────────────────────────────────────────────
+  if (recommendations.length > 0) {
+    if (y > 200) { doc.addPage(); y = 20; }
+    doc.setTextColor(20, 78, 106);
+    doc.setFontSize(14);
+    doc.setFont("helvetica", "bold");
+    doc.text("3. RECOMMENDATIONS", 14, y);
+    y += 8;
+
+    autoTable(doc, {
+      startY: y,
+      head: [["Priority", "Category", "Recommendation"]],
+      body: recommendations.map((r: any) => [
+        r.priority || "Medium",
+        r.category || "General",
+        r.recommendation || "",
+      ]),
+      theme: "striped",
+      headStyles: { fillColor: [20, 78, 106], textColor: [255, 255, 255], fontSize: 10, fontStyle: "bold" },
+      bodyStyles: { fontSize: 9 },
+      columnStyles: { 2: { cellWidth: 100 } },
+      margin: { left: 14, right: 14 },
+    });
+    y = (doc as any).lastAutoTable.finalY + 12;
+
+    // Action items
+    if (y > 220) { doc.addPage(); y = 20; }
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(20, 78, 106);
+    doc.text("3.1 Action Items", 14, y);
+    y += 6;
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(60, 60, 60);
+    recommendations.forEach((r: any) => {
+      (r.action_items || []).forEach((item: string) => {
+        if (y > ph - 30) { doc.addPage(); y = 20; }
+        doc.text(`• [${r.priority}] ${item}`, 14, y);
+        y += 5;
+      });
+    });
+    y += 8;
   }
 
-  doc.setFontSize(16);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(20, 78, 106);
-  doc.text("2. PREDICTIVE ANALYSIS (LSTM)", 14, yPos);
-  yPos += 10;
-
-  // Model Information
-  doc.setFontSize(14);
-  doc.text("2.1 Model Performance", 14, yPos);
-  yPos += 8;
-
-  const modelData = [
-    ["Model Version", lstmData.modelInfo.version],
-    ["Prediction Accuracy", `${lstmData.modelInfo.accuracy}%`],
-    ["Training Dataset", lstmData.modelInfo.trainingData],
-    ["Last Model Update", lstmData.modelInfo.lastTrained],
-    ["Regions Analyzed", lstmData.regions.length.toString()],
-    ["Forecast Horizon", "90 days"]
-  ];
-
-  autoTable(doc, {
-    startY: yPos,
-    head: [["Model Attribute", "Value"]],
-    body: modelData,
-    theme: "striped",
-    headStyles: { 
-      fillColor: [20, 78, 106],
-      textColor: [255, 255, 255],
-      fontSize: 11,
-      fontStyle: 'bold'
-    },
-    bodyStyles: { fontSize: 10 },
-    margin: { left: 14, right: 14 },
-  });
-
-  yPos = (doc as any).lastAutoTable.finalY + 15;
-
-  // Regional Predictions
-  doc.setFontSize(14);
-  doc.text("2.2 Regional Pollution Forecasts", 14, yPos);
-  yPos += 8;
-
-  const regionData = lstmData.regions.map((region) => [
-    region.name,
-    region.currentLevel.toFixed(1),
-    region.predictedLevel.toFixed(1),
-    `${region.trendChange > 0 ? '+' : ''}${region.trendChange.toFixed(1)}%`,
-    region.riskLevel,
-    `${region.confidence.toFixed(1)}%`
-  ]);
-
-  autoTable(doc, {
-    startY: yPos,
-    head: [["Region", "Current Level", "Predicted Level", "Trend Change", "Risk Level", "Confidence"]],
-    body: regionData,
-    theme: "striped",
-    headStyles: { 
-      fillColor: [20, 78, 106],
-      textColor: [255, 255, 255],
-      fontSize: 10,
-      fontStyle: 'bold'
-    },
-    bodyStyles: { fontSize: 9 },
-    margin: { left: 14, right: 14 },
-  });
-
-  yPos = (doc as any).lastAutoTable.finalY + 15;
-
-  // ===== RECOMMENDATIONS SECTION =====
-  if (yPos > 200) {
-    doc.addPage();
-    yPos = 20;
+  // ── Footer on all pages ───────────────────────────────────────────────────────
+  const totalPages = (doc as any).internal.getNumberOfPages();
+  for (let p = 1; p <= totalPages; p++) {
+    doc.setPage(p);
+    doc.setFillColor(20, 78, 106);
+    doc.rect(0, ph - 20, pw, 20, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(7);
+    doc.text("Generated by OceanGuard AI — Marine Plastic Detection Platform", 14, ph - 12);
+    doc.text(`${today} | Page ${p} of ${totalPages}`, pw - 14, ph - 12, { align: "right" });
+    doc.text("Confidential — For Environmental Research Use Only", 14, ph - 6);
   }
-
-  doc.setFontSize(16);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(20, 78, 106);
-  doc.text("3. RECOMMENDATIONS & IMPROVEMENTS", 14, yPos);
-  yPos += 10;
-
-  // Detection System Improvements
-  doc.setFontSize(14);
-  doc.text("3.1 Detection System Enhancements", 14, yPos);
-  yPos += 8;
-
-  const detectionRecommendations = [
-    "• Increase detection frequency in high-pollution zones identified",
-    "• Implement real-time monitoring for critical pollution hotspots",
-    "• Expand training dataset with region-specific plastic waste types",
-    "• Deploy automated detection systems in identified high-risk areas",
-    "• Integrate satellite imagery for large-scale pollution monitoring"
-  ];
-
-  doc.setFontSize(10);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(60, 60, 60);
-  detectionRecommendations.forEach((rec, index) => {
-    doc.text(rec, 14, yPos + index * 6);
-  });
-  yPos += detectionRecommendations.length * 6 + 10;
-
-  // LSTM Model Improvements
-  doc.setFontSize(14);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(20, 78, 106);
-  doc.text("3.2 Predictive Model Enhancements", 14, yPos);
-  yPos += 8;
-
-  const lstmRecommendations = [
-    "• Incorporate additional environmental variables (ocean currents, weather)",
-    "• Extend prediction horizon to 6-12 months for better planning",
-    "• Implement ensemble models for improved accuracy",
-    "• Add seasonal variation analysis for better trend prediction",
-    "• Integrate real-time oceanographic data feeds"
-  ];
-
-  doc.setFontSize(10);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(60, 60, 60);
-  lstmRecommendations.forEach((rec, index) => {
-    doc.text(rec, 14, yPos + index * 6);
-  });
-  yPos += lstmRecommendations.length * 6 + 10;
-
-  // Action Items
-  doc.setFontSize(14);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(20, 78, 106);
-  doc.text("3.3 Immediate Action Items", 14, yPos);
-  yPos += 8;
-
-  const actionItems = [
-    "• Deploy monitoring equipment in newly identified hotspots",
-    "• Collaborate with local authorities for cleanup initiatives",
-    "• Establish regular monitoring schedule for high-risk zones",
-    "• Develop early warning system based on LSTM predictions",
-    "• Create public awareness campaigns for identified pollution areas"
-  ];
-
-  doc.setFontSize(10);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(60, 60, 60);
-  actionItems.forEach((item, index) => {
-    doc.text(item, 14, yPos + index * 6);
-  });
-  yPos += actionItems.length * 6 + 15;
-
-  // ===== FOOTER =====
-  const footerY = pageHeight - 25;
-  doc.setFillColor(20, 78, 106);
-  doc.rect(0, footerY, pageWidth, 25, "F");
-  
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(8);
-  doc.text(
-    "Generated by OceanGuard AI - Marine Plastic Detection Platform",
-    14,
-    footerY + 10
-  );
-  doc.text(
-    `Report ID: ${Date.now()} | ${currentDate}`,
-    pageWidth - 14,
-    footerY + 10,
-    { align: "right" }
-  );
-  doc.text(
-    "Confidential - For Environmental Research Use Only",
-    14,
-    footerY + 18
-  );
-  doc.text(
-    `Page 1 of 1`,
-    pageWidth - 14,
-    footerY + 18,
-    { align: "right" }
-  );
 
   return doc;
 }
 
-// Generate PDF and return blob URL for viewing
-export function generatePDFBlob(reportName: string): string {
-  const doc = createPDFDocument(reportName);
-  const blob = doc.output("blob");
-  return URL.createObjectURL(blob);
+// ── Public API ────────────────────────────────────────────────────────────────
+
+/**
+ * Fetch report data from backend and generate PDF blob URL for viewing.
+ * Falls back to localStorage data if reportId is not provided.
+ */
+export async function viewPDFReport(reportTitle: string, reportId?: string | number): Promise<void> {
+  const reportData = await _fetchReportData(reportId);
+  const doc = buildPDF(reportTitle, reportData);
+  const url = URL.createObjectURL(doc.output("blob"));
+  window.open(url, "_blank");
 }
 
-// Download PDF directly
-export function downloadPDFReport(reportName: string): void {
-  const doc = createPDFDocument(reportName);
-  const fileName = reportName.replace(/\s+/g, "_").toLowerCase() + ".pdf";
+/**
+ * Fetch report data from backend and download as PDF file.
+ */
+export async function downloadPDFReport(reportTitle: string, reportId?: string | number): Promise<void> {
+  const reportData = await _fetchReportData(reportId);
+  const doc = buildPDF(reportTitle, reportData);
+  const fileName = reportTitle.replace(/\s+/g, "_").toLowerCase() + ".pdf";
   doc.save(fileName);
 }
 
-// View PDF in new tab
-export function viewPDFReport(reportName: string): void {
-  const blobUrl = generatePDFBlob(reportName);
-  window.open(blobUrl, "_blank");
+async function _fetchReportData(reportId?: string | number): Promise<any> {
+  if (!reportId) return null;
+  try {
+    const token = localStorage.getItem("auth_token");
+    const res = await fetch(`${API_URL}/api/reports/${reportId}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    // Backend returns { success, report: { ..., metadata: { data: {...} } } }
+    const meta = json?.report?.metadata;
+    if (meta?.data) return meta.data;
+    return meta || null;
+  } catch {
+    return null;
+  }
 }

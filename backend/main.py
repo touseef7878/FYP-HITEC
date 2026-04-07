@@ -450,52 +450,62 @@ async def get_available_regions():
 @app.post("/api/data/fetch")
 async def fetch_environmental_data(request: DataFetchRequest):
     """
-    Fetch environmental data for a region (ONE-TIME ONLY)
-    If dataset already exists, returns 'already_fetched'
+    Fetch environmental data for a region.
+    Re-fetch is allowed after a 1-hour cooldown.
+    Returns cooldown info if called too soon.
     """
     try:
         logger.info(f"🚀 Data fetch request for {request.region}")
-        
-        # Validate region
+
         if request.region not in data_cache_service.regions:
             raise HTTPException(
-                status_code=400, 
+                status_code=400,
                 detail=f"Invalid region: {request.region}. Valid regions: {data_cache_service.regions}"
             )
-        
-        # Check if dataset already exists
-        if data_cache_service.dataset_exists(request.region):
-            dataset_info = data_cache_service.get_dataset_info(request.region)
-            logger.info(f"✅ Data already cached for {request.region}")
-            return {
-                "success": True,
-                "message": "already_cached",
-                "region": request.region,
-                "dataset_info": dataset_info,
-                "fetch_duration_seconds": 0.0,
-                "sources_used": ["cached_data"]
-            }
-        
-        # Fetch and cache data
-        logger.info(f"Fetching data for {request.region}...")
+
         result = await data_cache_service.fetch_and_cache_data(request.region)
-        
-        if result['success']:
+
+        if result["message"] == "cooldown_active":
+            return {
+                "success": False,
+                "message": "cooldown_active",
+                "region": request.region,
+                "seconds_remaining": result["seconds_remaining"],
+                "next_fetch_at": result["next_fetch_at"],
+                "dataset_info": result.get("dataset_info"),
+            }
+
+        if result["success"]:
             return {
                 "success": True,
                 "message": "data_fetched_successfully",
                 "region": request.region,
-                "dataset_info": result['dataset_info'],
-                "fetch_duration_seconds": result['fetch_duration_seconds'],
-                "sources_used": result['sources_used']
+                "dataset_info": result["dataset_info"],
+                "fetch_duration_seconds": result["fetch_duration_seconds"],
+                "sources_used": result["sources_used"],
             }
         else:
-            raise HTTPException(status_code=500, detail=result['message'])
-            
+            raise HTTPException(status_code=500, detail=result["message"])
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error in data fetch endpoint: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/data/fetch-status")
+async def get_all_fetch_status():
+    """
+    Return cooldown status for all regions.
+    Frontend uses this to show/disable the Fetch Data button.
+    """
+    try:
+        statuses = {}
+        for region in data_cache_service.regions:
+            statuses[region] = data_cache_service.get_fetch_status(region)
+        return {"success": True, "regions": statuses}
+    except Exception as e:
+        logger.error(f"Error getting fetch status: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/data/status/{region}")
@@ -931,6 +941,84 @@ async def analyze_region_pollution(region: str, historical_days: int = 365):
         raise
     except Exception as e:
         logger.error(f"Error in analysis endpoint: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ============================================================================
+# HEATMAP ENDPOINTS
+# ============================================================================
+
+REGION_META = {
+    'pacific': {
+        'name': 'Pacific Ocean',
+        'location': 'North Pacific Ocean',
+        'coordinates': '10°N 150°W',
+        'plasticDensity': '1.8M pieces/km²',
+    },
+    'atlantic': {
+        'name': 'Atlantic Ocean',
+        'location': 'North Atlantic Ocean',
+        'coordinates': '30°N 40°W',
+        'plasticDensity': '325K pieces/km²',
+    },
+    'indian': {
+        'name': 'Indian Ocean',
+        'location': 'Indian Ocean Gyre',
+        'coordinates': '20°S 75°E',
+        'plasticDensity': '412K pieces/km²',
+    },
+    'mediterranean': {
+        'name': 'Mediterranean Sea',
+        'location': 'Mediterranean Pollution Zone',
+        'coordinates': '36°N 18°E',
+        'plasticDensity': '247K pieces/km²',
+    },
+}
+
+@app.get("/api/heatmap")
+async def get_heatmap(
+    range: str = "7d",
+    mode: str = "current",
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Return heatmap data for the pollution map.
+
+    Query params:
+      range  – time window: 1d | 7d | 30d | 90d  (default 7d)
+      mode   – 'current' uses historical predictions, 'predicted' uses latest LSTM batch
+    """
+    try:
+        range_map = {"1d": 1, "7d": 7, "30d": 30, "90d": 90}
+        days = range_map.get(range, 7)
+
+        if mode == "predicted":
+            raw = db.get_heatmap_predictions()
+        else:
+            raw = db.get_heatmap_data(days=days)
+
+        # Enrich with display metadata
+        hotspots = []
+        for item in raw:
+            meta = REGION_META.get(item['region'], {})
+            hotspots.append({
+                **item,
+                'name': meta.get('name', item['region'].title()),
+                'location': meta.get('location', item['region'].title()),
+                'coordinates': meta.get('coordinates', f"{item['lat']}°, {item['lng']}°"),
+                'plasticDensity': meta.get('plasticDensity', 'N/A'),
+            })
+
+        return {
+            "success": True,
+            "hotspots": hotspots,
+            "range": range,
+            "mode": mode,
+            "total": len(hotspots),
+            "has_data": len(hotspots) > 0,
+        }
+
+    except Exception as e:
+        logger.error(f"Heatmap endpoint error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================================================

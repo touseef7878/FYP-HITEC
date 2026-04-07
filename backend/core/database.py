@@ -2024,5 +2024,165 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Log activity failed: {e}")
             return False
+    # ==================== HEATMAP DATA ====================
+
+    # Static fallback levels per region when no DB data exists yet.
+    # Based on real-world research baselines (0-100 scale).
+    _REGION_BASELINE = {
+        'pacific':       {'avg': 65.0, 'max': 72.0},
+        'atlantic':      {'avg': 45.0, 'max': 52.0},
+        'indian':        {'avg': 55.0, 'max': 63.0},
+        'mediterranean': {'avg': 40.0, 'max': 48.0},
+    }
+
+    _REGION_COORDS = {
+        'pacific':       (10.0,  -150.0),
+        'atlantic':      (30.0,   -40.0),
+        'indian':        (-20.0,   75.0),
+        'mediterranean': (36.0,    18.0),
+    }
+
+    @staticmethod
+    def _pollution_score(avg_level: float, max_level: float, sample_count: int) -> float:
+        """
+        Compute a 0-1 pollution score.
+        Formula: weighted combination of avg level, max spike, and data frequency.
+        All inputs are on a 0-100 scale so we divide by 100 to get 0-1.
+        """
+        freq_weight = min(sample_count / 30.0, 1.0)
+        # Each component is already 0-1 after /100
+        score = (avg_level / 100 * 0.6) + (max_level / 100 * 0.2) + (freq_weight * 0.2)
+        return round(min(score, 1.0), 4)
+
+    @staticmethod
+    def _intensity(avg_level: float) -> str:
+        if avg_level < 30:   return "Low"
+        if avg_level < 60:   return "Moderate"
+        if avg_level < 80:   return "High"
+        return "Critical"
+
+    def get_heatmap_data(self, days: int = 7) -> List[Dict]:
+        """
+        Return one heatmap point per region (all 4 always present).
+        Regions with DB predictions use real aggregated data.
+        Regions without predictions fall back to research baselines.
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+
+                cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+
+                cursor.execute("""
+                    SELECT
+                        region,
+                        AVG(predicted_pollution_level) AS avg_level,
+                        MAX(predicted_pollution_level) AS max_level,
+                        COUNT(*)                       AS sample_count
+                    FROM predictions
+                    WHERE created_at >= ?
+                    GROUP BY region
+                """, (cutoff,))
+
+                db_rows = {r['region']: r for r in cursor.fetchall()}
+
+            results = []
+            for region, coords in self._REGION_COORDS.items():
+                if region in db_rows:
+                    row = db_rows[region]
+                    avg_level    = float(row['avg_level'])
+                    max_level    = float(row['max_level'])
+                    sample_count = int(row['sample_count'])
+                    is_estimated = False
+                else:
+                    # Use baseline — mark as estimated so UI can indicate it
+                    baseline     = self._REGION_BASELINE[region]
+                    avg_level    = baseline['avg']
+                    max_level    = baseline['max']
+                    sample_count = 0
+                    is_estimated = True
+
+                results.append({
+                    'region':               region,
+                    'lat':                  coords[0],
+                    'lng':                  coords[1],
+                    'avg_pollution_level':  round(avg_level, 2),
+                    'max_pollution_level':  round(max_level, 2),
+                    'pollution_score':      self._pollution_score(avg_level, max_level, sample_count),
+                    'intensity':            self._intensity(avg_level),
+                    'sample_count':         sample_count,
+                    'time_range_days':      days,
+                    'is_estimated':         is_estimated,
+                })
+
+            return results
+
+        except Exception as e:
+            logger.error(f"get_heatmap_data failed: {e}")
+            return []
+
+    def get_heatmap_predictions(self) -> List[Dict]:
+        """
+        Return the latest LSTM prediction batch per region for the future overlay.
+        Always returns all 4 regions; missing ones use baselines.
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+
+                # Latest batch = predictions created within 1 minute of the most recent row per region
+                cursor.execute("""
+                    SELECT
+                        p.region,
+                        AVG(p.predicted_pollution_level) AS avg_level,
+                        MAX(p.predicted_pollution_level) AS max_level,
+                        COUNT(*)                         AS sample_count
+                    FROM predictions p
+                    INNER JOIN (
+                        SELECT region, MAX(created_at) AS latest
+                        FROM predictions
+                        GROUP BY region
+                    ) lb ON p.region = lb.region
+                       AND p.created_at >= datetime(lb.latest, '-1 minute')
+                    GROUP BY p.region
+                """)
+
+                db_rows = {r['region']: r for r in cursor.fetchall()}
+
+            results = []
+            for region, coords in self._REGION_COORDS.items():
+                if region in db_rows:
+                    row = db_rows[region]
+                    avg_level    = float(row['avg_level'])
+                    max_level    = float(row['max_level'])
+                    sample_count = int(row['sample_count'])
+                    is_estimated = False
+                else:
+                    baseline     = self._REGION_BASELINE[region]
+                    avg_level    = baseline['avg']
+                    max_level    = baseline['max']
+                    sample_count = 0
+                    is_estimated = True
+
+                results.append({
+                    'region':              region,
+                    'lat':                 coords[0],
+                    'lng':                 coords[1],
+                    'avg_pollution_level': round(avg_level, 2),
+                    'max_pollution_level': round(max_level, 2),
+                    'pollution_score':     self._pollution_score(avg_level, max_level, sample_count),
+                    'intensity':           self._intensity(avg_level),
+                    'sample_count':        sample_count,
+                    'is_prediction':       True,
+                    'is_estimated':        is_estimated,
+                })
+
+            return results
+
+        except Exception as e:
+            logger.error(f"get_heatmap_predictions failed: {e}")
+            return []
+
+
 # Global database instance
 db = DatabaseManager()

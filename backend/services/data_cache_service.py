@@ -1,6 +1,7 @@
 """
 Data Cache Service
-Handles one-time data fetching and local caching for LSTM training
+Handles data fetching and local caching for LSTM training.
+Re-fetch is allowed after a 1-hour cooldown per region.
 """
 
 import os
@@ -18,6 +19,8 @@ from utils.noaa_api import noaa_client
 from utils.waqi_api import waqi_client
 
 logger = logging.getLogger(__name__)
+
+FETCH_COOLDOWN_SECONDS = 3600  # 1 hour
 
 class DataCacheService:
     """
@@ -49,6 +52,64 @@ class DataCacheService:
         self.min_data_days = 300  # Stop retries once we have 300+ days
         
         logger.info("✅ Data Cache Service initialized")
+    
+    # ==================== COOLDOWN HELPERS ====================
+
+    def _cooldown_path(self, region: str) -> str:
+        return os.path.join(self.cache_dir, f"{region}_last_fetch.json")
+
+    def get_fetch_status(self, region: str) -> Dict:
+        """
+        Return cooldown info for a region.
+        {
+          can_fetch: bool,
+          last_fetched_at: str | None,
+          next_fetch_at: str | None,
+          seconds_remaining: int,
+          dataset_exists: bool
+        }
+        """
+        path = self._cooldown_path(region)
+        dataset_exists = self.dataset_exists(region)
+
+        if not os.path.exists(path):
+            return {
+                "can_fetch": True,
+                "last_fetched_at": None,
+                "next_fetch_at": None,
+                "seconds_remaining": 0,
+                "dataset_exists": dataset_exists,
+            }
+
+        try:
+            with open(path) as f:
+                meta = json.load(f)
+            last_ts = datetime.fromisoformat(meta["fetched_at"])
+            next_ts = last_ts + timedelta(seconds=FETCH_COOLDOWN_SECONDS)
+            now = datetime.now()
+            remaining = max(0, int((next_ts - now).total_seconds()))
+            return {
+                "can_fetch": remaining == 0,
+                "last_fetched_at": last_ts.isoformat(),
+                "next_fetch_at": next_ts.isoformat(),
+                "seconds_remaining": remaining,
+                "dataset_exists": dataset_exists,
+            }
+        except Exception as e:
+            logger.warning(f"Could not read cooldown file for {region}: {e}")
+            return {
+                "can_fetch": True,
+                "last_fetched_at": None,
+                "next_fetch_at": None,
+                "seconds_remaining": 0,
+                "dataset_exists": dataset_exists,
+            }
+
+    def _record_fetch(self, region: str) -> None:
+        """Write the current timestamp as the last fetch time for a region."""
+        path = self._cooldown_path(region)
+        with open(path, "w") as f:
+            json.dump({"fetched_at": datetime.now().isoformat()}, f)
     
     def get_dataset_path(self, region: str) -> str:
         """Get the file path for a region's dataset"""
@@ -286,75 +347,73 @@ class DataCacheService:
     
     async def fetch_and_cache_data(self, region: str) -> Dict:
         """
-        Main method to fetch all data sources and create cached dataset
-        Uses parallel API calls for efficiency
+        Fetch all data sources and create/refresh the cached dataset.
+        Re-fetch is allowed after FETCH_COOLDOWN_SECONDS (1 hour).
+        Returns cooldown info if called too soon.
         """
         if region not in self.regions:
             raise ValueError(f"Invalid region: {region}. Valid regions: {self.regions}")
-        
-        if self.dataset_exists(region):
+
+        status = self.get_fetch_status(region)
+        if not status["can_fetch"]:
             return {
-                'success': False,
-                'message': 'already_fetched',
-                'region': region,
-                'dataset_info': self.get_dataset_info(region)
+                "success": False,
+                "message": "cooldown_active",
+                "region": region,
+                "seconds_remaining": status["seconds_remaining"],
+                "next_fetch_at": status["next_fetch_at"],
+                "dataset_info": self.get_dataset_info(region),
             }
-        
+
         logger.info(f"🚀 Starting data fetch for {region}...")
         start_time = datetime.now()
-        
+
         try:
             # Fetch all data sources in parallel
-            logger.info("Fetching data from all sources in parallel...")
-            
             tasks = [
-                self.fetch_waqi_data_parallel(region, 730),  # 2 years of data
+                self.fetch_waqi_data_parallel(region, 730),
                 self.fetch_noaa_data_parallel(region, 730),
                 self.fetch_weather_data_parallel(region, 730),
-                self.fetch_marine_data_parallel(region, 730)
+                self.fetch_marine_data_parallel(region, 730),
             ]
-            
             waqi_df, noaa_df, weather_df, marine_df = await asyncio.gather(*tasks)
-            
-            # Merge datasets by date (not by index)
-            logger.info("Merging datasets by date...")
+
             merged_df = self._merge_datasets_by_date([
-                ('waqi', waqi_df),
-                ('noaa', noaa_df), 
-                ('weather', weather_df),
-                ('marine', marine_df)
+                ("waqi", waqi_df),
+                ("noaa", noaa_df),
+                ("weather", weather_df),
+                ("marine", marine_df),
             ], region)
-            
+
             if merged_df.empty:
                 raise Exception("Failed to create merged dataset")
-            
-            # Calculate pollution level
+
             merged_df = self._calculate_pollution_level(merged_df, region)
-            
-            # Save to cache
+
             dataset_path = self.get_dataset_path(region)
             merged_df.to_csv(dataset_path, index=False)
-            
-            end_time = datetime.now()
-            duration = (end_time - start_time).total_seconds()
-            
+
+            # Record successful fetch timestamp
+            self._record_fetch(region)
+
+            duration = (datetime.now() - start_time).total_seconds()
             logger.info(f"✅ Data fetch completed for {region} in {duration:.1f}s")
-            
+
             return {
-                'success': True,
-                'message': 'data_fetched_successfully',
-                'region': region,
-                'dataset_info': self.get_dataset_info(region),
-                'fetch_duration_seconds': duration,
-                'sources_used': ['waqi', 'noaa', 'weather', 'marine']
+                "success": True,
+                "message": "data_fetched_successfully",
+                "region": region,
+                "dataset_info": self.get_dataset_info(region),
+                "fetch_duration_seconds": duration,
+                "sources_used": ["waqi", "noaa", "weather", "marine"],
             }
-            
+
         except Exception as e:
             logger.error(f"❌ Error fetching data for {region}: {e}")
             return {
-                'success': False,
-                'message': f'fetch_failed: {str(e)}',
-                'region': region
+                "success": False,
+                "message": f"fetch_failed: {str(e)}",
+                "region": region,
             }
     
     def load_cached_dataset(self, region: str) -> pd.DataFrame:

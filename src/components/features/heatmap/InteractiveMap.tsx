@@ -23,6 +23,12 @@ export interface Hotspot {
   lat: number;
   lng: number;
   detectionCount?: number;
+  // heatmap-specific fields
+  pollutionScore?: number;       // 0-1 normalised score
+  avgPollutionLevel?: number;    // raw 0-100 level
+  sampleCount?: number;
+  isPrediction?: boolean;
+  isEstimated?: boolean;   // true = no DB data, using research baseline
 }
 
 interface InteractiveMapProps {
@@ -103,63 +109,83 @@ export function InteractiveMap({ hotspots, onHotspotClick }: InteractiveMapProps
       const markerId = `${hotspot.lat}-${hotspot.lng}`;
       const intensity = hotspot.intensity.toLowerCase();
       let color = '#10b981';
-      let radius = 50000;
+      // Base radius; scale up if we have a pollution score
+      const scoreMultiplier = hotspot.pollutionScore != null ? 0.5 + hotspot.pollutionScore * 1.5 : 1;
+      let baseRadius = 50000;
 
       switch (intensity) {
-        case 'critical':
-          color = '#ef4444';
-          radius = 100000;
-          break;
-        case 'high':
-          color = '#f59e0b';
-          radius = 75000;
-          break;
-        case 'moderate':
-          color = '#eab308';
-          radius = 50000;
-          break;
-        case 'low':
-          color = '#10b981';
-          radius = 25000;
-          break;
+        case 'critical': color = '#ef4444'; baseRadius = 100000; break;
+        case 'high':     color = '#f59e0b'; baseRadius = 75000;  break;
+        case 'moderate': color = '#eab308'; baseRadius = 50000;  break;
+        case 'low':      color = '#10b981'; baseRadius = 25000;  break;
       }
+
+      const radius = Math.round(baseRadius * scoreMultiplier);
 
       // Check if marker already exists
       const existing = existingMarkers.get(markerId);
       
       if (!existing) {
+        const predictionBadge = hotspot.isPrediction
+          ? `<div style="background:#6366f1;color:white;font-size:10px;padding:2px 6px;border-radius:4px;display:inline-block;margin-bottom:6px;">🔮 LSTM Prediction</div>`
+          : '';
+
+        const estimatedBadge = hotspot.isEstimated
+          ? `<div style="background:#78716c;color:white;font-size:10px;padding:2px 6px;border-radius:4px;display:inline-block;margin-bottom:6px;margin-left:4px;">📊 Baseline Estimate</div>`
+          : '';
+
+        const scoreRow = hotspot.pollutionScore != null
+          ? `<div style="display:flex;justify-content:space-between;margin-bottom:2px;">
+               <span style="font-size:13px;">Pollution Score:</span>
+               <span style="font-size:13px;font-weight:bold;color:${color}">${(hotspot.pollutionScore * 100).toFixed(1)}%</span>
+             </div>`
+          : '';
+
+        const levelRow = hotspot.avgPollutionLevel != null
+          ? `<div style="display:flex;justify-content:space-between;margin-bottom:2px;">
+               <span style="font-size:13px;">Avg Level:</span>
+               <span style="font-size:13px;font-weight:500;">${hotspot.avgPollutionLevel.toFixed(1)} / 100</span>
+             </div>`
+          : '';
+
+        const samplesRow = (hotspot.sampleCount != null && hotspot.sampleCount > 0)
+          ? `<div style="display:flex;justify-content:space-between;margin-bottom:2px;">
+               <span style="font-size:13px;">Data Points:</span>
+               <span style="font-size:13px;font-weight:500;">${hotspot.sampleCount}</span>
+             </div>`
+          : '';
+
         // Create new marker
         const circle = L.circle([hotspot.lat, hotspot.lng], {
           color: color,
           fillColor: color,
-          fillOpacity: 0.3,
+          fillOpacity: hotspot.isPrediction ? 0.15 : 0.3,
           radius: radius,
-          weight: 2,
+          weight: hotspot.isPrediction ? 1 : 2,
+          dashArray: hotspot.isPrediction ? '6 4' : undefined,
         }).addTo(map);
 
         const popupContent = `
-          <div class="p-2 min-w-[200px]">
-            <h3 class="font-bold text-lg mb-2">${hotspot.name}</h3>
-            <p class="text-sm text-gray-600 mb-2">${hotspot.location}</p>
-            <div class="space-y-1">
-              <div class="flex justify-between">
-                <span class="text-sm">Intensity:</span>
-                <span class="text-sm font-medium" style="color: ${color}">${hotspot.intensity}</span>
+          <div style="padding:8px;min-width:200px;">
+            <div style="margin-bottom:6px;">${predictionBadge}${estimatedBadge}</div>
+            <h3 style="font-weight:700;font-size:15px;margin-bottom:4px;">${hotspot.name}</h3>
+            <p style="font-size:12px;color:#6b7280;margin-bottom:8px;">${hotspot.location}</p>
+            <div>
+              <div style="display:flex;justify-content:space-between;margin-bottom:2px;">
+                <span style="font-size:13px;">Intensity:</span>
+                <span style="font-size:13px;font-weight:600;color:${color}">${hotspot.intensity}</span>
               </div>
-              <div class="flex justify-between">
-                <span class="text-sm">Density:</span>
-                <span class="text-sm font-medium">${hotspot.plasticDensity}</span>
+              ${scoreRow}
+              ${levelRow}
+              ${samplesRow}
+              <div style="display:flex;justify-content:space-between;margin-bottom:2px;">
+                <span style="font-size:13px;">Density:</span>
+                <span style="font-size:13px;font-weight:500;">${hotspot.plasticDensity}</span>
               </div>
-              <div class="flex justify-between">
-                <span class="text-sm">Coordinates:</span>
-                <span class="text-sm">${hotspot.coordinates}</span>
+              <div style="display:flex;justify-content:space-between;">
+                <span style="font-size:13px;">Coordinates:</span>
+                <span style="font-size:13px;">${hotspot.coordinates}</span>
               </div>
-              ${hotspot.detectionCount ? `
-              <div class="flex justify-between">
-                <span class="text-sm">Detections:</span>
-                <span class="text-sm font-medium">${hotspot.detectionCount}</span>
-              </div>
-              ` : ''}
             </div>
           </div>
         `;
@@ -191,10 +217,12 @@ export function InteractiveMap({ hotspots, onHotspotClick }: InteractiveMapProps
       }
     });
 
-    // Fit map to show all hotspots if any exist
-    if (hotspots.length > 0) {
+    // Fit map to show all hotspots if there are multiple spread-out points
+    if (hotspots.length >= 2) {
       const bounds = L.latLngBounds(hotspots.map(h => [h.lat, h.lng] as L.LatLngTuple));
-      map.fitBounds(bounds.pad(0.1));
+      map.fitBounds(bounds.pad(0.2), { maxZoom: 4 });
+    } else if (hotspots.length === 1) {
+      map.setView([hotspots[0].lat, hotspots[0].lng], 3);
     }
   }, [hotspots]);
 
@@ -221,9 +249,9 @@ export function InteractiveMap({ hotspots, onHotspotClick }: InteractiveMapProps
 
   const resetView = () => {
     if (!mapInstanceRef.current) return;
-    if (hotspots.length > 0) {
+    if (hotspots.length >= 2) {
       const bounds = L.latLngBounds(hotspots.map(h => [h.lat, h.lng] as L.LatLngTuple));
-      mapInstanceRef.current.fitBounds(bounds.pad(0.1));
+      mapInstanceRef.current.fitBounds(bounds.pad(0.2), { maxZoom: 4 });
     } else {
       mapInstanceRef.current.setView([20, 0], 2);
     }

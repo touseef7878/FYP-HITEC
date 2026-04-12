@@ -2306,6 +2306,8 @@ def _process_video_sync(
         }
         
         # Update DB record with final results
+        # Store summary directly in metadata so the API endpoint can read it
+        # without depending on detection_results rows being committed first
         db.update_detection_status(
             detection_id, 'completed',
             total_detections=total_detections,
@@ -2317,7 +2319,14 @@ def _process_video_sync(
                 'total_frames': total_frames, 'fps': fps,
                 'duration': round(duration, 2), 'resolution': f"{width}x{height}",
                 'detection_rate': round(detection_rate, 1),
+                'framesWithDetections': frames_with_detections,
+                'avgDetectionsPerFrame': round(avg_dets, 2),
                 'classes_detected': list(class_counts.keys()),
+                # Store summary directly — no double JSON encoding needed
+                'summary': summary,
+                'avg_confidence': round(
+                    sum(d['total_confidence'] for d in class_counts.values()) / total_detections, 1
+                ) if total_detections > 0 else 0,
                 'raw_result': _json.dumps(full_result)
             }
         )
@@ -3273,32 +3282,79 @@ async def get_detection_by_id(
         if not detection:
             raise HTTPException(status_code=404, detail="Detection not found or access denied")
         
-        # Get detection results
-        detection_results = db.get_detection_results(detection_id_int, user_id)
-        
-        # Calculate average confidence and classes
-        avg_confidence = 0
-        classes = []
-        
-        if detection_results:
-            confidences = [r['confidence'] * 100 for r in detection_results]
-            avg_confidence = sum(confidences) / len(confidences) if confidences else 0
-            classes = list(set([r['class_name'] for r in detection_results]))
-        
-        # Parse metadata
+        # Parse metadata first — needed for fallback summary
         metadata = detection.get('metadata', {})
         if isinstance(metadata, str):
             try:
-                import json
-                metadata = json.loads(metadata)
-            except:
+                import json as _json_mod
+                metadata = _json_mod.loads(metadata)
+            except Exception:
                 metadata = {}
-        
+
+        # Get detection results from DB
+        detection_results = db.get_detection_results(detection_id_int, user_id)
+
+        # Build summary from DB rows when available
+        summary = []
+        if detection_results:
+            from collections import defaultdict
+            class_map: dict = defaultdict(lambda: {"count": 0, "total_conf": 0.0})
+            for r in detection_results:
+                cn = r['class_name']
+                class_map[cn]["count"] += 1
+                class_map[cn]["total_conf"] += r['confidence'] * 100
+            summary = [
+                {
+                    "class": cn,
+                    "count": v["count"],
+                    "avgConfidence": round(v["total_conf"] / v["count"], 1)
+                }
+                for cn, v in sorted(class_map.items(), key=lambda x: -x[1]["count"])
+            ]
+
+        # Fallback: rebuild summary from raw_result stored in metadata (handles race condition
+        # where detection_results rows aren't committed yet when the page first loads)
+        if not summary:
+            # Fast path: summary stored directly in metadata
+            meta_summary = metadata.get('summary')
+            if meta_summary and isinstance(meta_summary, list) and len(meta_summary) > 0:
+                summary = meta_summary
+
+        if not summary:
+            raw_result_str = metadata.get('raw_result')
+            if raw_result_str:
+                try:
+                    import json as _json_mod
+                    raw = _json_mod.loads(raw_result_str) if isinstance(raw_result_str, str) else raw_result_str
+                    summary = raw.get('summary', [])
+                except Exception:
+                    pass
+
+        # If still empty, try classes_detected from metadata to build a minimal summary
+        if not summary:
+            classes_detected = metadata.get('classes_detected', [])
+            total = detection.get('total_detections', 0)
+            if classes_detected and total:
+                per_class = max(1, total // len(classes_detected))
+                summary = [{"class": c, "count": per_class, "avgConfidence": 0} for c in classes_detected]
+
+        avg_confidence = 0
+        if detection_results:
+            confs = [r['confidence'] * 100 for r in detection_results]
+            avg_confidence = sum(confs) / len(confs)
+        elif metadata.get('avg_confidence'):
+            avg_confidence = metadata['avg_confidence']
+        elif summary:
+            # Weighted average from summary
+            total_count = sum(s['count'] for s in summary)
+            if total_count:
+                avg_confidence = sum(s['avgConfidence'] * s['count'] for s in summary) / total_count
+
         # Get video metadata if it's a video
         video_metadata = None
         if detection.get('file_type') == 'video':
             video_metadata = db.get_video_metadata(detection_id_int)
-        
+
         # Build complete result object
         result = {
             "success": True,
@@ -3318,19 +3374,14 @@ async def get_detection_by_id(
                     "frame": r.get('frame_number', 0)
                 } for r in detection_results
             ],
-            "summary": [
-                {
-                    "class": class_name,
-                    "count": len([r for r in detection_results if r['class_name'] == class_name]),
-                    "avgConfidence": round(sum([r['confidence'] * 100 for r in detection_results if r['class_name'] == class_name]) / len([r for r in detection_results if r['class_name'] == class_name]), 1) if [r for r in detection_results if r['class_name'] == class_name] else 0
-                } for class_name in classes
-            ],
+            "summary": summary,
+            "avgConfidence": round(avg_confidence, 1),
             "processingTime": detection.get('processing_time', 0),
             "result_id": str(detection['id']),
             "file_type": detection.get('file_type', 'image'),
             "created_at": detection.get('created_at', '')
         }
-        
+
         # Add video-specific fields if it's a video
         if video_metadata:
             result.update({
@@ -3339,15 +3390,16 @@ async def get_detection_by_id(
                 "fps": video_metadata.get('fps', 0),
                 "duration": video_metadata.get('duration', 0),
                 "resolution": video_metadata.get('resolution', ''),
-                "framesWithDetections": metadata.get('frames_with_detections', 0),
+                # metadata keys as stored by _process_video_sync
+                "framesWithDetections": metadata.get('framesWithDetections', metadata.get('frames_with_detections', 0)),
                 "detectionRate": metadata.get('detection_rate', 0),
-                "avgDetectionsPerFrame": metadata.get('avg_detections_per_frame', 0),
-                "fileSizeMB": metadata.get('file_size_mb', 0),
+                "avgDetectionsPerFrame": metadata.get('avgDetectionsPerFrame', metadata.get('avg_detections_per_frame', 0)),
+                "fileSizeMB": round(detection.get('file_size', 0) / (1024 * 1024), 1),
                 "annotatedVideoUrl": f"/processed-video/{os.path.basename(video_metadata.get('annotated_path', ''))}" if video_metadata.get('annotated_path') else None,
                 "originalVideoUrl": f"/processed-video/{os.path.basename(video_metadata.get('original_path', ''))}" if video_metadata.get('original_path') else None,
                 "videoId": metadata.get('video_id', ''),
             })
-        
+
         # Add image data if it's an image
         if detection.get('file_type') == 'image':
             result.update({

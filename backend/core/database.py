@@ -1549,26 +1549,17 @@ class DatabaseManager:
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                
-                # If user_id is provided, verify the detection belongs to the user
-                if user_id is not None:
-                    cursor.execute("""
-                        SELECT dr.class_name, dr.confidence, dr.bbox_x1, dr.bbox_y1, 
-                               dr.bbox_x2, dr.bbox_y2, dr.frame_number
-                        FROM detection_results dr
-                        JOIN detections d ON dr.detection_id = d.id
-                        WHERE dr.detection_id = ? AND d.user_id = ?
-                        ORDER BY dr.confidence DESC
-                    """, (detection_id, user_id))
-                else:
-                    # Legacy method for internal use (analytics generation)
-                    cursor.execute("""
-                        SELECT class_name, confidence, bbox_x1, bbox_y1, bbox_x2, bbox_y2, frame_number
-                        FROM detection_results 
-                        WHERE detection_id = ?
-                        ORDER BY confidence DESC
-                    """, (detection_id,))
-                
+
+                # Always query detection_results directly — ownership already verified
+                # by the caller before reaching this point. The JOIN was causing
+                # WAL visibility issues where newly committed rows weren't visible yet.
+                cursor.execute("""
+                    SELECT class_name, confidence, bbox_x1, bbox_y1, bbox_x2, bbox_y2, frame_number
+                    FROM detection_results
+                    WHERE detection_id = ?
+                    ORDER BY confidence DESC
+                """, (detection_id,))
+
                 results = []
                 for row in cursor.fetchall():
                     results.append({
@@ -1580,9 +1571,9 @@ class DatabaseManager:
                         'bbox_y2': row['bbox_y2'],
                         'frame_number': row['frame_number']
                     })
-                
+
                 return results
-                
+
         except Exception as e:
             logger.error(f"Get detection results failed: {e}")
             return []

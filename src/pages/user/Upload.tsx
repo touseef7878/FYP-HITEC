@@ -376,7 +376,24 @@ export default function UploadPage() {
                 
                 if (statusData.status === 'completed') {
                   clearInterval(pollInterval);
-                  addLog(`✅ Video processing complete!`);
+                  addLog(`✅ Video processing complete! Fetching full results...`);
+
+                  // Fetch the full detection result from the API instead of
+                  // building a stub with empty summary/detections
+                  try {
+                    const fullRes = await fetch(`${API_URL}/api/detections/${detectionId}`, {
+                      headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    if (fullRes.ok) {
+                      const fullData = await fullRes.json();
+                      if (fullData.success && fullData.detection) {
+                        resolve(fullData.detection as DetectionResult);
+                        return;
+                      }
+                    }
+                  } catch (_) { /* fall through to stub */ }
+
+                  // Fallback stub if full fetch fails
                   resolve({
                     success: true,
                     filename: statusData.filename || file.file.name,
@@ -480,15 +497,16 @@ export default function UploadPage() {
       // Navigate to results with detection ID (use first result's ID)
       // Get detection ID from the files array (which was updated with detection IDs)
       const firstFileWithDetection = files.find(f => f.detectionId);
-      const firstDetectionId = firstFileWithDetection?.detectionId || results[0]?.detection_id;
+      const firstDetectionId = firstFileWithDetection?.detectionId
+        || results[0]?.detection_id
+        || (results[0]?.result_id ? parseInt(results[0].result_id) : undefined);
       
       setTimeout(() => {
         addLog("🚀 Auto-redirecting to results...");
-        setIsComplete(false); // Clear completion state
-        setProcessingProgress(0); // Reset progress
-        setEstimatedTime(null); // Clear estimated time
+        setIsComplete(false);
+        setProcessingProgress(0);
+        setEstimatedTime(null);
         
-        // Navigate with ID if available, otherwise use sessionStorage fallback
         if (firstDetectionId) {
           addLog(`📍 Navigating to detection ID: ${firstDetectionId}`);
           navigate(`/results/${firstDetectionId}`);
@@ -496,7 +514,7 @@ export default function UploadPage() {
           addLog(`📍 Navigating to results (using sessionStorage)`);
           navigate("/results");
         }
-      }, 5000); // Increased delay to show completion state longer
+      }, 3000);
     } else {
       setIsProcessing(false);
       setIsComplete(false);
@@ -741,10 +759,10 @@ export default function UploadPage() {
                 variant="secondary"
                 size="lg"
                 onClick={() => {
-                  // Get detection ID from files or results
                   const firstFileWithDetection = files.find(f => f.detectionId);
-                  const detectionId = firstFileWithDetection?.detectionId;
-                  
+                  const detectionId = firstFileWithDetection?.detectionId
+                    || results[0]?.detection_id
+                    || (results[0]?.result_id ? parseInt(results[0].result_id) : undefined);
                   if (detectionId) {
                     navigate(`/results/${detectionId}`);
                   } else {

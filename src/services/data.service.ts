@@ -13,6 +13,7 @@ export interface DetectionResult {
   success: boolean;
   filename: string;
   totalDetections: number;
+  detection_id?: number; // Database ID (numeric)
   detections: Array<{
     class: string;
     confidence: number;
@@ -27,6 +28,7 @@ export interface DetectionResult {
     framesAppeared?: number;
     appearanceRate?: number;
   }>;
+  avgConfidence?: number;
   annotatedImage?: string;
   originalImage?: string;
   annotatedVideo?: string;
@@ -43,7 +45,7 @@ export interface DetectionResult {
   resolution?: string;
   fileSizeMB?: number;
   videoId?: string;
-  result_id?: string; // Database ID
+  result_id?: string; // Database ID (string form)
   processingStats?: {
     uniqueClasses: number;
     detectionRate: number;

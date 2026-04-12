@@ -70,41 +70,42 @@ export default function ResultsPage() {
             return;
           }
 
-          const response = await fetch(`${API_URL}/api/detections/${detectionId}`, {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            }
-          });
-
-          if (!response.ok) {
-            const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
-            
-            // Provide more specific error messages
-            if (response.status === 404) {
-              throw new Error('Detection not found. It may have been deleted or you may not have permission to view it.');
-            } else if (response.status === 401) {
-              throw new Error('Authentication required. Please login again.');
-            } else if (response.status === 403) {
-              throw new Error('Access denied. You do not have permission to view this detection.');
-            } else {
-              throw new Error(errorData.detail || `Failed to fetch detection (${response.status})`);
-            }
-          }
-
-          const data = await response.json();
-          
-          if (data.success && data.detection) {
-            setResults([data.detection]);
-            
-            toast({
-              title: "✅ Results Loaded",
-              description: "Detection results loaded successfully",
-              duration: 3000,
+          const fetchDetection = async (retries = 4, delayMs = 1500): Promise<any> => {
+            const response = await fetch(`${API_URL}/api/detections/${detectionId}`, {
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+              }
             });
-          } else {
-            throw new Error('Invalid response format');
-          }
+
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
+              if (response.status === 404) throw new Error('Detection not found. It may have been deleted or you may not have permission to view it.');
+              else if (response.status === 401) throw new Error('Authentication required. Please login again.');
+              else if (response.status === 403) throw new Error('Access denied. You do not have permission to view this detection.');
+              else throw new Error(errorData.detail || `Failed to fetch detection (${response.status})`);
+            }
+
+            const data = await response.json();
+            if (!data.success || !data.detection) throw new Error('Invalid response format');
+
+            const det = data.detection;
+            // If summary is empty but totalDetections > 0, the DB write may still be in progress — retry
+            if (det.totalDetections > 0 && (!det.summary || det.summary.length === 0) && retries > 0) {
+              await new Promise(r => setTimeout(r, delayMs));
+              return fetchDetection(retries - 1, delayMs * 1.5);
+            }
+            return data;
+          };
+
+          const data = await fetchDetection();
+          setResults([data.detection]);
+
+          toast({
+            title: "✅ Results Loaded",
+            description: "Detection results loaded successfully",
+            duration: 3000,
+          });
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : "Unknown error";
           toast({
@@ -160,12 +161,14 @@ export default function ResultsPage() {
 
   const currentResult = results[activeIndex] || emptyResult;
   const totalObjects = currentResult.totalDetections;
-  const avgConfidence = currentResult.summary.length > 0
-    ? Math.round(
-        currentResult.summary.reduce((sum, s) => sum + s.avgConfidence, 0) /
-          currentResult.summary.length
-      )
-    : 0;
+  const avgConfidence = (currentResult as any).avgConfidence != null
+    ? Math.round((currentResult as any).avgConfidence)
+    : currentResult.summary.length > 0
+      ? Math.round(
+          currentResult.summary.reduce((sum, s) => sum + s.avgConfidence, 0) /
+            currentResult.summary.length
+        )
+      : 0;
 
   const isVideo = !!(currentResult.annotatedVideo || currentResult.annotatedVideoUrl || currentResult.totalFrames);
   

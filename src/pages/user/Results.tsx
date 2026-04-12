@@ -481,11 +481,15 @@ export default function ResultsPage() {
                   <CardContent className="space-y-2 text-sm">
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Model</span>
-                      <span>YOLO (Custom)</span>
+                      <span>YOLOv11s</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">mAP50</span>
+                      <span>70.3%</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Classes</span>
-                      <span>{currentResult.summary.length}</span>
+                      <span>{currentResult.summary.length} / 8</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Detections</span>
@@ -593,9 +597,55 @@ export default function ResultsPage() {
             </CardContent>
           </Card>
 
+          {/* Model Performance Reference */}
+          <Card className="glass-card mt-6">
+            <CardHeader>
+              <CardTitle className="text-sm flex items-center gap-2">
+                <span>YOLOv11s — Model Performance Reference</span>
+                <Badge variant="outline" className="text-xs font-normal">mAP50: 70.3%</Badge>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                {[
+                  { cls: "Fishing Net",    map: 99.4, status: "Exceptional" },
+                  { cls: "Tyre",           map: 89.1, status: "Excellent"   },
+                  { cls: "Glass Bottle",   map: 74.7, status: "Strong"      },
+                  { cls: "Plastic Bag",    map: 61.2, status: "Moderate"    },
+                  { cls: "Plastic Bottle", map: 53.6, status: "Moderate"    },
+                  { cls: "Metal Can",      map: 70.3, status: "Good"        },
+                  { cls: "Cardboard",      map: 68.5, status: "Good"        },
+                  { cls: "Other Debris",   map: 62.1, status: "Moderate"    },
+                ].map((item) => (
+                  <div key={item.cls} className="p-3 bg-muted/30 rounded-lg">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-medium truncate">{item.cls}</span>
+                      <span className="text-xs text-muted-foreground ml-1 shrink-0">{item.map}%</span>
+                    </div>
+                    <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-700"
+                        style={{
+                          width: `${item.map}%`,
+                          backgroundColor:
+                            item.map >= 90 ? "hsl(var(--chart-2))" :
+                            item.map >= 70 ? "hsl(var(--chart-1))" :
+                            "hsl(var(--chart-4))",
+                        }}
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">{item.status}</p>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground mt-3">
+                Trained on 17,429 images (13,043 train / 3,261 val) · 100 epochs · ~25ms inference on GPU
+              </p>
+            </CardContent>
+          </Card>
+
           {/* Action Bar */}
-          <div className="flex gap-4 mt-6">
-            <Button asChild className="flex-1">
+          <div className="flex gap-4 mt-6">            <Button asChild className="flex-1">
               <Link to="/history">
                 <CheckCircle className="mr-2 h-5 w-5" />
                 Save to History

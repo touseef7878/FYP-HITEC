@@ -11,7 +11,7 @@ import logoImg from "@/assets/images/marine-logo.png";
 const features = [{
   icon: Sparkles,
   title: "Object Detection",
-  description: "YOLOv12n model trained on marine plastic waste for accurate detection"
+  description: "YOLOv11s model trained on 17,429 marine debris images across 8 debris categories"
 }, {
   icon: TrendingUp,
   title: "Trend Forecasting",
@@ -26,17 +26,17 @@ const features = [{
   description: "Process images and videos with live progress tracking"
 }];
 const stats = [{
-  value: "95%+",
-  label: "Detection Accuracy"
+  value: "70.3%",
+  label: "mAP50 Accuracy"
 }, {
-  value: "12",
-  label: "Plastic Classes"
+  value: "8",
+  label: "Debris Classes"
 }, {
-  value: "50+",
-  label: "Research Locations"
+  value: "17K+",
+  label: "Training Images"
 }, {
-  value: "<2s",
-  label: "Processing Time"
+  value: "~25ms",
+  label: "Inference Time"
 }];
 const teamMembers = [{
   name: "Touseef Ur Rehman",
@@ -124,7 +124,7 @@ export default function HomePage() {
                 
                 <p className="text-sm sm:text-lg lg:text-xl text-white/70 mb-6 sm:mb-8 max-w-2xl leading-relaxed">
                   Computer vision and deep learning for real-time identification and tracking of marine debris. 
-                  Combines YOLOv12n detection with LSTM forecasting for pollution analysis.
+                  Combines YOLOv11s detection with LSTM forecasting for pollution analysis.
                 </p>
                 
                 <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 mb-8 sm:mb-12">

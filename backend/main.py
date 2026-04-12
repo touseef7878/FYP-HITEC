@@ -326,7 +326,7 @@ async def favicon():
         return FileResponse(favicon_path, media_type="image/png")
     return JSONResponse({"error": "Favicon not found"}, status_code=404)
 
-# Load YOLO model - supports YOLOv8, YOLOv11, YOLOv12n models
+# Load YOLO model - YOLOv11s (Small) custom-trained on marine debris
 WEIGHTS_PATH = os.path.join(os.path.dirname(__file__), "weights", "best.pt")
 model = None
 
@@ -339,9 +339,8 @@ def load_yolo_model():
             return
 
         model = YOLO(WEIGHTS_PATH)
-        # NOTE: Do NOT call model.to('cpu') on YOLOv12 — it breaks AAttn's qkv attribute.
-        # Ultralytics handles device placement internally during inference.
-        logger.info(f"✅ YOLOv12n model loaded from {WEIGHTS_PATH}")
+        # Ultralytics handles device placement internally — do not call model.to('cpu') manually.
+        logger.info(f"✅ YOLOv11s model loaded from {WEIGHTS_PATH}")
         logger.info(f"   Classes: {list(model.names.values()) if model.names else 'Unknown'}")
     except Exception as e:
         logger.error(f"❌ Failed to load model from {WEIGHTS_PATH}: {e}")
@@ -396,7 +395,7 @@ async def health_check():
         }
         model_status = "loaded"
         
-        model_message = "Using YOLOv12n custom weights (best.pt)"
+        model_message = "Using YOLOv11s custom weights (best.pt) — trained on 17,429 marine debris images, 8 classes, 70.3% mAP50"
     else:
         model_info = {"loaded": False}
         model_status = "failed"
@@ -2941,7 +2940,7 @@ async def generate_report(
             "report_version": "2.0",
             "data_sources": [],
             "methodology": {
-                "detection_model": "YOLOv8 Marine Debris Detection",
+                "detection_model": "YOLOv11s Marine Debris Detection (70.3% mAP50, 8 classes)",
                 "prediction_model": "LSTM Time Series Forecasting",
                 "confidence_threshold": "25%",
                 "analysis_period": f"{request.date_range_days} days"

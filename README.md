@@ -1,6 +1,6 @@
 # 🌊 Marine Detection System
 
-AI-powered platform for marine plastic pollution detection and environmental trend analysis using YOLOv12n and LSTM neural networks.
+AI-powered platform for marine plastic pollution detection and environmental trend analysis using YOLOv11s and LSTM neural networks.
 
 **HITEC University Taxila - Final Year Project 2026**
 
@@ -26,7 +26,7 @@ AI-powered platform for marine plastic pollution detection and environmental tre
 ## ✨ Features
 
 ### Core Features
-- **YOLOv12n Object Detection** - Real-time detection of marine plastic in images and videos
+- **YOLOv11s Object Detection** - Real-time detection of marine debris across 8 categories (70.3% mAP50)
 - **LSTM Predictions** - Forecast pollution trends for 7-90 days ahead across 4 marine regions
 - **User Authentication** - JWT-based auth with USER/ADMIN roles and session tracking
 - **Interactive Heatmaps** - Visualize pollution density across marine regions
@@ -70,7 +70,7 @@ AI-powered platform for marine plastic pollution detection and environmental tre
 ### Backend
 - FastAPI (Python web framework)
 - SQLite with WAL mode + connection pooling (10 connections)
-- YOLOv12n via Ultralytics (object detection)
+- YOLOv11s via Ultralytics (object detection)
 - TensorFlow/Keras (LSTM time-series models)
 - OpenCV (image/video processing)
 - bcrypt (password hashing)
@@ -97,7 +97,7 @@ Browser (React SPA)
        ▼
 FastAPI Backend (port 8000)
   ├── YOLO Detection Pipeline
-  │     Upload → OpenCV preprocess → YOLOv12n inference → annotate → store
+  │     Upload → OpenCV preprocess → YOLOv11s inference → annotate → store
   ├── LSTM Forecasting Pipeline
   │     Fetch (NOAA+WAQI) → cache CSV → preprocess → train → predict
   └── SQLite Database (WAL mode, connection pool)
@@ -226,7 +226,7 @@ marine-detection-system/
 │   │   ├── noaa_api.py          # NOAA CDO API client
 │   │   └── waqi_api.py          # WAQI API client
 │   ├── weights/
-│   │   └── best.pt              # YOLOv12n custom weights (add this)
+│   │   └── best.pt              # YOLOv11s custom weights (add this)
 │   ├── processed_videos/        # Uploaded + annotated video files
 │   ├── init_db.py               # One-time database setup
 │   ├── main.py                  # FastAPI app + all endpoints
@@ -337,23 +337,36 @@ GET  /api/admin/logs
 
 ## 🧠 ML Models
 
-### YOLOv12n — Object Detection
+### YOLOv11s — Object Detection
 
-- **Weights**: `backend/weights/best.pt` (custom trained on marine plastic)
+- **Weights**: `backend/weights/best.pt` (custom trained on marine debris)
 - **Framework**: Ultralytics (requires `ultralytics>=8.4.0`)
-- **Classes**: 12 marine plastic categories
-- **Accuracy**: 95%+ detection accuracy
-- **Speed**: <2 seconds per image
-- **Note**: Do not call `.to('cpu')` on YOLOv12 — Ultralytics handles device placement internally. Calling it manually breaks the AAttn `qkv` attribute.
+- **Architecture**: YOLOv11s (Small) — optimized for real-time embedded deployment (Jetson Nano / ROV)
+- **Dataset**: 17,429 images (13,043 train / 3,261 validation), 8 debris classes
+- **Training**: 100 epochs, SGD with linear LR decay, Mosaic + Mixup augmentation, transfer learning from YOLOv11s pretrained weights
+- **Overall mAP50**: 70.3%
+- **Inference speed**: ~25ms per image on Tesla T4 GPU (~30-40 FPS, real-time ready)
+
+**Per-class performance:**
+
+| Class | mAP50 | Status |
+|---|---|---|
+| Fishing Net | 99.4% | Exceptional |
+| Tyre | 89.1% | Excellent |
+| Glass Bottle | 74.7% | Strong |
+| Plastic Bag | 61.2% | Moderate |
+| Plastic Bottle | 53.6% | Moderate |
+
+Fishing nets score highest due to their distinct repeating texture patterns. Plastic bags score lowest because they are translucent, deformable, and visually similar to jellyfish or sandy backgrounds.
 
 **Image pipeline:**
 ```
-Upload → PIL/OpenCV load → YOLO inference → confidence filter → bbox extraction → annotate → base64 encode → store
+Upload → PIL/OpenCV load → YOLOv11s inference → confidence filter → bbox extraction → annotate → base64 encode → store
 ```
 
 **Video pipeline:**
 ```
-Upload → frame extraction (OpenCV) → YOLO per frame → aggregate results → annotate frames → encode MP4 → stream
+Upload → frame extraction (OpenCV) → YOLOv11s per frame → aggregate results → annotate frames → FFmpeg encode MP4 → stream
 ```
 
 ### LSTM — Pollution Trend Forecasting
@@ -466,9 +479,8 @@ python init_db.py
 ```
 
 **YOLO model not loading**
-- Ensure `backend/weights/best.pt` exists
+- Ensure `backend/weights/best.pt` exists (YOLOv11s weights)
 - Ensure `ultralytics>=8.4.0` is installed: `pip install "ultralytics>=8.4.0"`
-- Do not manually call `.to('cpu')` on the model
 
 **LSTM predictions fail** — "No trained model found"
 - Complete the 3-step workflow in the Predictions page: Fetch Data → Train → Predict
@@ -486,7 +498,7 @@ npm install
 
 **HITEC University Taxila - Final Year Project 2026**
 
-- **Touseef Ur Rehman** - ML Engineer (YOLOv12n & LSTM)
+- **Touseef Ur Rehman** - ML Engineer (YOLOv11s & LSTM)
 - **Qasim Shahzad** - Backend Engineer (FastAPI & Database)
 - **Zohaib Ashraf** - Frontend Engineer (React & UI/UX)
 

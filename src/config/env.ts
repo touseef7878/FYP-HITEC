@@ -22,6 +22,9 @@ export const ENV = {
   // Upload Limits
   MAX_FILE_SIZE: parseInt(import.meta.env.VITE_MAX_FILE_SIZE || '104857600'), // 100MB
   MAX_VIDEO_DURATION: parseInt(import.meta.env.VITE_MAX_VIDEO_DURATION || '300'), // 5 minutes
+
+  // AI Assistant — Gemini 1.5 Flash (free tier)
+  GEMINI_API_KEY: import.meta.env.VITE_GEMINI_API_KEY || '',
 } as const;
 
 export default ENV;

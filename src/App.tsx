@@ -7,6 +7,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { ThemeProvider } from "@/hooks/useTheme";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
+import { OceanAssistant } from "@/components/features/assistant/OceanAssistant";
 import { Suspense, lazy } from "react";
 
 // Lazy load pages
@@ -228,6 +229,7 @@ const App = () => (
         <BrowserRouter>
           <AuthProvider>
             <AppRoutes />
+            <OceanAssistant />
           </AuthProvider>
         </BrowserRouter>
       </TooltipProvider>

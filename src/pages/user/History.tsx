@@ -2,19 +2,9 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import {
-  Search,
-  Filter,
-  Image,
-  Video,
-  Calendar,
-  ChevronRight,
-  Clock,
-  Package,
-  FileX,
-  Trash2,
-  Eye,
-  AlertTriangle,
-  RefreshCw,
+  Search, Filter, Image, Video, Calendar,
+  Clock, Package, FileX, Trash2, Eye,
+  AlertTriangle, RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -270,31 +260,31 @@ export default function HistoryPage() {
   return (
     <MainLayout>
       <PageTransition className="page-container">
-        <div className="max-w-5xl mx-auto">
-          <div className="mb-8">
-            <h1 className="section-header">Detection History</h1>
-            <p className="text-muted-foreground">
+        <div className="max-w-4xl sm:max-w-5xl mx-auto">
+          <div className="mb-4 sm:mb-6">
+            <h1 className="section-header mb-1">Detection History</h1>
+            <p className="text-muted-foreground text-xs sm:text-sm">
               View and manage your past detections
             </p>
           </div>
 
           {/* Filters */}
-          <Card className="glass-card mb-6">
-            <CardContent className="py-4">
-              <div className="flex flex-col sm:flex-row gap-4">
+          <Card className="glass-card mb-4 sm:mb-6">
+            <CardContent className="py-3 sm:py-4 px-3 sm:px-4">
+              <div className="flex flex-col gap-2 sm:gap-3">
                 <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                   <Input
                     placeholder="Search by filename..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10"
+                    className="pl-9 h-9 text-sm"
                   />
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <Select value={typeFilter} onValueChange={setTypeFilter}>
-                    <SelectTrigger className="w-[130px]">
-                      <Filter className="h-4 w-4 mr-2" />
+                    <SelectTrigger className="w-[110px] h-8 text-xs">
+                      <Filter className="h-3 w-3 mr-1" />
                       <SelectValue placeholder="Type" />
                     </SelectTrigger>
                     <SelectContent>
@@ -304,8 +294,8 @@ export default function HistoryPage() {
                     </SelectContent>
                   </Select>
                   <Select value={dateFilter} onValueChange={setDateFilter}>
-                    <SelectTrigger className="w-[130px]">
-                      <Calendar className="h-4 w-4 mr-2" />
+                    <SelectTrigger className="w-[110px] h-8 text-xs">
+                      <Calendar className="h-3 w-3 mr-1" />
                       <SelectValue placeholder="Date" />
                     </SelectTrigger>
                     <SelectContent>
@@ -315,23 +305,13 @@ export default function HistoryPage() {
                       <SelectItem value="month">This Month</SelectItem>
                     </SelectContent>
                   </Select>
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={handleRefresh}
-                    disabled={isLoading}
-                  >
-                    <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+                  <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isLoading} className="h-8 text-xs px-2.5">
+                    <RefreshCw className={`h-3 w-3 mr-1 ${isLoading ? "animate-spin" : ""}`} />
                     Refresh
                   </Button>
                   {historyData.length > 0 && (
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      onClick={handleClearAll}
-                      className="text-destructive hover:text-destructive"
-                    >
-                      <Trash2 className="h-4 w-4 mr-2" />
+                    <Button variant="outline" size="sm" onClick={handleClearAll} className="h-8 text-xs px-2.5 text-destructive hover:text-destructive">
+                      <Trash2 className="h-3 w-3 mr-1" />
                       Clear All
                     </Button>
                   )}
@@ -367,73 +347,57 @@ export default function HistoryPage() {
               {filteredData.map((item, index) => (
                 <motion.div key={item.id} variants={fadeInUp}>
                   <Card className="glass-card hover-lift cursor-pointer group">
-                    <CardContent className="py-4">
-                      <div className="flex items-center gap-4">
+                    <CardContent className="py-3 sm:py-4 px-3 sm:px-4">
+                      <div className="flex items-center gap-3">
                         {/* Icon */}
-                        <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
-                          {item.type === "image" ? (
-                            <Image className="h-6 w-6 text-primary" />
-                          ) : (
-                            <Video className="h-6 w-6 text-primary" />
-                          )}
+                        <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
+                          {item.type === "image"
+                            ? <Image className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+                            : <Video className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />}
                         </div>
 
                         {/* Main Content */}
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <h3 className="font-medium truncate">{item.filename}</h3>
-                            <Badge variant="secondary" className="text-xs">
-                              {item.type}
-                            </Badge>
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <h3 className="font-medium truncate text-xs sm:text-sm">{item.filename}</h3>
+                            <Badge variant="secondary" className="text-xs px-1.5 py-0 flex-shrink-0">{item.type}</Badge>
                           </div>
-                          <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+                          <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs text-muted-foreground">
                             <span className="flex items-center gap-1">
-                              <Clock className="h-3.5 w-3.5" />
-                              {item.date} at {item.time}
+                              <Clock className="h-3 w-3" />
+                              {item.date}
                             </span>
                             <span className="flex items-center gap-1">
-                              <Package className="h-3.5 w-3.5" />
-                              {item.objects} objects
+                              <Package className="h-3 w-3" />
+                              {item.objects} obj
                             </span>
-                            <span>{item.confidence.toFixed(1)}% confidence</span>
+                            <span>{item.confidence.toFixed(0)}%</span>
                           </div>
-                          <div className="flex flex-wrap gap-1 mt-2">
-                            {item.classes.map((cls, i) => (
-                              <Badge
-                                key={i}
-                                variant="outline"
-                                className="text-xs"
-                              >
-                                {cls}
-                              </Badge>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {item.classes.slice(0, 3).map((cls, i) => (
+                              <Badge key={i} variant="outline" className="text-xs px-1.5 py-0">{cls}</Badge>
                             ))}
+                            {item.classes.length > 3 && (
+                              <Badge variant="outline" className="text-xs px-1.5 py-0">+{item.classes.length - 3}</Badge>
+                            )}
                           </div>
                         </div>
 
                         {/* Actions */}
-                        <div className="flex items-center gap-2 flex-shrink-0">
+                        <div className="flex items-center gap-1 flex-shrink-0">
                           <Link to={`/results/${item.id}`}>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              title="View Results"
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                          </Link>
-                          <Link to={`/results/${item.id}`}>
-                            <Button variant="ghost" size="icon" title="Open Results">
-                              <ChevronRight className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
+                            <Button variant="ghost" size="icon" className="h-7 w-7 sm:h-8 sm:w-8" title="View">
+                              <Eye className="h-3.5 w-3.5" />
                             </Button>
                           </Link>
                           <Button
                             variant="ghost"
                             size="icon"
+                            className="h-7 w-7 sm:h-8 sm:w-8 text-destructive hover:text-destructive"
                             onClick={() => handleDeleteItem(item)}
-                            className="text-destructive hover:text-destructive"
                             title="Delete"
                           >
-                            <Trash2 className="h-4 w-4" />
+                            <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         </div>
                       </div>

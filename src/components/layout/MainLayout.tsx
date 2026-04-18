@@ -13,12 +13,13 @@ const MainContent = memo(({ children }: MainLayoutProps) => {
   return (
     <div className="min-h-screen bg-background">
       <Sidebar />
-      
-      {/* Main Content */}
       <main
         className={cn(
-          "pt-16 lg:pt-0 min-h-screen transition-all duration-300",
-          isCollapsed ? "lg:ml-[80px]" : "lg:ml-[280px]"
+          "min-h-screen transition-[margin] duration-300",
+          /* mobile: shift down just enough for the hamburger (56px = h-14) */
+          "pt-14 lg:pt-0",
+          /* desktop: shift right based on sidebar width */
+          isCollapsed ? "lg:ml-20" : "lg:ml-[280px]"
         )}
       >
         {children}

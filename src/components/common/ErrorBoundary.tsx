@@ -1,4 +1,5 @@
 import React from 'react';
+import logger from '@/utils/logger';
 
 interface ErrorBoundaryState {
   hasError: boolean;

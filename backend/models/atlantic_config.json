@@ -24,9 +24,9 @@
   ],
   "target_name": "pollution_level",
   "created_at": null,
-  "last_trained": "2026-03-15T12:44:09.547903",
+  "last_trained": "2026-04-18T20:41:08.897455",
   "training_samples": 2894,
-  "validation_mae": 9.782192616963709,
-  "validation_rmse": 12.004593998613592,
+  "validation_mae": 10.76084889360866,
+  "validation_rmse": 11.21973573515032,
   "region": "atlantic"
 }

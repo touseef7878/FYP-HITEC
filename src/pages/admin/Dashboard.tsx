@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { motion } from 'framer-motion';
 import logger from '@/utils/logger';
 import { 
   Users, 
@@ -356,11 +355,7 @@ const AdminDashboard: React.FC = () => {
                   variant="destructive" 
                   size="sm" 
                   className="w-full gap-2"
-                  onClick={() => {
-                    if (confirm('Are you sure you want to enable maintenance mode?')) {
-                      handleSystemAction('maintenance');
-                    }
-                  }}
+                  onClick={() => handleSystemAction('maintenance')}
                 >
                   <AlertTriangle className="h-4 w-4" />
                   Enable Maintenance Mode

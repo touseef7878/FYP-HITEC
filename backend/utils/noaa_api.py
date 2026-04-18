@@ -293,7 +293,7 @@ class NOAACDOClient:
             result_df[numeric_columns] = result_df[numeric_columns].interpolate(method='linear')
             
             # Fill any remaining NaN with forward fill
-            result_df = result_df.fillna(method='ffill').fillna(method='bfill')
+            result_df = result_df.ffill().bfill()
             
             logger.info(f"Processed {len(result_df)} days of environmental data for {area}")
             return result_df

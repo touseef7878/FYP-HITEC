@@ -520,22 +520,6 @@ class DatabaseManager:
             logger.error(f"Get detection by ID failed: {e}")
             return None
     
-    def delete_detection(self, detection_id: int, user_id: int) -> bool:
-        """Delete detection (user can only delete their own)"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    DELETE FROM detections WHERE id = ? AND user_id = ?
-                """, (detection_id, user_id))
-                
-                conn.commit()
-                return cursor.rowcount > 0
-                
-        except Exception as e:
-            logger.error(f"Delete detection failed: {e}")
-            return False
-    
     # ==================== PREDICTION MANAGEMENT ====================
     
     def save_prediction(self, user_id: int, region: str, prediction_date: str,
@@ -623,9 +607,9 @@ class DatabaseManager:
     
     # ==================== ANALYTICS & REPORTS ====================
     
-    def save_analytics_data(self, user_id: int, data_type: str, region: str,
+    def save_analytics_point(self, user_id: int, data_type: str, region: str,
                            date_recorded: str, value: float, metadata: Dict = None) -> bool:
-        """Save analytics data point"""
+        """Save a single analytics data point"""
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
@@ -633,12 +617,10 @@ class DatabaseManager:
                     INSERT INTO analytics_data (user_id, data_type, region, date_recorded, value, metadata)
                     VALUES (?, ?, ?, ?, ?, ?)
                 """, (user_id, data_type, region, date_recorded, value, json.dumps(metadata or {})))
-                
                 conn.commit()
                 return True
-                
         except Exception as e:
-            logger.error(f"Save analytics data failed: {e}")
+            logger.error(f"Save analytics point failed: {e}")
             return False
     
     def get_analytics_data(self, user_id: int, data_type: str = None, region: str = None,
@@ -683,48 +665,7 @@ class DatabaseManager:
             logger.error(f"Get analytics data failed: {e}")
             return []
     
-    def get_user_reports(self, user_id: int, limit: int = 50) -> List[Dict]:
-        """Get user's reports"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT * FROM reports WHERE user_id = ? 
-                    ORDER BY created_at DESC LIMIT ?
-                """, (user_id, limit))
-                
-                reports = []
-                for row in cursor.fetchall():
-                    report = dict(row)
-                    report['metadata'] = json.loads(report['metadata'] or '{}')
-                    reports.append(report)
-                
-                return reports
-                
-        except Exception as e:
-            logger.error(f"Get user reports failed: {e}")
-            return []
-    
     # ==================== LOGGING ====================
-    
-    def log_activity(self, level: str, message: str, user_id: int = None,
-                    module: str = None, function_name: str = None, 
-                    line_number: int = None, metadata: Dict = None) -> bool:
-        """Log system activity"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    INSERT INTO logs (user_id, level, message, module, function_name, line_number, metadata)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (user_id, level, message, module, function_name, line_number, json.dumps(metadata or {})))
-                
-                conn.commit()
-                return True
-                
-        except Exception as e:
-            logger.error(f"Log activity failed: {e}")
-            return False
     
     def get_system_logs(self, admin_user_id: int, level: str = None, 
                        limit: int = 1000, offset: int = 0) -> List[Dict]:
@@ -865,89 +806,6 @@ class DatabaseManager:
     
     # ==================== ADMIN METHODS ====================
     
-    def get_system_stats(self) -> Dict:
-        """Get system statistics for admin dashboard"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                stats = {}
-                
-                # Active users (logged in within last 24 hours)
-                cursor.execute("""
-                    SELECT COUNT(*) FROM users 
-                    WHERE is_active = 1 AND last_login >= datetime('now', '-1 day')
-                """)
-                stats['active_users'] = cursor.fetchone()[0]
-                
-                # Total detections
-                cursor.execute("SELECT COUNT(*) FROM detections")
-                stats['total_detections'] = cursor.fetchone()[0]
-                
-                # Database size (approximate)
-                cursor.execute("SELECT page_count * page_size as size FROM pragma_page_count(), pragma_page_size()")
-                result = cursor.fetchone()
-                stats['database_size'] = result[0] if result else 0
-                
-                # API requests today (using detections as proxy)
-                cursor.execute("""
-                    SELECT COUNT(*) FROM detections 
-                    WHERE created_at >= date('now')
-                """)
-                stats['api_requests_today'] = cursor.fetchone()[0]
-                
-                # Storage used
-                cursor.execute("SELECT COALESCE(SUM(file_size), 0) FROM detections WHERE file_size IS NOT NULL")
-                stats['storage_used'] = cursor.fetchone()[0]
-                
-                # Active sessions
-                cursor.execute("""
-                    SELECT COUNT(*) FROM sessions 
-                    WHERE is_active = 1 AND expires_at > datetime('now')
-                """)
-                stats['active_sessions'] = cursor.fetchone()[0]
-                
-                return stats
-                
-        except Exception as e:
-            logger.error(f"Get system stats failed: {e}")
-            return {}
-    
-    def get_recent_logs(self, limit: int = 20, level: str = None) -> List[Dict]:
-        """Get recent system logs"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                query = """
-                    SELECT l.*, u.username 
-                    FROM logs l 
-                    LEFT JOIN users u ON l.user_id = u.id
-                    WHERE 1=1
-                """
-                params = []
-                
-                if level:
-                    query += " AND l.level = ?"
-                    params.append(level)
-                
-                query += " ORDER BY l.timestamp DESC LIMIT ?"
-                params.append(limit)
-                
-                cursor.execute(query, params)
-                
-                logs = []
-                for row in cursor.fetchall():
-                    log = dict(row)
-                    log['metadata'] = json.loads(log['metadata'] or '{}')
-                    logs.append(log)
-                
-                return logs
-                
-        except Exception as e:
-            logger.error(f"Get recent logs failed: {e}")
-            return []
-    
     def backup_database(self) -> str:
         """Create database backup"""
         try:
@@ -1048,45 +906,37 @@ class DatabaseManager:
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                
-                cursor.execute("""
-                    DELETE FROM sessions 
-                    WHERE (expires_at <= datetime('now') OR is_active = 0)
-                    AND created_at <= datetime('now', '-{} days')
-                """.format(days))
-                
+                cursor.execute(
+                    "DELETE FROM sessions "
+                    "WHERE (expires_at <= datetime('now') OR is_active = 0) "
+                    "AND created_at <= datetime('now', ? || ' days')",
+                    (f"-{days}",)
+                )
                 deleted_count = cursor.rowcount
                 conn.commit()
-                
                 if deleted_count > 0:
                     logger.info(f"Cleaned up {deleted_count} old sessions")
-                
                 return deleted_count
-                
         except Exception as e:
             logger.error(f"Cleanup old sessions failed: {e}")
             return 0
-    
+
     def cleanup_old_logs(self, days: int = 30) -> int:
         """Clean up old log entries"""
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                
-                cursor.execute("""
-                    DELETE FROM logs 
-                    WHERE timestamp <= datetime('now', '-{} days')
-                    AND level NOT IN ('error', 'critical')
-                """.format(days))
-                
+                cursor.execute(
+                    "DELETE FROM logs "
+                    "WHERE timestamp <= datetime('now', ? || ' days') "
+                    "AND level NOT IN ('ERROR', 'CRITICAL')",
+                    (f"-{days}",)
+                )
                 deleted_count = cursor.rowcount
                 conn.commit()
-                
                 if deleted_count > 0:
                     logger.info(f"Cleaned up {deleted_count} old log entries")
-                
                 return deleted_count
-                
         except Exception as e:
             logger.error(f"Cleanup old logs failed: {e}")
             return 0
@@ -1447,49 +1297,22 @@ class DatabaseManager:
             logger.error(f"Update report file path failed: {e}")
             return False
     
-    def get_report_by_id(self, report_id: int) -> Optional[Dict]:
-        """Get report by ID"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT * FROM reports WHERE id = ?
-                """, (report_id,))
-                
-                report = cursor.fetchone()
-                if report:
-                    report = dict(report)
-                    report['data_range'] = json.loads(report['data_range'] or '{}')
-                    report['metadata'] = json.loads(report['metadata'] or '{}')
-                
-                return report
-                
-        except Exception as e:
-            logger.error(f"Get report by ID failed: {e}")
-            return None
-    
     def log_system_event(self, user_id: int, level: str, message: str, module: str, function_name: str = None, line_number: int = None, metadata: Dict = None) -> bool:
         """Log system event"""
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                
                 cursor.execute("""
                     INSERT INTO logs (user_id, level, message, module, function_name, line_number, metadata)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                 """, (user_id, level, message, module, function_name, line_number, json.dumps(metadata or {})))
-                
                 conn.commit()
                 return True
-                
         except Exception as e:
             logger.error(f"Log system event failed: {e}")
             return False
 
-# Global database instance
-    
     # ==================== ANALYTICS MANAGEMENT ====================
-    
     def save_analytics_data(self, user_id: int, analytics_data: Dict) -> bool:
         """Save analytics data for user"""
         try:

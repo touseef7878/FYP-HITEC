@@ -6,53 +6,32 @@
 
 @layer base {
   :root {
-    /* Ocean Blues & Teals Palette - Light Mode */
     --background: 200 50% 98%;
     --foreground: 210 40% 20%;
-
     --card: 200 40% 100%;
     --card-foreground: 210 40% 20%;
-
     --popover: 200 40% 100%;
     --popover-foreground: 210 40% 20%;
-
-    /* Deep Ocean Blue - Primary */
     --primary: 203 77% 26%;
     --primary-foreground: 200 50% 98%;
-
-    /* Soft Teal - Secondary */
     --secondary: 170 50% 45%;
     --secondary-foreground: 200 50% 98%;
-
-    /* Aqua - Accent */
     --accent: 177 59% 41%;
     --accent-foreground: 200 50% 98%;
-
     --muted: 200 30% 94%;
     --muted-foreground: 210 20% 45%;
-
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
-
-    /* Sea Green - Success */
     --success: 160 84% 39%;
     --success-foreground: 0 0% 100%;
-
-    /* Sand - Warning */
     --warning: 38 92% 50%;
     --warning-foreground: 0 0% 10%;
-
     --border: 200 30% 88%;
     --input: 200 30% 88%;
     --ring: 203 77% 26%;
-
     --radius: 0.75rem;
-
-    /* Glassmorphism */
     --glass-bg: 200 50% 100% / 0.7;
     --glass-border: 200 30% 90% / 0.5;
-
-    /* Sidebar */
     --sidebar-background: 200 40% 98%;
     --sidebar-foreground: 210 40% 25%;
     --sidebar-primary: 203 77% 26%;
@@ -61,8 +40,6 @@
     --sidebar-accent-foreground: 200 50% 98%;
     --sidebar-border: 200 30% 90%;
     --sidebar-ring: 203 77% 40%;
-
-    /* Chart Colors */
     --chart-1: 203 77% 26%;
     --chart-2: 170 50% 45%;
     --chart-3: 177 59% 41%;
@@ -71,51 +48,31 @@
   }
 
   .dark {
-    /* Ocean Blues & Teals - Dark Mode */
     --background: 215 50% 8%;
     --foreground: 200 40% 95%;
-
     --card: 215 45% 12%;
     --card-foreground: 200 40% 95%;
-
     --popover: 215 45% 12%;
     --popover-foreground: 200 40% 95%;
-
-    /* Deep Ocean Blue - Primary (lighter for dark mode) */
     --primary: 200 70% 55%;
     --primary-foreground: 215 50% 8%;
-
-    /* Soft Teal - Secondary */
     --secondary: 170 50% 40%;
     --secondary-foreground: 200 40% 95%;
-
-    /* Aqua - Accent */
     --accent: 177 59% 45%;
     --accent-foreground: 215 50% 8%;
-
     --muted: 215 40% 18%;
     --muted-foreground: 200 20% 65%;
-
     --destructive: 0 62% 45%;
     --destructive-foreground: 0 0% 100%;
-
-    /* Sea Green - Success */
     --success: 160 70% 45%;
     --success-foreground: 0 0% 100%;
-
-    /* Sand - Warning */
     --warning: 38 80% 55%;
     --warning-foreground: 0 0% 10%;
-
     --border: 215 40% 20%;
     --input: 215 40% 20%;
     --ring: 200 70% 55%;
-
-    /* Glassmorphism Dark */
     --glass-bg: 215 45% 15% / 0.8;
     --glass-border: 215 40% 25% / 0.5;
-
-    /* Sidebar Dark */
     --sidebar-background: 215 50% 10%;
     --sidebar-foreground: 200 40% 90%;
     --sidebar-primary: 200 70% 55%;
@@ -124,8 +81,6 @@
     --sidebar-accent-foreground: 215 50% 8%;
     --sidebar-border: 215 40% 18%;
     --sidebar-ring: 200 70% 55%;
-
-    /* Chart Colors Dark */
     --chart-1: 200 70% 55%;
     --chart-2: 170 50% 50%;
     --chart-3: 177 59% 50%;
@@ -135,48 +90,97 @@
 }
 
 @layer base {
-  * {
-    @apply border-border;
-  }
+  * { @apply border-border; }
 
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: "rlig" 1, "calt" 1;
+    /* GPU-accelerated text rendering */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
-  /* Smooth scrolling */
-  html {
-    scroll-behavior: smooth;
-  }
+  html { scroll-behavior: smooth; }
 
-  /* Custom scrollbar */
-  ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-  }
+  /* Thin, fast scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { @apply bg-transparent; }
+  ::-webkit-scrollbar-thumb { @apply bg-muted-foreground/25 rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-muted-foreground/40; }
+}
 
-  ::-webkit-scrollbar-track {
-    @apply bg-muted/30;
-  }
+/* ── Hero video ──────────────────────────────────────────────────────────── */
+.hero-section {
+  /* On mobile: full viewport minus the pt-14 offset from MainLayout */
+  min-height: 480px;
+  height: clamp(480px, 85vw, 720px);
+  max-height: 720px;
+  /* No border-radius on mobile — flush edge to edge */
+  border-radius: 0;
+}
 
-  ::-webkit-scrollbar-thumb {
-    @apply bg-muted-foreground/30 rounded-full;
-  }
-
-  ::-webkit-scrollbar-thumb:hover {
-    @apply bg-muted-foreground/50;
+@media (min-width: 640px) {
+  .hero-section {
+    min-height: 520px;
+    height: clamp(520px, 70vw, 700px);
+    border-radius: 1.25rem; /* rounded-2xl */
+    margin: 0.75rem;
   }
 }
 
+@media (min-width: 1024px) {
+  .hero-section {
+    min-height: 580px;
+    height: clamp(580px, 60vw, 720px);
+    border-radius: 1.5rem; /* rounded-3xl */
+    margin: 1rem;
+  }
+}
+
+.hero-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* GPU layer — zero jank */
+  will-change: transform;
+  transform: translateZ(0);
+  /* Prevent flash of unstyled content */
+  background: #0a1628;
+}
+
+.hero-overlay-lr {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(
+    to right,
+    rgba(10, 22, 40, 0.92) 0%,
+    rgba(15, 76, 117, 0.72) 55%,
+    rgba(10, 22, 40, 0.55) 100%
+  );
+}
+
+.hero-overlay-tb {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(
+    to bottom,
+    transparent 40%,
+    rgba(10, 22, 40, 0.85) 100%
+  );
+}
+
+/* ── Components ──────────────────────────────────────────────────────────── */
 @layer components {
-  /* Glassmorphism Card */
   .glass-card {
     @apply backdrop-blur-md border rounded-xl;
     background: hsl(var(--glass-bg));
     border-color: hsl(var(--glass-border));
   }
 
-  /* Ocean wave animation background */
   .ocean-gradient {
     background: linear-gradient(
       135deg,
@@ -186,72 +190,52 @@
     );
   }
 
-  /* Subtle ocean shimmer */
-  .ocean-shimmer {
-    background: linear-gradient(
-      90deg,
-      transparent 0%,
-      hsl(var(--accent) / 0.1) 50%,
-      transparent 100%
-    );
-    animation: shimmer 2s infinite;
-  }
-
-  /* Hover lift effect */
+  /* Buttery hover — GPU only, no layout shift */
   .hover-lift {
-    @apply transition-all duration-300 ease-out;
+    transition: transform 200ms ease-out, box-shadow 200ms ease-out;
+    will-change: transform;
   }
-
   .hover-lift:hover {
-    @apply -translate-y-1;
-    box-shadow: 0 10px 40px -10px hsl(var(--primary) / 0.3);
+    transform: translateY(-2px) translateZ(0);
+    box-shadow: 0 8px 30px -8px hsl(var(--primary) / 0.25);
   }
 
-  /* Page container */
   .page-container {
-    @apply min-h-screen p-6 lg:p-8;
+    @apply min-h-screen;
+    /* Comfortable padding on all screen sizes */
+    padding: 0.875rem;
   }
 
-  /* Section header */
+  @media (min-width: 640px) {
+    .page-container { padding: 1.25rem; }
+  }
+
+  @media (min-width: 1024px) {
+    .page-container { padding: 1.75rem; }
+  }
+
+  @media (min-width: 1280px) {
+    .page-container { padding: 2rem; }
+  }
+
   .section-header {
-    @apply text-2xl font-bold tracking-tight mb-6;
+    @apply text-xl sm:text-2xl font-bold tracking-tight mb-4 sm:mb-6;
   }
 }
 
+/* ── Utilities ───────────────────────────────────────────────────────────── */
 @layer utilities {
-  /* Gradient text */
   .gradient-text {
     @apply bg-clip-text text-transparent;
-    background-image: linear-gradient(
-      135deg,
-      hsl(var(--primary)) 0%,
-      hsl(var(--accent)) 100%
-    );
+    background-image: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--accent)) 100%);
   }
 
-  /* Animation delay utilities */
-  .animation-delay-100 {
-    animation-delay: 100ms;
-  }
-  .animation-delay-200 {
-    animation-delay: 200ms;
-  }
-  .animation-delay-300 {
-    animation-delay: 300ms;
-  }
-  .animation-delay-400 {
-    animation-delay: 400ms;
-  }
-  .animation-delay-500 {
-    animation-delay: 500ms;
+  /* xs breakpoint helper (below sm=640) */
+  @media (min-width: 480px) {
+    .xs\:flex-row { flex-direction: row; }
+    .xs\:w-auto { width: auto; }
+    .xs\:grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .xs\:text-3xl { font-size: 1.875rem; line-height: 2.25rem; }
   }
 }
 
-@keyframes shimmer {
-  0% {
-    transform: translateX(-100%);
-  }
-  100% {
-    transform: translateX(100%);
-  }
-}

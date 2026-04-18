@@ -117,6 +117,7 @@ export default function UploadPage() {
   const [confidence, setConfidence] = useState(25);
   const [showSettings, setShowSettings] = useState(false);
   const [backendStatus, setBackendStatus] = useState<"unknown" | "online" | "offline">("unknown");
+  const [lastDetectionId, setLastDetectionId] = useState<number | undefined>(undefined);
   const navigate = useNavigate();
   const { toast } = useToast();
   const { token } = useAuth();
@@ -501,6 +502,8 @@ export default function UploadPage() {
         || results[0]?.detection_id
         || (results[0]?.result_id ? parseInt(results[0].result_id) : undefined);
       
+      setLastDetectionId(firstDetectionId);
+      
       setTimeout(() => {
         addLog("🚀 Auto-redirecting to results...");
         setIsComplete(false);
@@ -514,8 +517,7 @@ export default function UploadPage() {
           addLog(`📍 Navigating to results (using sessionStorage)`);
           navigate("/results");
         }
-      }, 3000);
-    } else {
+      }, 3000);    } else {
       setIsProcessing(false);
       setIsComplete(false);
       setProcessingProgress(0);
@@ -530,25 +532,25 @@ export default function UploadPage() {
   return (
     <MainLayout>
       <PageTransition className="page-container">
-        <div className="max-w-4xl mx-auto">
-          <div className="mb-8">
-            <div className="flex items-center justify-between">
+        <div className="max-w-2xl sm:max-w-3xl lg:max-w-4xl mx-auto">
+          <div className="mb-4 sm:mb-6">
+            <div className="flex items-start justify-between gap-3">
               <div>
-                <h1 className="section-header">Upload & Detect</h1>
-                <p className="text-muted-foreground">
+                <h1 className="section-header mb-1">Upload & Detect</h1>
+                <p className="text-muted-foreground text-xs sm:text-sm">
                   Upload images or videos to detect marine plastic debris
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 flex-shrink-0 mt-1">
                 <div
                   className={cn(
-                    "w-3 h-3 rounded-full",
+                    "w-2 h-2 rounded-full flex-shrink-0",
                     backendStatus === "online" && "bg-success",
                     backendStatus === "offline" && "bg-destructive",
                     backendStatus === "unknown" && "bg-muted-foreground"
                   )}
                 />
-                <span className="text-sm text-muted-foreground capitalize">
+                <span className="text-xs text-muted-foreground capitalize hidden sm:inline">
                   {backendStatus === "unknown" ? "Not checked" : backendStatus}
                 </span>
               </div>
@@ -556,38 +558,34 @@ export default function UploadPage() {
           </div>
 
           {/* Settings */}
-          <Collapsible open={showSettings} onOpenChange={setShowSettings} className="mb-6">
+          <Collapsible open={showSettings} onOpenChange={setShowSettings} className="mb-4 sm:mb-5">
             <CollapsibleTrigger asChild>
-              <Button variant="outline" className="mb-2">
-                <Settings className="mr-2 h-4 w-4" />
+              <Button variant="outline" size="sm" className="mb-2 text-xs sm:text-sm">
+                <Settings className="mr-1.5 h-3.5 w-3.5" />
                 Detection Settings
               </Button>
             </CollapsibleTrigger>
             <CollapsibleContent>
               <Card className="glass-card">
-                <CardContent className="pt-6">
-                  <div className="space-y-4">
+                <CardContent className="pt-4 pb-4 px-4">
+                  <div className="space-y-3">
                     <div>
-                      <label className="text-sm font-medium mb-2 block">
+                      <label className="text-xs sm:text-sm font-medium mb-2 block">
                         Confidence Threshold: {confidence}%
                       </label>
                       <Slider
                         value={[confidence]}
                         onValueChange={(value) => setConfidence(value[0])}
-                        min={10}
-                        max={90}
-                        step={5}
+                        min={10} max={90} step={5}
                         className="w-full"
                       />
                       <p className="text-xs text-muted-foreground mt-1">
-                        Higher values = fewer but more confident detections
+                        Higher = fewer but more confident detections
                       </p>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Button variant="secondary" size="sm" onClick={checkBackendHealth}>
-                        Check Backend Connection
-                      </Button>
-                    </div>
+                    <Button variant="secondary" size="sm" onClick={checkBackendHealth} className="text-xs">
+                      Check Backend Connection
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
@@ -597,36 +595,35 @@ export default function UploadPage() {
           {/* Drop Zone */}
           <Card
             className={cn(
-              "glass-card mb-6 transition-all duration-300 cursor-pointer",
-              isDragOver && "ring-2 ring-primary border-primary"
+              "glass-card mb-4 sm:mb-6 transition-colors duration-200 cursor-pointer",
+              isDragOver && "ring-2 ring-primary border-primary bg-primary/5"
             )}
-            onDragOver={(e) => {
-              e.preventDefault();
-              setIsDragOver(true);
-            }}
+            onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
             onDragLeave={() => setIsDragOver(false)}
             onDrop={handleDrop}
           >
-            <CardContent className="py-12">
+            <CardContent className="py-6 sm:py-10 px-4">
               <label className="flex flex-col items-center justify-center cursor-pointer">
-                <motion.div
-                  animate={isDragOver ? { scale: 1.1 } : { scale: 1 }}
-                  className="w-20 h-20 rounded-full ocean-gradient flex items-center justify-center mb-4"
+                <div
+                  className={cn(
+                    "w-14 h-14 sm:w-16 sm:h-16 rounded-full ocean-gradient flex items-center justify-center mb-3 transition-transform duration-200",
+                    isDragOver && "scale-110"
+                  )}
                 >
-                  <FileUp className="h-10 w-10 text-white" />
-                </motion.div>
-                <h3 className="text-lg font-semibold mb-2">
+                  <FileUp className="h-7 w-7 sm:h-8 sm:w-8 text-white" />
+                </div>
+                <h3 className="text-base sm:text-lg font-semibold mb-1.5">
                   {isDragOver ? "Drop files here" : "Drag & drop files"}
                 </h3>
-                <p className="text-muted-foreground text-sm mb-4">
+                <p className="text-muted-foreground text-xs sm:text-sm mb-3 text-center">
                   or click to browse (Images & Videos supported)
                 </p>
-                <div className="flex gap-4 text-sm text-muted-foreground">
+                <div className="flex flex-wrap justify-center gap-3 text-xs sm:text-sm text-muted-foreground">
                   <span className="flex items-center gap-1">
-                    <Image className="h-4 w-4" /> PNG, JPG, JPEG
+                    <Image className="h-3.5 w-3.5" /> PNG, JPG, JPEG
                   </span>
                   <span className="flex items-center gap-1">
-                    <Video className="h-4 w-4" /> MP4, AVI, MOV
+                    <Video className="h-3.5 w-3.5" /> MP4, AVI, MOV
                   </span>
                 </div>
                 <input
@@ -728,50 +725,35 @@ export default function UploadPage() {
           </AnimatePresence>
 
           {/* Action Buttons */}
-          <div className="flex gap-4">
+          <div className="flex gap-2 sm:gap-3">
             <Button
               size="lg"
-              className="flex-1"
+              className="flex-1 text-sm sm:text-base"
               onClick={processFiles}
               disabled={files.length === 0 || isProcessing || isComplete}
             >
               {isComplete ? (
-                <>
-                  <CheckCircle className="mr-2 h-5 w-5 text-green-500" />
-                  Complete! Redirecting...
-                </>
+                <><CheckCircle className="mr-2 h-4 w-4 text-green-400" />Complete! Redirecting...</>
               ) : isProcessing ? (
-                <>
-                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                  Processing...
-                </>
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Processing...</>
               ) : (
-                <>
-                  <Upload className="mr-2 h-5 w-5" />
-                  Start Detection
-                </>
+                <><Upload className="mr-2 h-4 w-4" />Start Detection</>
               )}
             </Button>
-            
-            {/* View Results Button - shows when processing is complete */}
+
             {isComplete && (
               <Button
                 variant="secondary"
                 size="lg"
+                className="text-sm sm:text-base"
                 onClick={() => {
-                  const firstFileWithDetection = files.find(f => f.detectionId);
-                  const detectionId = firstFileWithDetection?.detectionId
-                    || results[0]?.detection_id
-                    || (results[0]?.result_id ? parseInt(results[0].result_id) : undefined);
-                  if (detectionId) {
-                    navigate(`/results/${detectionId}`);
-                  } else {
-                    navigate("/results");
-                  }
+                  if (lastDetectionId) navigate(`/results/${lastDetectionId}`);
+                  else navigate("/results");
                 }}
               >
-                <Eye className="mr-2 h-5 w-5" />
-                View Results Now
+                <Eye className="mr-2 h-4 w-4" />
+                <span className="hidden sm:inline">View Results Now</span>
+                <span className="sm:hidden">View</span>
               </Button>
             )}
             

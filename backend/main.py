@@ -1104,9 +1104,6 @@ async def login_user(user_data: UserLogin):
                 detail="Invalid username or password"
             )
         
-        # Update last login
-        db.update_user_last_login(user['id'])
-        
         # Create access token
         token = AuthManager.create_access_token(user)
         
@@ -1471,9 +1468,9 @@ async def change_password(
 ):
     """Change user password"""
     try:
-        # Verify current password
-        user = db.get_user_by_id(current_user['user_id'])
-        if not user or not db.verify_password(password_data.current_password, user['password_hash']):
+        # Verify current password using authenticate_user
+        auth_user = db.authenticate_user(current_user['username'], password_data.current_password)
+        if not auth_user:
             raise HTTPException(
                 status_code=400,
                 detail="Current password is incorrect"
@@ -2639,7 +2636,7 @@ async def get_user_reports(
 
 class ReportRequest(BaseModel):
     report_type: str  # 'detection', 'prediction', 'both'
-    title: str = None
+    title: Optional[str] = None
     date_range_days: int = 30
 
 @app.post("/api/reports/generate")

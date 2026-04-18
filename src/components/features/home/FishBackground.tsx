@@ -21,6 +21,30 @@ const fishes: Fish[] = [
   { id: 8, size: 28, top: "85%", delay: 5, duration: 24, direction: "left", color: "#14b8a6" },
 ];
 
+// Pre-computed static positions to avoid Math.random() in render
+const PARTICLES = [
+  { left: "5%",  top: "12%", duration: 5.2, delay: 0.3 },
+  { left: "13%", top: "67%", duration: 6.1, delay: 1.1 },
+  { left: "21%", top: "34%", duration: 4.8, delay: 2.0 },
+  { left: "29%", top: "81%", duration: 5.7, delay: 0.7 },
+  { left: "37%", top: "23%", duration: 6.4, delay: 1.5 },
+  { left: "45%", top: "55%", duration: 5.0, delay: 2.8 },
+  { left: "53%", top: "9%",  duration: 4.6, delay: 0.1 },
+  { left: "61%", top: "72%", duration: 6.8, delay: 1.9 },
+  { left: "69%", top: "41%", duration: 5.3, delay: 2.4 },
+  { left: "77%", top: "88%", duration: 4.9, delay: 0.6 },
+  { left: "85%", top: "18%", duration: 6.2, delay: 1.3 },
+  { left: "93%", top: "60%", duration: 5.5, delay: 2.1 },
+  { left: "9%",  top: "47%", duration: 4.7, delay: 0.9 },
+  { left: "17%", top: "93%", duration: 6.0, delay: 1.7 },
+  { left: "25%", top: "5%",  duration: 5.8, delay: 2.6 },
+  { left: "33%", top: "76%", duration: 4.5, delay: 0.4 },
+  { left: "41%", top: "30%", duration: 6.3, delay: 1.2 },
+  { left: "49%", top: "62%", duration: 5.1, delay: 2.9 },
+  { left: "57%", top: "15%", duration: 4.4, delay: 0.8 },
+  { left: "65%", top: "84%", duration: 6.6, delay: 1.6 },
+];
+
 const FishSVG = ({ size, color, flip }: { size: number; color: string; flip?: boolean }) => (
   <svg
     width={size}
@@ -105,24 +129,13 @@ export function FishBackground() {
       <div className="absolute inset-0 bg-gradient-to-b from-cyan-400/5 via-transparent to-transparent" />
       
       {/* Floating particles */}
-      {[...Array(20)].map((_, i) => (
+      {PARTICLES.map((p, i) => (
         <motion.div
           key={`particle-${i}`}
           className="absolute w-1 h-1 bg-white/20 rounded-full"
-          style={{
-            left: `${Math.random() * 100}%`,
-            top: `${Math.random() * 100}%`,
-          }}
-          animate={{
-            y: [0, -30, 0],
-            opacity: [0.1, 0.4, 0.1],
-          }}
-          transition={{
-            duration: 4 + Math.random() * 3,
-            delay: Math.random() * 3,
-            repeat: Infinity,
-            ease: "easeInOut",
-          }}
+          style={{ left: p.left, top: p.top }}
+          animate={{ y: [0, -30, 0], opacity: [0.1, 0.4, 0.1] }}
+          transition={{ duration: p.duration, delay: p.delay, repeat: Infinity, ease: "easeInOut" }}
         />
       ))}
     </div>

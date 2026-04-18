@@ -301,44 +301,4 @@ export const useAuth = (): AuthContextType => {
   return context;
 };
 
-// Higher-order component for protected routes
-export const withAuth = <P extends object>(
-  Component: React.ComponentType<P>,
-  requireAdmin = false
-) => {
-  return (props: P) => {
-    const { isAuthenticated, isAdmin, isLoading } = useAuth();
-
-    if (isLoading) {
-      return (
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
-        </div>
-      );
-    }
-
-    if (!isAuthenticated) {
-      return (
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="text-center">
-            <h2 className="text-2xl font-bold mb-4">Authentication Required</h2>
-            <p className="text-gray-600">Please log in to access this page.</p>
-          </div>
-        </div>
-      );
-    }
-
-    if (requireAdmin && !isAdmin) {
-      return (
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="text-center">
-            <h2 className="text-2xl font-bold mb-4">Access Denied</h2>
-            <p className="text-gray-600">Admin privileges required.</p>
-          </div>
-        </div>
-      );
-    }
-
-    return <Component {...props} />;
-  };
-};
+// withAuth HOC removed — use ProtectedRoute/UserOnlyRoute in App.tsx instead

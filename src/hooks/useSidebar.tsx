@@ -2,9 +2,9 @@ import { createContext, useContext, useState, ReactNode } from "react";
 
 interface SidebarContextType {
   isCollapsed: boolean;
-  setIsCollapsed: (collapsed: boolean) => void;
+  setIsCollapsed: (v: boolean | ((prev: boolean) => boolean)) => void;
   isMobileOpen: boolean;
-  setIsMobileOpen: (open: boolean) => void;
+  setIsMobileOpen: (v: boolean | ((prev: boolean) => boolean)) => void;
 }
 
 const SidebarContext = createContext<SidebarContextType | undefined>(undefined);
@@ -14,23 +14,14 @@ export function SidebarProvider({ children }: { children: ReactNode }) {
   const [isMobileOpen, setIsMobileOpen] = useState(false);
 
   return (
-    <SidebarContext.Provider
-      value={{
-        isCollapsed,
-        setIsCollapsed,
-        isMobileOpen,
-        setIsMobileOpen,
-      }}
-    >
+    <SidebarContext.Provider value={{ isCollapsed, setIsCollapsed, isMobileOpen, setIsMobileOpen }}>
       {children}
     </SidebarContext.Provider>
   );
 }
 
 export function useSidebarContext() {
-  const context = useContext(SidebarContext);
-  if (context === undefined) {
-    throw new Error("useSidebarContext must be used within a SidebarProvider");
-  }
-  return context;
+  const ctx = useContext(SidebarContext);
+  if (!ctx) throw new Error("useSidebarContext must be used within SidebarProvider");
+  return ctx;
 }

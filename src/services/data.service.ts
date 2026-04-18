@@ -391,23 +391,9 @@ class DataService {
   }
 
   /**
-   * Clear all data (database and localStorage)
+   * Clear all data (localStorage only — server data is managed per-user)
    */
   async clearAllData(): Promise<void> {
-    try {
-      if (this.useDatabase) {
-        const response = await fetch(`${API_URL}/api/database/clear`, {
-          method: 'DELETE'
-        });
-        if (response.ok) {
-          console.log('Database cleared successfully');
-        }
-      }
-    } catch (error) {
-      console.error('Error clearing database:', error);
-    }
-    
-    // Also clear localStorage
     this.clearLocalData();
   }
 

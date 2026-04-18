@@ -183,40 +183,18 @@ class DatabaseService {
   }
 
   /**
-   * Clean up old detection data
+   * Check if backend database is available
    */
-  async cleanupOldData(daysToKeep: number = 90): Promise<number> {
+  async checkDatabaseHealth(): Promise<boolean> {
     try {
-      const response = await fetch(`${API_URL}/api/cleanup?days_to_keep=${daysToKeep}`, {
-        method: 'DELETE',
-        headers: this.getAuthHeaders()
-      });
-      
-      if (!response.ok) {
-        if (response.status === 401 || response.status === 403) {
-          console.error('Authentication required. Please log in.');
-          localStorage.removeItem('auth_token');
-          localStorage.removeItem('auth_user');
-        }
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      
-      if (data.success) {
-        return data.deleted_count;
-      } else {
-        throw new Error('Failed to cleanup data');
-      }
+      const response = await fetch(`${API_URL}/health`);
+      return response.ok;
     } catch (error) {
-      console.error('Error cleaning up data:', error);
-      return 0;
+      console.error('Database health check failed:', error);
+      return false;
     }
   }
-
-  /**
-   * Format detection result for display
-   */
+}
   formatDetectionResult(dbResult: DatabaseDetectionResult): any {
     return {
       success: true,

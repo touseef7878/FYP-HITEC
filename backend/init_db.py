@@ -316,9 +316,9 @@ if __name__ == "__main__":
     
     if success:
         print("\n✅ Database setup completed successfully!")
-        print("You can now start the Flask backend and React frontend.")
+        print("You can now start the FastAPI backend and React frontend.")
         print("\nNext steps:")
-        print("1. cd backend && python main.py")
+        print("1. cd backend && uvicorn main:app --reload")
         print("2. cd .. && npm run dev")
     else:
         print("\n❌ Database setup failed. Check the logs above.")

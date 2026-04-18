@@ -394,7 +394,6 @@ async def health_check():
             "model_type": getattr(model, 'model_name', 'Custom/Unknown')
         }
         model_status = "loaded"
-        
         model_message = "Using YOLOv11s custom weights (best.pt) — trained on 17,429 marine debris images, 8 classes, 70.3% mAP50"
     else:
         model_info = {"loaded": False}
@@ -415,6 +414,18 @@ async def health_check():
         "custom_weights_path": WEIGHTS_PATH,
         "custom_weights_exists": os.path.exists(WEIGHTS_PATH)
     }
+
+@app.get("/api/data/api-health")
+async def check_api_health():
+    """Test all external data APIs and return their status"""
+    try:
+        loop = asyncio.get_event_loop()
+        results = await loop.run_in_executor(None, data_cache_service.check_api_health)
+        overall = all(v.get('status') == 'ok' for v in results.values())
+        return {"success": True, "apis": results, "all_healthy": overall}
+    except Exception as e:
+        logger.error(f"API health check failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================================================
 # DATA FETCHING ENDPOINTS (ONE-TIME ONLY)
@@ -755,43 +766,48 @@ async def predict_pollution_trends(
             else:
                 risk_level = "Critical"
             
-            # Save predictions to database for report generation
-            import json
+            # Save predictions to database for report generation + heatmap
             saved_count = 0
+            # Snapshot of the most recent environmental context
+            input_features = {
+                'temperature': float(recent_df['temperature'].iloc[-1]) if 'temperature' in recent_df.columns else 0,
+                'humidity':    float(recent_df['humidity'].iloc[-1])    if 'humidity'    in recent_df.columns else 0,
+                'aqi':         float(recent_df['aqi'].iloc[-1])         if 'aqi'         in recent_df.columns else 0,
+                'wind_speed':  float(recent_df['wind_speed'].iloc[-1])  if 'wind_speed'  in recent_df.columns else 0,
+                'ocean_temp':  float(recent_df['ocean_temp'].iloc[-1])  if 'ocean_temp'  in recent_df.columns else 0,
+                'days_ahead':  request.days_ahead,
+                'region':      request.region,
+            }
+            # Model version from config
+            model_cfg     = prediction_result.get('model_info', {}).get('config', {})
+            model_version = model_cfg.get('last_trained', datetime.now().strftime('%Y-%m-%d'))[:10]
+
             for pred in predictions:
                 try:
-                    # Get input features from recent data
-                    input_features = {
-                        'temperature': float(recent_df['temperature'].iloc[-1]) if 'temperature' in recent_df.columns else 0,
-                        'humidity': float(recent_df['humidity'].iloc[-1]) if 'humidity' in recent_df.columns else 0,
-                        'aqi': float(recent_df['aqi'].iloc[-1]) if 'aqi' in recent_df.columns else 0,
-                        'days_ahead': request.days_ahead
-                    }
-                    
-                    # Calculate confidence interval
-                    confidence_lower = pred.get('confidence_lower', pred['pollution_level'] * 0.9)
-                    confidence_upper = pred.get('confidence_upper', pred['pollution_level'] * 1.1)
-                    
+                    conf  = pred.get('confidence', 0.85)
+                    margin = pred['pollution_level'] * (1 - conf) * 0.5   # tighter interval for high confidence
+                    confidence_lower = max(0,   pred['pollution_level'] - margin)
+                    confidence_upper = min(100, pred['pollution_level'] + margin)
+
                     prediction_id = db.save_prediction(
                         user_id=user_id,
                         region=request.region,
                         prediction_date=pred['date'],
                         predicted_pollution_level=pred['pollution_level'],
                         confidence_interval=(confidence_lower, confidence_upper),
-                        model_version=prediction_result['model_info'].get('model_version', '1.0'),
-                        input_features=input_features
+                        model_version=model_version,
+                        input_features=input_features,
                     )
-                    
+
                     if prediction_id:
                         saved_count += 1
-                        logger.info(f"✅ Saved prediction {saved_count}/{len(predictions)}: ID={prediction_id}, date={pred['date']}, level={pred['pollution_level']:.2f}")
                     else:
-                        logger.error(f"❌ Failed to save prediction for date {pred['date']}")
-                        
+                        logger.error(f"Failed to save prediction for date {pred['date']}")
+
                 except Exception as e:
-                    logger.error(f"❌ Exception saving prediction to database: {e}", exc_info=True)
-            
-            logger.info(f"✅ Successfully saved {saved_count}/{len(predictions)} predictions to database for user {user_id}")
+                    logger.error(f"Exception saving prediction: {e}", exc_info=True)
+
+            logger.info(f"✅ Saved {saved_count}/{len(predictions)} predictions for {request.region} (user {user_id})")
             
             return {
                 "success": True,
@@ -805,7 +821,8 @@ async def predict_pollution_trends(
                     "average_confidence": float(np.mean([p['confidence'] for p in predictions]))
                 },
                 "model_info": prediction_result['model_info'],
-                "data_source": "cached_only"
+                "data_source": "cached_only",
+                "saved_to_db": saved_count,
             }
         else:
             raise HTTPException(status_code=500, detail="Prediction failed")

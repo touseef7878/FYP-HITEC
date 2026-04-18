@@ -184,14 +184,6 @@ const AdminDashboard: React.FC = () => {
                 <Download className="h-4 w-4 mr-2" />
                 Backup System
               </Button>
-              <Button 
-                variant="secondary" 
-                size="sm"
-                onClick={() => handleSystemAction('maintenance')}
-              >
-                <Settings className="h-4 w-4 mr-2" />
-                Maintenance
-              </Button>
             </div>
           </div>
         </div>

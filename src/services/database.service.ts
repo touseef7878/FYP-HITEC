@@ -153,7 +153,7 @@ class DatabaseService {
    */
   async getDetectionResult(resultId: number): Promise<DatabaseDetectionResult | null> {
     try {
-      const response = await fetch(`${API_URL}/api/detection/${resultId}`, {
+      const response = await fetch(`${API_URL}/api/detections/${resultId}`, {
         headers: this.getAuthHeaders()
       });
       

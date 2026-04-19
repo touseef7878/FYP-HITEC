@@ -264,21 +264,6 @@ def init_database():
             '{"theme": "light", "notifications": true, "language": "en"}'
         ))
         
-        # Create sample user account
-        user_password = "user123"  # Change this in production!
-        user_password_hash = db_manager.hash_password(user_password)
-        
-        cursor.execute("""
-            INSERT OR IGNORE INTO users (username, email, password_hash, role, profile_data)
-            VALUES (?, ?, ?, ?, ?)
-        """, (
-            "demo_user",
-            "user@marinedetection.local",
-            user_password_hash,
-            "USER",
-            '{"theme": "dark", "notifications": true, "language": "en"}'
-        ))
-        
         # Commit changes
         conn.commit()
         
@@ -293,10 +278,9 @@ def init_database():
             count = cursor.fetchone()[0]
             logger.info(f"   - {table[0]}: {count} records")
         
-        logger.info("🔑 Default accounts created:")
+        logger.info("🔑 Default account created:")
         logger.info(f"   - Admin: username='admin', password='{admin_password}'")
-        logger.info(f"   - User: username='demo_user', password='{user_password}'")
-        logger.info("⚠️  IMPORTANT: Change default passwords in production!")
+        logger.info("⚠️  IMPORTANT: Change the admin password before deploying to production!")
         
         return True
         

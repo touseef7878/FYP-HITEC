@@ -1,44 +1,34 @@
-# Dependencies
+# ── Environment variables (NEVER commit these) ───────────────────────────────
+.env
+.env.*
+.env.local
+.env.*.local
+backend/.env
+!.env.example
+!backend/.env.example
+
+# ── Dependencies ──────────────────────────────────────────────────────────────
 node_modules/
+.pnp
+.pnp.js
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
 backend/__pycache__/
-backend/*.pyc
+**/__pycache__/
+*.py[cod]
 *.pyo
 *.pyd
 .Python
 env/
 venv/
 ENV/
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
+.venv/
 *.egg-info/
 .installed.cfg
 *.egg
 
-# IDEs
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-.DS_Store
-
-# Environment variables
-.env
-.env.local
-.env.*.local
-backend/.env
-
-# Build outputs
+# ── Build outputs ─────────────────────────────────────────────────────────────
 dist/
 build/
 *.log
@@ -46,58 +36,77 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Database
+# ── Database files ────────────────────────────────────────────────────────────
 *.db
 *.db-shm
 *.db-wal
 *.sqlite
 *.sqlite3
-backend/marine_detection.db
-backend/marine_detection.db-shm
-backend/marine_detection.db-wal
 
-# Model weights (large files)
-backend/weights/*.pt
-backend/weights/*.h5
-backend/weights/*.keras
-backend/weights/*.pkl
+# ── ML model weights & scalers (large binary files) ──────────────────────────
+*.pt
+*.pth
+*.h5
+*.keras
+*.pkl
+*.joblib
+*.onnx
+backend/weights/
 backend/models/*.h5
 backend/models/*.keras
 backend/models/*.pkl
+backend/models/*.json
+backend/services/models/
 models/*.h5
 models/*.keras
 models/*.pkl
 
-# Processed files (large binary files)
-backend/processed_videos/*.mp4
-backend/processed_videos/*.webm
-backend/processed_videos/*.avi
-backend/processed_videos/*.mov
+# ── Large media / video files ─────────────────────────────────────────────────
+*.mp4
+*.webm
+*.avi
+*.mov
+*.mkv
+public/*.mp4
+public/*.webm
+backend/processed_videos/
+
+# ── Cached data ───────────────────────────────────────────────────────────────
+backend/services/data_cache/*.csv
 backend/data_cache/*.csv
 
-# Backups
+# ── Backups ───────────────────────────────────────────────────────────────────
 backend/backups/
 *.backup
 *.bak
 
-# Testing
+# ── Logs ──────────────────────────────────────────────────────────────────────
+logs/
+*.log
+backend/logs/
+
+# ── Testing / coverage ────────────────────────────────────────────────────────
 coverage/
 .nyc_output/
 *.coverage
 .pytest_cache/
 .vitest/
+htmlcov/
 
-# Temporary files
+# ── IDEs ──────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Temp ──────────────────────────────────────────────────────────────────────
 *.tmp
 *.temp
 .cache/
 .temp/
-
-# Logs
-logs/
-*.log
-backend/logs/
-
-# OS
-Thumbs.db
-.DS_Store

@@ -220,6 +220,13 @@ const AppRoutes = () => {
 };
 
 // ── Root ──────────────────────────────────────────────────────────────────
+
+// Only show the assistant to authenticated users — not on the auth/login page
+const AssistantGate = () => {
+  const { isAuthenticated } = useAuth();
+  return isAuthenticated ? <OceanAssistant /> : null;
+};
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider>
@@ -229,7 +236,7 @@ const App = () => (
         <BrowserRouter>
           <AuthProvider>
             <AppRoutes />
-            <OceanAssistant />
+            <AssistantGate />
           </AuthProvider>
         </BrowserRouter>
       </TooltipProvider>

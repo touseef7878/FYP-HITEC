@@ -1,145 +1,328 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Waves, Shield, BarChart3, Users } from 'lucide-react';
-import { LoginForm } from '@/components/auth/LoginForm';
-import { RegisterForm } from '@/components/auth/RegisterForm';
+import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/hooks/use-toast';
+import logger from '@/utils/logger';
+import logoImg from '@/assets/images/marine-logo.png';
 
+// ── Password strength ─────────────────────────────────────────────────────────
+function getStrength(pw: string) {
+  if (!pw) return { label: '', color: '', width: '0%' };
+  if (pw.length < 6)  return { label: 'Weak',   color: 'bg-red-400',    width: '33%' };
+  if (pw.length < 10) return { label: 'Fair',   color: 'bg-yellow-400', width: '66%' };
+  return               { label: 'Strong', color: 'bg-emerald-500', width: '100%' };
+}
+
+// ── Floating-label field ──────────────────────────────────────────────────────
+function Field({
+  label, id, name, type = 'text', value, onChange, placeholder, error, children,
+}: {
+  label: string; id: string; name: string; type?: string;
+  value: string; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  placeholder?: string; error?: string; children?: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div className={`relative border rounded-xl bg-white transition-colors ${
+        error ? 'border-red-400' : 'border-gray-200 focus-within:border-gray-400'
+      }`}>
+        <label htmlFor={id} className="absolute top-2 left-3.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wider pointer-events-none">
+          {label}
+        </label>
+        <input
+          id={id} name={name} type={type} value={value} onChange={onChange}
+          placeholder={placeholder}
+          className="w-full pt-6 pb-2.5 px-3.5 text-sm text-gray-900 bg-transparent outline-none rounded-xl placeholder:text-gray-300"
+          autoComplete={name}
+        />
+        {children}
+      </div>
+      {error && <p className="text-red-500 text-xs mt-1 ml-1">{error}</p>}
+    </div>
+  );
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────────
 export default function AuthPage() {
-  const [isLogin, setIsLogin] = useState(true);
-  const navigate = useNavigate();
-  const location = useLocation();
+  const [tab, setTab] = useState<'register' | 'login'>('register');
+  const navigate      = useNavigate();
+  const location      = useLocation();
   const { isAuthenticated, isAdmin, isLoading } = useAuth();
 
-  // Redirect if already authenticated
   useEffect(() => {
     if (isAuthenticated && !isLoading) {
-      if (isAdmin) {
-        // Always redirect admins to admin panel
-        navigate('/admin', { replace: true });
-      } else {
-        // For regular users, only redirect if they came from a protected route
-        const from = location.state?.from?.pathname;
-        if (from && from !== '/auth') {
-          navigate(from, { replace: true });
-        } else {
-          // If no specific route, let them stay on auth page or go to home
-          navigate('/', { replace: true });
-        }
-      }
+      const from = (location.state as any)?.from?.pathname;
+      navigate(isAdmin ? '/admin' : (from && from !== '/auth' ? from : '/'), { replace: true });
     }
   }, [isAuthenticated, isAdmin, isLoading, navigate, location]);
 
-  const handleAuthSuccess = () => {
-    if (isAdmin) {
-      // Always redirect admins to admin panel
-      navigate('/admin', { replace: true });
-    } else {
-      // For regular users, redirect to where they came from or home
-      const from = location.state?.from?.pathname;
-      if (from && from !== '/auth') {
-        navigate(from, { replace: true });
-      } else {
-        navigate('/', { replace: true });
-      }
-    }
+  const handleSuccess = () => {
+    const from = (location.state as any)?.from?.pathname;
+    navigate(isAdmin ? '/admin' : (from && from !== '/auth' ? from : '/'), { replace: true });
   };
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+      <div className="min-h-screen flex items-center justify-center bg-[#f5f5f3]">
+        <Loader2 className="h-7 w-7 animate-spin text-gray-400" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex">
-      {/* Left side - Branding */}
-      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-blue-600 to-indigo-700 text-white p-12 flex-col justify-center">
-        <motion.div
-          initial={{ opacity: 0, x: -50 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.6 }}
-        >
-          <div className="flex items-center space-x-3 mb-8">
-            <Waves className="h-10 w-10" />
-            <h1 className="text-3xl font-bold">Marine Detection</h1>
-          </div>
-          
-          <h2 className="text-4xl font-bold mb-6">
-            Marine Plastic Detection
-          </h2>
-          
-          <p className="text-xl mb-12 text-blue-100">
-            Detect and analyze marine plastic pollution using computer vision 
-            and machine learning technology.
-          </p>
+    /* Full-screen grid: on mobile video is background, on lg it's right column */
+    <div className="min-h-screen lg:grid lg:grid-cols-[520px_1fr]">
 
-          <div className="space-y-6">
-            <div className="flex items-center space-x-4">
-              <div className="bg-blue-500 p-3 rounded-lg">
-                <Shield className="h-6 w-6" />
-              </div>
-              <div>
-                <h3 className="font-semibold">Detection</h3>
-                <p className="text-blue-100">Upload images and videos for instant pollution analysis</p>
-              </div>
-            </div>
-
-            <div className="flex items-center space-x-4">
-              <div className="bg-blue-500 p-3 rounded-lg">
-                <BarChart3 className="h-6 w-6" />
-              </div>
-              <div>
-                <h3 className="font-semibold">Trend Analysis</h3>
-                <p className="text-blue-100">LSTM-based pollution trend forecasting</p>
-              </div>
-            </div>
-
-            <div className="flex items-center space-x-4">
-              <div className="bg-blue-500 p-3 rounded-lg">
-                <Users className="h-6 w-6" />
-              </div>
-              <div>
-                <h3 className="font-semibold">Team Collaboration</h3>
-                <p className="text-blue-100">Multi-user platform for research and analysis</p>
-              </div>
-            </div>
-          </div>
-        </motion.div>
+      {/* ── Mobile video background (shows behind form on small screens) ── */}
+      <div className="fixed inset-0 lg:hidden -z-10">
+        <video src="/auth-ocean.mp4" autoPlay loop muted playsInline preload="auto"
+          className="w-full h-full object-cover"
+          style={{ willChange: 'transform', transform: 'translateZ(0)' }}
+        />
+        {/* Dark overlay so form text is readable */}
+        <div className="absolute inset-0 bg-black/55" />
       </div>
 
-      {/* Right side - Auth Forms */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-white">
-        <div className="w-full max-w-md">
-          {/* Mobile branding */}
-          <div className="lg:hidden text-center mb-8">
-            <div className="flex items-center justify-center space-x-3 mb-4">
-              <Waves className="h-8 w-8 text-blue-600" />
-              <h1 className="text-2xl font-bold text-gray-900">Marine Detection</h1>
+      {/* ── LEFT — Form panel ── */}
+      <div className="relative z-10 flex flex-col justify-center min-h-screen lg:min-h-0
+                      px-5 py-8 sm:px-10
+                      lg:bg-[#f5f5f3] lg:px-12 xl:px-16">
+
+        {/* Card wrapper on mobile (glass effect) */}
+        <div className="lg:contents">
+          <div className="bg-white/90 backdrop-blur-md rounded-3xl p-6 sm:p-8 shadow-2xl
+                          lg:bg-transparent lg:backdrop-blur-none lg:rounded-none lg:p-0 lg:shadow-none">
+
+            {/* Logo + title */}
+            <div className="flex flex-col items-center mb-6">
+              <div className="w-12 h-12 rounded-2xl bg-gray-900 flex items-center justify-center mb-3 shadow-md">
+                <img src={logoImg} alt="OceanGuard" className="w-8 h-8 rounded-xl" />
+              </div>
+              <h1 className="text-lg font-bold text-gray-900">OceanGuard AI</h1>
+              <p className="text-xs text-gray-400 mt-0.5 text-center">
+                {tab === 'register' ? 'This is the start of something good.' : 'Welcome back. Sign in to continue.'}
+              </p>
             </div>
-            <p className="text-gray-600">Marine Plastic Detection System</p>
+
+            {/* Tab switcher */}
+            <div className="flex rounded-full bg-gray-100 border border-gray-200 p-1 mb-6">
+              {(['register', 'login'] as const).map(t => (
+                <button key={t} onClick={() => setTab(t)}
+                  className={`flex-1 py-2 text-sm font-semibold rounded-full transition-all duration-200 ${
+                    tab === t ? 'bg-gray-900 text-white shadow' : 'text-gray-500 hover:text-gray-700'
+                  }`}>
+                  {t === 'register' ? 'Register' : 'Login'}
+                </button>
+              ))}
+            </div>
+
+            {/* Forms */}
+            <AnimatePresence mode="wait" initial={false}>
+              {tab === 'register'
+                ? <RegisterPanel key="reg" onSuccess={handleSuccess} onSwitch={() => setTab('login')} />
+                : <LoginPanel    key="log" onSuccess={handleSuccess} onSwitch={() => setTab('register')} />}
+            </AnimatePresence>
+          </div>
+        </div>
+      </div>
+
+      {/* ── RIGHT — Video panel (desktop only) ── */}
+      <div className="hidden lg:block relative overflow-hidden m-3 rounded-3xl">
+        <video src="/auth-ocean.mp4" autoPlay loop muted playsInline preload="auto"
+          className="absolute inset-0 w-full h-full object-cover"
+          style={{ willChange: 'transform', transform: 'translateZ(0)' }}
+        />
+        {/* Gradient */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent" />
+
+        {/* Content overlay */}
+        <div className="absolute inset-0 flex flex-col justify-between p-10">
+          {/* Top badge */}
+          <div className="self-start flex items-center gap-2 bg-white/10 backdrop-blur-sm border border-white/20 rounded-full px-4 py-2">
+            <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-white/90 text-xs font-medium">HITEC University Taxila — FYP 2026</span>
           </div>
 
-          <AnimatePresence mode="wait">
-            {isLogin ? (
-              <LoginForm
-                key="login"
-                onSwitchToRegister={() => setIsLogin(false)}
-                onSuccess={handleAuthSuccess}
-              />
-            ) : (
-              <RegisterForm
-                key="register"
-                onSwitchToLogin={() => setIsLogin(true)}
-                onSuccess={handleAuthSuccess}
-              />
-            )}
-          </AnimatePresence>
+          {/* Bottom text */}
+          <div className="text-white">
+            <p className="text-xs font-semibold uppercase tracking-widest text-cyan-300 mb-3">
+              Built by students, for the planet
+            </p>
+            <h2 className="text-3xl xl:text-4xl font-bold leading-tight mb-3">
+              Every piece of plastic<br />
+              <span className="text-cyan-300">we find matters.</span>
+            </h2>
+            <p className="text-white/65 text-sm max-w-sm leading-relaxed mb-6">
+              Three engineers. One mission. We built OceanGuard AI to give researchers
+              the tools to detect, track, and predict marine plastic pollution — because
+              the ocean can't wait.
+            </p>
+
+            {/* Team chips */}
+            <div className="flex flex-wrap gap-2">
+              {[
+                { name: 'Touseef Ur Rehman', role: 'ML' },
+                { name: 'Qasim Shahzad',     role: 'Backend' },
+                { name: 'Zohaib Ashraf',     role: 'Frontend' },
+              ].map(m => (
+                <div key={m.name} className="flex items-center gap-2 bg-white/10 backdrop-blur-sm border border-white/15 rounded-full px-3 py-1.5">
+                  <div className="w-5 h-5 rounded-full bg-gradient-to-br from-cyan-400 to-teal-500 flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0">
+                    {m.name.split(' ').map(n => n[0]).join('')}
+                  </div>
+                  <span className="text-white/90 text-xs font-medium">{m.name}</span>
+                  <span className="text-white/40 text-xs">· {m.role}</span>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </div>
+  );
+}
+
+// ── Register ──────────────────────────────────────────────────────────────────
+function RegisterPanel({ onSuccess, onSwitch }: { onSuccess: () => void; onSwitch: () => void }) {
+  const { register } = useAuth();
+  const [form, setForm]   = useState({ username: '', email: '', password: '' });
+  const [showPw, setShowPw] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [errors, setErrors]   = useState<Record<string, string>>({});
+  const strength = getStrength(form.password);
+
+  const validate = () => {
+    const e: Record<string, string> = {};
+    if (form.username.length < 3) e.username = 'At least 3 characters';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) e.email = 'Invalid email';
+    if (form.password.length < 6) e.password = 'At least 6 characters';
+    setErrors(e);
+    return !Object.keys(e).length;
+  };
+
+  const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setForm(p => ({ ...p, [e.target.name]: e.target.value }));
+    if (errors[e.target.name]) setErrors(p => ({ ...p, [e.target.name]: '' }));
+  };
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!validate()) return;
+    setLoading(true);
+    try {
+      if (await register(form.username, form.email, form.password)) onSuccess();
+    } catch (err) { logger.error('Register:', err); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <motion.form onSubmit={onSubmit}
+      initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -16 }} transition={{ duration: 0.18 }}
+      className="space-y-3">
+
+      <Field label="Username" id="username" name="username" value={form.username}
+        onChange={onChange} placeholder="Robert Fox" error={errors.username} />
+
+      <Field label="Email" id="email" name="email" type="email" value={form.email}
+        onChange={onChange} placeholder="robert.fox@gmail.com" error={errors.email} />
+
+      <Field label="Password" id="password" name="password"
+        type={showPw ? 'text' : 'password'} value={form.password}
+        onChange={onChange} placeholder="••••••••••" error={errors.password}>
+        <div className="absolute top-1/2 -translate-y-1/2 right-3 flex items-center gap-2">
+          {strength.label && (
+            <span className={`text-xs font-semibold ${
+              strength.label === 'Strong' ? 'text-emerald-500' :
+              strength.label === 'Fair'   ? 'text-yellow-500' : 'text-red-400'
+            }`}>{strength.label}</span>
+          )}
+          <button type="button" onClick={() => setShowPw(v => !v)} className="text-gray-400 hover:text-gray-600">
+            {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
+        </div>
+        {form.password && (
+          <div className="absolute bottom-0 left-3.5 right-3.5 h-0.5 bg-gray-100 rounded-full overflow-hidden">
+            <div className={`h-full rounded-full transition-all duration-300 ${strength.color}`} style={{ width: strength.width }} />
+          </div>
+        )}
+      </Field>
+
+      <button type="submit" disabled={loading}
+        className="w-full py-3 rounded-xl bg-gray-900 text-white text-sm font-semibold
+                   hover:bg-gray-800 active:scale-[0.98] transition-all flex items-center
+                   justify-center gap-2 shadow-md mt-1">
+        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Create your account →'}
+      </button>
+
+      <p className="text-center text-sm text-gray-500 pt-0.5">
+        Already have an account?{' '}
+        <button type="button" onClick={onSwitch} className="font-semibold text-gray-900 hover:underline">
+          Sign in
+        </button>
+      </p>
+    </motion.form>
+  );
+}
+
+// ── Login ─────────────────────────────────────────────────────────────────────
+function LoginPanel({ onSuccess, onSwitch }: { onSuccess: () => void; onSwitch: () => void }) {
+  const { login } = useAuth();
+  const [form, setForm]     = useState({ username: '', password: '' });
+  const [showPw, setShowPw] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [remember, setRemember] = useState(false);
+
+  const onChange = (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm(p => ({ ...p, [e.target.name]: e.target.value }));
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      if (await login(form.username, form.password)) onSuccess();
+    } catch (err) { logger.error('Login:', err); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <motion.form onSubmit={onSubmit}
+      initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: 16 }} transition={{ duration: 0.18 }}
+      className="space-y-3">
+
+      <Field label="Username or Email" id="username" name="username" value={form.username}
+        onChange={onChange} placeholder="robert.fox@gmail.com" />
+
+      <Field label="Password" id="password" name="password"
+        type={showPw ? 'text' : 'password'} value={form.password}
+        onChange={onChange} placeholder="••••••••••">
+        <button type="button" onClick={() => setShowPw(v => !v)}
+          className="absolute top-1/2 -translate-y-1/2 right-3 text-gray-400 hover:text-gray-600">
+          {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+        </button>
+      </Field>
+
+      <label className="flex items-center gap-2 cursor-pointer select-none">
+        <input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)}
+          className="w-3.5 h-3.5 rounded border-gray-300 accent-gray-900" />
+        <span className="text-xs text-gray-500">Remember me</span>
+      </label>
+
+      <button type="submit" disabled={loading}
+        className="w-full py-3 rounded-xl bg-gray-900 text-white text-sm font-semibold
+                   hover:bg-gray-800 active:scale-[0.98] transition-all flex items-center
+                   justify-center gap-2 shadow-md mt-1">
+        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Sign in →'}
+      </button>
+
+      <p className="text-center text-sm text-gray-500 pt-0.5">
+        Don't have an account?{' '}
+        <button type="button" onClick={onSwitch} className="font-semibold text-gray-900 hover:underline">
+          Sign up
+        </button>
+      </p>
+    </motion.form>
   );
 }

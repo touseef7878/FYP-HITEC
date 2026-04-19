@@ -9,17 +9,25 @@ interface MainLayoutProps {
 
 const MainContent = memo(({ children }: MainLayoutProps) => {
   const { isCollapsed } = useSidebarContext();
-  
+
   return (
-    <div className="min-h-screen bg-background">
+    /**
+     * Layout strategy:
+     * - The outer div is a flex row that fills the full page height
+     * - Sidebar is `sticky top-0 h-screen` — it sticks to the top of the
+     *   viewport while the CONTENT column scrolls independently
+     * - This means: sidebar always visible, content scrolls freely
+     * - On mobile: sidebar is a fixed overlay (hamburger menu)
+     */
+    <div className="flex bg-background min-h-screen">
       <Sidebar />
+
+      {/* Main content column — this is what scrolls */}
       <main
         className={cn(
-          "min-h-screen transition-[margin] duration-300",
-          /* mobile: shift down just enough for the hamburger (56px = h-14) */
-          "pt-14 lg:pt-0",
-          /* desktop: shift right based on sidebar width */
-          isCollapsed ? "lg:ml-20" : "lg:ml-[280px]"
+          "flex-1 min-w-0",
+          // Mobile: push content down past the hamburger button
+          "pt-14 lg:pt-0"
         )}
       >
         {children}
@@ -28,14 +36,12 @@ const MainContent = memo(({ children }: MainLayoutProps) => {
   );
 });
 
-MainContent.displayName = 'MainContent';
+MainContent.displayName = "MainContent";
 
-export const MainLayout = memo(({ children }: MainLayoutProps) => {
-  return (
-    <SidebarProvider>
-      <MainContent>{children}</MainContent>
-    </SidebarProvider>
-  );
-});
+export const MainLayout = memo(({ children }: MainLayoutProps) => (
+  <SidebarProvider>
+    <MainContent>{children}</MainContent>
+  </SidebarProvider>
+));
 
-MainLayout.displayName = 'MainLayout';
+MainLayout.displayName = "MainLayout";

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import { LayoutDashboard, FileText, Users, Settings, Shield, LogOut, Activity, Menu, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
@@ -36,14 +37,21 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
             to={href}
             onClick={onClick}
             className={cn(
-              'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors',
+              'relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors',
               active
-                ? 'bg-primary text-primary-foreground'
+                ? 'text-primary-foreground'
                 : 'text-muted-foreground hover:text-foreground hover:bg-muted'
             )}
           >
-            <Icon className="h-4 w-4 flex-shrink-0" />
-            {name}
+            {active && (
+              <motion.div
+                layoutId="admin-active-pill"
+                className="absolute inset-0 bg-primary rounded-xl"
+                transition={{ type: 'spring', stiffness: 400, damping: 35 }}
+              />
+            )}
+            <Icon className="relative h-4 w-4 flex-shrink-0" />
+            <span className="relative">{name}</span>
           </Link>
         );
       })}

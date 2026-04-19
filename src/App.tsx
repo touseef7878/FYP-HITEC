@@ -8,7 +8,7 @@ import { ThemeProvider } from "@/hooks/useTheme";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { OceanAssistant } from "@/components/features/assistant/OceanAssistant";
-import { Suspense, lazy } from "react";
+import { Suspense, lazy, useRef, memo } from "react";
 
 // Lazy load pages
 const HomePage        = lazy(() => import("@/pages/Home"));
@@ -78,33 +78,53 @@ const UserOnlyRoute = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
-// ── Page fade wrapper ─────────────────────────────────────────────────────
-// IMPORTANT: This must NOT wrap MainLayout (which contains the fixed sidebar).
-// Instead it only wraps the *content area* rendered inside MainLayout.
-// Each page calls this internally via the `usePageFade` pattern below.
-// We expose it as a named export so pages can import it if needed,
-// but the primary mechanism is the AnimatePresence key swap in AppRoutes.
-
+// ── Page transition ───────────────────────────────────────────────────────
 /**
- * Thin overlay that fades in over the content area only.
- * Does NOT wrap fixed elements so the sidebar is unaffected.
+ * Only animates when the pathname actually changes.
+ * Uses useRef to track previous path — state changes (toasts, data fetches)
+ * never trigger the animation because they don't change the pathname.
  */
-const FadeLayer = ({ children, routeKey }: { children: React.ReactNode; routeKey: string }) => (
-  <AnimatePresence mode="wait" initial={false}>
-    <motion.div
-      key={routeKey}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.18, ease: "easeOut" }}
-      // No transform — transform creates a stacking context that breaks fixed children.
-      // Pure opacity fade is safe and still looks great.
-      style={{ minHeight: "100%" }}
-    >
-      {children}
-    </motion.div>
-  </AnimatePresence>
-);
+const pageVariants = {
+  initial: { opacity: 0, y: 8  },
+  enter:   { opacity: 1, y: 0  },
+  exit:    { opacity: 0, y: -4 },
+};
+
+// Progress bar — pure CSS, mounts once per navigation
+const ProgressBar = memo(() => <div className="page-progress-bar" />);
+ProgressBar.displayName = 'ProgressBar';
+
+// Stable wrapper — defined OUTSIDE AppRoutes so it never gets a new type
+const PageTransitionWrapper = memo(({
+  children,
+  routeKey,
+}: {
+  children: React.ReactNode;
+  routeKey: string;
+}) => {
+  const prevKey = useRef(routeKey);
+  const isNavigating = prevKey.current !== routeKey;
+  if (isNavigating) prevKey.current = routeKey;
+
+  return (
+    <AnimatePresence mode="sync" initial={false}>
+      <motion.div
+        key={routeKey}
+        initial={isNavigating ? "initial" : false}
+        animate="enter"
+        exit="exit"
+        variants={pageVariants}
+        transition={{ duration: 0.22, ease: [0.25, 0.46, 0.45, 0.94] }}
+        style={{ minHeight: '100%', willChange: 'opacity, transform' }}
+      >
+        {/* Progress bar only mounts when key changes (real navigation) */}
+        {isNavigating && <ProgressBar key={routeKey} />}
+        {children}
+      </motion.div>
+    </AnimatePresence>
+  );
+});
+PageTransitionWrapper.displayName = 'PageTransitionWrapper';
 
 // ── Routes ────────────────────────────────────────────────────────────────
 const AppRoutes = () => {
@@ -116,103 +136,31 @@ const AppRoutes = () => {
     <Suspense fallback={<PageLoader />}>
       <Routes location={location} key={key}>
 
-        <Route path="/" element={
-          <FadeLayer routeKey={key}><HomePage /></FadeLayer>
-        } />
+        <Route path="/"    element={<PageTransitionWrapper routeKey={key}><HomePage /></PageTransitionWrapper>} />
 
         <Route path="/auth" element={
           isAuthenticated
             ? <Navigate to={isAdmin ? "/admin" : "/"} replace />
-            : <FadeLayer routeKey={key}><AuthPage /></FadeLayer>
+            : <PageTransitionWrapper routeKey={key}><AuthPage /></PageTransitionWrapper>
         } />
 
-        <Route path="/upload" element={
-          <UserOnlyRoute>
-            <FadeLayer routeKey={key}><UploadPage /></FadeLayer>
-          </UserOnlyRoute>
-        } />
+        <Route path="/upload"   element={<UserOnlyRoute><PageTransitionWrapper routeKey={key}><UploadPage /></PageTransitionWrapper></UserOnlyRoute>} />
+        <Route path="/results"  element={<UserOnlyRoute><PageTransitionWrapper routeKey={key}><ResultsPage /></PageTransitionWrapper></UserOnlyRoute>} />
+        <Route path="/results/:detectionId" element={<UserOnlyRoute><PageTransitionWrapper routeKey={key}><ResultsPage /></PageTransitionWrapper></UserOnlyRoute>} />
+        <Route path="/dashboard"   element={<UserOnlyRoute><PageTransitionWrapper routeKey={key}><DashboardPage /></PageTransitionWrapper></UserOnlyRoute>} />
+        <Route path="/history"     element={<UserOnlyRoute><PageTransitionWrapper routeKey={key}><HistoryPage /></PageTransitionWrapper></UserOnlyRoute>} />
+        <Route path="/heatmap"     element={<UserOnlyRoute><PageTransitionWrapper routeKey={key}><HeatmapPage /></PageTransitionWrapper></UserOnlyRoute>} />
+        <Route path="/predictions" element={<UserOnlyRoute><ErrorBoundary><PageTransitionWrapper routeKey={key}><PredictionsPage /></PageTransitionWrapper></ErrorBoundary></UserOnlyRoute>} />
+        <Route path="/reports"     element={<UserOnlyRoute><PageTransitionWrapper routeKey={key}><ReportsPage /></PageTransitionWrapper></UserOnlyRoute>} />
+        <Route path="/settings"    element={<UserOnlyRoute><PageTransitionWrapper routeKey={key}><SettingsPage /></PageTransitionWrapper></UserOnlyRoute>} />
 
-        <Route path="/results" element={
-          <UserOnlyRoute>
-            <FadeLayer routeKey={key}><ResultsPage /></FadeLayer>
-          </UserOnlyRoute>
-        } />
+        <Route path="/admin"          element={<ProtectedRoute requireAdmin><PageTransitionWrapper routeKey={key}><AdminDashboard /></PageTransitionWrapper></ProtectedRoute>} />
+        <Route path="/admin/logs"     element={<ProtectedRoute requireAdmin><PageTransitionWrapper routeKey={key}><AdminLogs /></PageTransitionWrapper></ProtectedRoute>} />
+        <Route path="/admin/users"    element={<ProtectedRoute requireAdmin><PageTransitionWrapper routeKey={key}><AdminUsers /></PageTransitionWrapper></ProtectedRoute>} />
+        <Route path="/admin/settings" element={<ProtectedRoute requireAdmin><PageTransitionWrapper routeKey={key}><AdminSettings /></PageTransitionWrapper></ProtectedRoute>} />
 
-        <Route path="/results/:detectionId" element={
-          <UserOnlyRoute>
-            <FadeLayer routeKey={key}><ResultsPage /></FadeLayer>
-          </UserOnlyRoute>
-        } />
-
-        <Route path="/dashboard" element={
-          <UserOnlyRoute>
-            <FadeLayer routeKey={key}><DashboardPage /></FadeLayer>
-          </UserOnlyRoute>
-        } />
-
-        <Route path="/history" element={
-          <UserOnlyRoute>
-            <FadeLayer routeKey={key}><HistoryPage /></FadeLayer>
-          </UserOnlyRoute>
-        } />
-
-        <Route path="/heatmap" element={
-          <UserOnlyRoute>
-            <FadeLayer routeKey={key}><HeatmapPage /></FadeLayer>
-          </UserOnlyRoute>
-        } />
-
-        <Route path="/predictions" element={
-          <UserOnlyRoute>
-            <ErrorBoundary>
-              <FadeLayer routeKey={key}><PredictionsPage /></FadeLayer>
-            </ErrorBoundary>
-          </UserOnlyRoute>
-        } />
-
-        <Route path="/reports" element={
-          <UserOnlyRoute>
-            <FadeLayer routeKey={key}><ReportsPage /></FadeLayer>
-          </UserOnlyRoute>
-        } />
-
-        <Route path="/settings" element={
-          <UserOnlyRoute>
-            <FadeLayer routeKey={key}><SettingsPage /></FadeLayer>
-          </UserOnlyRoute>
-        } />
-
-        <Route path="/admin" element={
-          <ProtectedRoute requireAdmin>
-            <FadeLayer routeKey={key}><AdminDashboard /></FadeLayer>
-          </ProtectedRoute>
-        } />
-
-        <Route path="/admin/logs" element={
-          <ProtectedRoute requireAdmin>
-            <FadeLayer routeKey={key}><AdminLogs /></FadeLayer>
-          </ProtectedRoute>
-        } />
-
-        <Route path="/admin/users" element={
-          <ProtectedRoute requireAdmin>
-            <FadeLayer routeKey={key}><AdminUsers /></FadeLayer>
-          </ProtectedRoute>
-        } />
-
-        <Route path="/admin/settings" element={
-          <ProtectedRoute requireAdmin>
-            <FadeLayer routeKey={key}><AdminSettings /></FadeLayer>
-          </ProtectedRoute>
-        } />
-
-        <Route path="/privacy" element={
-          <FadeLayer routeKey={key}><PrivacyPolicy /></FadeLayer>
-        } />
-
-        <Route path="*" element={
-          <FadeLayer routeKey={key}><NotFound /></FadeLayer>
-        } />
+        <Route path="/privacy" element={<PageTransitionWrapper routeKey={key}><PrivacyPolicy /></PageTransitionWrapper>} />
+        <Route path="*"        element={<PageTransitionWrapper routeKey={key}><NotFound /></PageTransitionWrapper>} />
 
       </Routes>
     </Suspense>

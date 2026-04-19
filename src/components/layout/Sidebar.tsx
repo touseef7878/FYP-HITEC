@@ -13,7 +13,7 @@ import { cn } from "@/utils/cn";
 import logoImg from "@/assets/images/marine-logo.png";
 
 const navItems = [
-  { path: "/",            label: "Home",           icon: Home },
+  { path: "/",            label: "Home",            icon: Home },
   { path: "/upload",      label: "Upload & Detect", icon: Upload },
   { path: "/dashboard",   label: "Analytics",       icon: BarChart3 },
   { path: "/history",     label: "History",         icon: History },
@@ -28,15 +28,20 @@ const NavItem = memo(({ path, label, icon: Icon, isActive, isCollapsed, onClose 
   path: string; label: string; icon: any;
   isActive: boolean; isCollapsed: boolean; onClose: () => void;
 }) => (
-  <NavLink to={path} onClick={onClose} className="block">
-    <div
-      className={cn(
-        "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors duration-150 cursor-pointer",
-        "hover:bg-accent/10",
-        isActive && "bg-primary/10 text-primary border-r-2 border-primary",
-        isCollapsed && "justify-center px-0"
-      )}
-    >
+  <NavLink to={path} onClick={onClose} className="block relative">
+    {isActive && (
+      <motion.div
+        layoutId="sidebar-active-pill"
+        className="absolute inset-0 bg-primary/10 rounded-lg border-r-2 border-primary"
+        transition={{ type: "spring", stiffness: 400, damping: 35 }}
+      />
+    )}
+    <div className={cn(
+      "relative flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors duration-150 cursor-pointer",
+      "hover:bg-accent/10",
+      isActive && "text-primary",
+      isCollapsed && "justify-center px-0"
+    )}>
       <Icon className={cn(
         "h-5 w-5 flex-shrink-0",
         isActive ? "text-primary" : "text-muted-foreground"
@@ -60,13 +65,76 @@ export const Sidebar = memo(() => {
   const { theme, toggleTheme } = useTheme();
   const { pathname } = useLocation();
 
-  const closeMobile = useCallback(() => setIsMobileOpen(false), [setIsMobileOpen]);
+  const closeMobile  = useCallback(() => setIsMobileOpen(false), [setIsMobileOpen]);
   const toggleMobile = useCallback(() => setIsMobileOpen(v => !v), [setIsMobileOpen]);
   const toggleCollapse = useCallback(() => setIsCollapsed(v => !v), [setIsCollapsed]);
 
+  // ── Shared inner content ──────────────────────────────────────────────
+  const SidebarContent = (
+    <>
+      {/* Logo */}
+      <div className={cn(
+        "flex items-center gap-3 border-b border-sidebar-border flex-shrink-0",
+        isCollapsed ? "px-0 py-5 justify-center" : "px-4 py-5"
+      )}>
+        <img src={logoImg} alt="OceanGuard AI" className="w-9 h-9 rounded-xl flex-shrink-0" />
+        {!isCollapsed && (
+          <div className="overflow-hidden min-w-0">
+            <h1 className="font-bold text-base whitespace-nowrap gradient-text">OceanGuard AI</h1>
+            <p className="text-xs text-muted-foreground whitespace-nowrap">Marine Plastic Detection</p>
+          </div>
+        )}
+      </div>
+
+      {/* Nav */}
+      <nav className={cn(
+        "flex-1 py-3 space-y-0.5 overflow-y-auto overflow-x-hidden",
+        isCollapsed ? "px-2" : "px-3"
+      )}>
+        {navItems.map(item => (
+          <NavItem
+            key={item.path}
+            {...item}
+            isActive={pathname === item.path}
+            isCollapsed={isCollapsed}
+            onClose={closeMobile}
+          />
+        ))}
+      </nav>
+
+      {/* Bottom */}
+      <div className={cn(
+        "border-t border-sidebar-border flex-shrink-0 space-y-1",
+        isCollapsed ? "p-2" : "p-3"
+      )}>
+        <Button
+          variant="ghost"
+          className={cn(
+            "w-full gap-3 text-sm",
+            isCollapsed ? "justify-center px-0 h-10 w-10 mx-auto" : "justify-start"
+          )}
+          onClick={toggleTheme}
+        >
+          {theme === "light"
+            ? <Moon className="h-4 w-4 flex-shrink-0" />
+            : <Sun  className="h-4 w-4 flex-shrink-0" />}
+          {!isCollapsed && (theme === "light" ? "Dark Mode" : "Light Mode")}
+        </Button>
+
+        <Button
+          variant="ghost" size="icon"
+          className="w-full hidden lg:flex justify-center h-9"
+          onClick={toggleCollapse}
+        >
+          {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+        </Button>
+      </div>
+    </>
+  );
+
   return (
     <>
-      {/* ── Mobile hamburger — floating pill, doesn't affect layout ── */}
+      {/* ── Mobile hamburger ── */}
       <button
         className="fixed top-3 left-3 z-50 lg:hidden flex items-center justify-center w-9 h-9 rounded-xl bg-background/90 border border-border shadow-sm backdrop-blur-sm"
         onClick={toggleMobile}
@@ -80,9 +148,7 @@ export const Sidebar = memo(() => {
         {isMobileOpen && (
           <motion.div
             key="backdrop"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
             className="fixed inset-0 bg-background/80 backdrop-blur-sm z-40 lg:hidden"
             onClick={closeMobile}
@@ -90,89 +156,43 @@ export const Sidebar = memo(() => {
         )}
       </AnimatePresence>
 
-      {/* ── Sidebar panel ── */}
-      {/* 
-        Desktop: always visible, width controlled by CSS variable.
-        Mobile: slides in/out via translate.
-        Using CSS transition (not framer-motion) for width — avoids layout reflow jank.
+      {/*
+        ── DESKTOP sidebar — sticky ──────────────────────────────────────
+        `sticky top-0 h-screen` means:
+          • The sidebar column starts at the top of the page
+          • As you scroll, it sticks to the top of the VIEWPORT
+          • The content column next to it scrolls freely
+          • This is the correct "always-visible sidebar" pattern
+          • It does NOT block scrolling — the page scrolls normally
       */}
       <aside
         className={cn(
-          "fixed left-0 top-0 h-screen z-40 flex flex-col",
+          "hidden lg:flex flex-col flex-shrink-0",
+          "sticky top-0 self-start",          // sticks to viewport top while content scrolls
           "bg-sidebar border-r border-sidebar-border",
-          /* CSS width transition — GPU composited, no layout reflow */
           "transition-[width] duration-200 ease-out overflow-hidden",
-          /* Desktop width */
-          isCollapsed ? "lg:w-20" : "lg:w-[280px]",
-          /* Mobile: always full width when open, hidden when closed */
-          "w-[280px]",
-          isMobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+          isCollapsed ? "w-20" : "w-[280px]"
         )}
-        style={{ transition: "width 200ms ease-out, transform 200ms ease-out" }}
+        style={{ height: "100dvh" }}
       >
-        {/* Logo */}
-        <div className={cn(
-          "flex items-center gap-3 border-b border-sidebar-border flex-shrink-0",
-          isCollapsed ? "px-0 py-5 justify-center" : "px-4 py-5"
-        )}>
-          <img src={logoImg} alt="OceanGuard AI" className="w-9 h-9 rounded-xl flex-shrink-0" />
-          {!isCollapsed && (
-            <div className="overflow-hidden min-w-0">
-              <h1 className="font-bold text-base whitespace-nowrap gradient-text">OceanGuard AI</h1>
-              <p className="text-xs text-muted-foreground whitespace-nowrap">Marine Plastic Detection</p>
-            </div>
-          )}
-        </div>
+        {SidebarContent}
+      </aside>
 
-        {/* Nav */}
-        <nav className={cn(
-          "flex-1 py-3 space-y-0.5 overflow-y-auto overflow-x-hidden",
-          isCollapsed ? "px-2" : "px-3"
-        )}>
-          {navItems.map((item) => (
-            <NavItem
-              key={item.path}
-              {...item}
-              isActive={pathname === item.path}
-              isCollapsed={isCollapsed}
-              onClose={closeMobile}
-            />
-          ))}
-        </nav>
-
-        {/* Bottom */}
-        <div className={cn(
-          "border-t border-sidebar-border flex-shrink-0 space-y-1",
-          isCollapsed ? "p-2" : "p-3"
-        )}>
-          {/* Theme */}
-          <Button
-            variant="ghost"
-            className={cn(
-              "w-full gap-3 text-sm",
-              isCollapsed ? "justify-center px-0 h-10 w-10 mx-auto" : "justify-start"
-            )}
-            onClick={toggleTheme}
-          >
-            {theme === "light"
-              ? <Moon className="h-4 w-4 flex-shrink-0" />
-              : <Sun className="h-4 w-4 flex-shrink-0" />}
-            {!isCollapsed && (theme === "light" ? "Dark Mode" : "Light Mode")}
-          </Button>
-
-          {/* Collapse (desktop only) */}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="w-full hidden lg:flex justify-center h-9"
-            onClick={toggleCollapse}
-            aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-          >
-            {isCollapsed
-              ? <ChevronRight className="h-4 w-4" />
-              : <ChevronLeft className="h-4 w-4" />}
-          </Button>
-        </div>
+      {/*
+        ── MOBILE sidebar — fixed overlay ───────────────────────────────
+        On mobile the sidebar slides in as a full-screen overlay.
+        Completely separate from the desktop sidebar above.
+      */}
+      <aside
+        className={cn(
+          "lg:hidden fixed left-0 top-0 z-40 flex flex-col w-[280px]",
+          "bg-sidebar border-r border-sidebar-border overflow-hidden",
+          "transition-transform duration-200 ease-out",
+          isMobileOpen ? "translate-x-0" : "-translate-x-full"
+        )}
+        style={{ height: "100dvh" }}
+      >
+        {SidebarContent}
       </aside>
     </>
   );

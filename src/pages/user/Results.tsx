@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { Link, useParams } from "react-router-dom";
 import {
@@ -48,20 +48,22 @@ const chartColors = [
 
 export default function ResultsPage() {
   const { detectionId } = useParams<{ detectionId: string }>();
-  const [results, setResults] = useState<DetectionResult[]>([]);
+  const [results, setResults]   = useState<DetectionResult[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(!!detectionId);
   const { toast } = useToast();
+  // Stable ref so toast never causes useEffect to re-run
+  const toastRef = useRef(toast);
+  useEffect(() => { toastRef.current = toast; }, [toast]);
 
   useEffect(() => {
     const loadResults = async () => {
-      // If we have a detection ID in URL, fetch from API
       if (detectionId) {
         setIsLoading(true);
         try {
           const token = localStorage.getItem('auth_token');
           if (!token) {
-            toast({
+            toastRef.current({
               title: "Authentication Required",
               description: "Please login to view detection results",
               variant: "destructive",
@@ -70,7 +72,7 @@ export default function ResultsPage() {
             return;
           }
 
-          const fetchDetection = async (retries = 4, delayMs = 1500): Promise<any> => {
+          const fetchDetection = async (): Promise<any> => {
             const response = await fetch(`${API_URL}/api/detections/${detectionId}`, {
               headers: {
                 'Authorization': `Bearer ${token}`,
@@ -88,27 +90,15 @@ export default function ResultsPage() {
 
             const data = await response.json();
             if (!data.success || !data.detection) throw new Error('Invalid response format');
-
-            const det = data.detection;
-            // If summary is empty but totalDetections > 0, the DB write may still be in progress — retry
-            if (det.totalDetections > 0 && (!det.summary || det.summary.length === 0) && retries > 0) {
-              await new Promise(r => setTimeout(r, delayMs));
-              return fetchDetection(retries - 1, delayMs * 1.5);
-            }
             return data;
           };
 
           const data = await fetchDetection();
           setResults([data.detection]);
 
-          toast({
-            title: "✅ Results Loaded",
-            description: "Detection results loaded successfully",
-            duration: 3000,
-          });
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : "Unknown error";
-          toast({
+          toastRef.current({
             title: "Error Loading Results",
             description: errorMessage,
             variant: "destructive",
@@ -118,46 +108,28 @@ export default function ResultsPage() {
           setIsLoading(false);
         }
       } else {
-        // Fallback to sessionStorage for immediate results after detection
+        // Fallback to sessionStorage
         const storedResults = sessionStorage.getItem("detectionResults");
         if (storedResults) {
           try {
             const parsed = JSON.parse(storedResults);
             setResults(parsed);
-            
-            // Save results to data service for history and analytics
             parsed.forEach((result: DetectionResult) => {
-              if (result.success) {
-                dataService.saveDetectionResult(result);
-              }
+              if (result.success) dataService.saveDetectionResult(result);
             });
-            
-            // Show completion notification for videos
-            const hasVideo = parsed.some((r: DetectionResult) => r.annotatedVideo || r.annotatedVideoUrl);
-            if (hasVideo) {
-              toast({
-                title: "🎬 Video Processing Complete!",
-                description: "Your annotated video with frame-by-frame detections is ready to view",
-                duration: 5000,
-              });
-            }
-
-            toast({
-              title: "✅ Results Saved",
-              description: "Detection results have been saved to your history",
-              duration: 3000,
-            });
-          } catch (error) {
+          } catch {
             setResults([emptyResult]);
           }
         } else {
           setResults([emptyResult]);
         }
+        setIsLoading(false);
       }
     };
 
     loadResults();
-  }, [detectionId, toast]);
+  // Only re-run when detectionId changes — toast is stable via ref
+  }, [detectionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const currentResult = results[activeIndex] || emptyResult;
   const totalObjects = currentResult.totalDetections;

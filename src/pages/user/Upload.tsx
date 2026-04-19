@@ -469,14 +469,10 @@ export default function UploadPage() {
       // Store results in sessionStorage for immediate viewing (fallback)
       sessionStorage.setItem("detectionResults", JSON.stringify(results));
       
-      // Trigger event to notify other pages (History, Dashboard) to reload
-      localStorage.setItem('detection_completed', Date.now().toString());
-      window.dispatchEvent(new Event('detectionComplete'));
-      
       // IMMEDIATELY set completion state and stop processing
-      setIsProcessing(false); // Stop processing FIRST
-      setProcessingProgress(100); // Set progress to 100%
-      setIsComplete(true); // Set completion state
+      setIsProcessing(false);
+      setProcessingProgress(100);
+      setIsComplete(true);
       
       // Show completion notification
       toast({
@@ -509,7 +505,12 @@ export default function UploadPage() {
         setIsComplete(false);
         setProcessingProgress(0);
         setEstimatedTime(null);
-        
+
+        // Fire the event AFTER navigation — History/Dashboard listeners
+        // are no longer mounted, so no background refetch hits the Results page
+        localStorage.setItem('detection_completed', Date.now().toString());
+        window.dispatchEvent(new Event('detectionComplete'));
+
         if (firstDetectionId) {
           addLog(`📍 Navigating to detection ID: ${firstDetectionId}`);
           navigate(`/results/${firstDetectionId}`);

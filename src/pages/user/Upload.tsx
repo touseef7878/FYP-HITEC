@@ -415,11 +415,7 @@ export default function UploadPage() {
               }
             }, 2000); // Poll every 2 seconds
             
-            // Timeout after 10 minutes
-            setTimeout(() => {
-              clearInterval(pollInterval);
-              reject(new Error('Video processing timed out after 10 minutes'));
-            }, 600000);
+
           });
         }
         

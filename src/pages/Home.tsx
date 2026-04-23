@@ -7,7 +7,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import logoImg from "@/assets/images/marine-logo.png";
 
 const features = [
-  { icon: Sparkles, title: "Object Detection",    description: "YOLOv11s model trained on 17,429 marine debris images across 8 debris categories" },
+  { icon: Sparkles, title: "Object Detection",    description: "YOLOv26s model trained on ~16,500 marine debris images across 9 debris categories" },
   { icon: TrendingUp, title: "Trend Forecasting", description: "Predict pollution trends and identify accumulation zones" },
   { icon: Map,        title: "Interactive Maps",  description: "Visualize pollution density across marine regions" },
   { icon: Shield,     title: "Real-time Processing", description: "Process images and videos with live progress tracking" },
@@ -78,7 +78,7 @@ export default function HomePage() {
             {/* Sub */}
             <p className="text-sm sm:text-base lg:text-lg text-white/70 mb-5 sm:mb-7 max-w-xl lg:max-w-2xl leading-relaxed">
               Computer vision and deep learning for real-time identification and tracking of marine debris.
-              Combines YOLOv11s detection with LSTM forecasting for pollution analysis.
+              Combines YOLOv26s detection with LSTM forecasting for pollution analysis.
             </p>
 
             {/* CTA buttons — stack on mobile, row on sm+ */}

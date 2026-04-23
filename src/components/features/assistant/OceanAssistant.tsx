@@ -27,8 +27,8 @@ Built as a Final Year Project at HITEC University Taxila (2026).
 Team: Touseef Ur Rehman (ML), Qasim Shahzad (Backend), Zohaib Ashraf (Frontend).
 
 PLATFORM FEATURES:
-1. Upload & Detect — Upload images/videos; YOLOv11s detects 8 debris classes (70.3% mAP50, 17,429 training images)
-   Classes: Fishing Net (99.4%), Tyre (89.1%), Glass Bottle (74.7%), Metal Can (70.3%), Cardboard (68.5%), Plastic Bag (61.2%), Other Debris (62.1%), Plastic Bottle (53.6%)
+1. Upload & Detect — Upload images/videos; YOLOv26s detects 9 debris classes (71% mAP50, ~16,500 training images)
+   Classes: Fishing Net (99.4%), Tyre (89.1%), Glass Container (74.7%), Metal Can (70.3%), Other Debris (62.1%), Plastic Bag (61.2%), Plastic Bottle (53.6%), Plastic Fragments (21%), Background
 2. Predictions — 3-step LSTM pipeline per region: Fetch Data → Train Model → Generate 7–90 day forecasts
    Regions: Pacific Ocean, Atlantic Ocean, Indian Ocean, Mediterranean Sea
    Data sources: Open-Meteo (free weather), WAQI (air quality), NOAA CDO (climate)

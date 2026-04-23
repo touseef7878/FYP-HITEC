@@ -463,15 +463,15 @@ export default function ResultsPage() {
                   <CardContent className="space-y-2 text-sm">
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Model</span>
-                      <span>YOLOv11s</span>
+                      <span>YOLOv26s</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">mAP50</span>
-                      <span>70.3%</span>
+                      <span>71%</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Classes</span>
-                      <span>{currentResult.summary.length} / 8</span>
+                      <span>{currentResult.summary.length} / 9</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Detections</span>
@@ -583,21 +583,21 @@ export default function ResultsPage() {
           <Card className="glass-card mt-6">
             <CardHeader>
               <CardTitle className="text-sm flex items-center gap-2">
-                <span>YOLOv11s — Model Performance Reference</span>
-                <Badge variant="outline" className="text-xs font-normal">mAP50: 70.3%</Badge>
+                <span>YOLOv26s — Model Performance Reference</span>
+                <Badge variant="outline" className="text-xs font-normal">mAP50: 71%</Badge>
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 {[
-                  { cls: "Fishing Net",    map: 99.4, status: "Exceptional" },
-                  { cls: "Tyre",           map: 89.1, status: "Excellent"   },
-                  { cls: "Glass Bottle",   map: 74.7, status: "Strong"      },
-                  { cls: "Plastic Bag",    map: 61.2, status: "Moderate"    },
-                  { cls: "Plastic Bottle", map: 53.6, status: "Moderate"    },
-                  { cls: "Metal Can",      map: 70.3, status: "Good"        },
-                  { cls: "Cardboard",      map: 68.5, status: "Good"        },
-                  { cls: "Other Debris",   map: 62.1, status: "Moderate"    },
+                  { cls: "Fishing Net",       map: 99.4, status: "Exceptional" },
+                  { cls: "Tyre",              map: 89.1, status: "Excellent"   },
+                  { cls: "Glass Container",   map: 74.7, status: "Strong"      },
+                  { cls: "Metal Can",         map: 70.3, status: "Good"        },
+                  { cls: "Other Debris",      map: 62.1, status: "Moderate"    },
+                  { cls: "Plastic Bag",       map: 61.2, status: "Moderate"    },
+                  { cls: "Plastic Bottle",    map: 53.6, status: "Moderate"    },
+                  { cls: "Plastic Fragments", map: 21.0, status: "Weak"        },
                 ].map((item) => (
                   <div key={item.cls} className="p-3 bg-muted/30 rounded-lg">
                     <div className="flex items-center justify-between mb-1.5">
@@ -612,6 +612,7 @@ export default function ResultsPage() {
                           backgroundColor:
                             item.map >= 90 ? "hsl(var(--chart-2))" :
                             item.map >= 70 ? "hsl(var(--chart-1))" :
+                            item.map >= 50 ? "hsl(var(--chart-3))" :
                             "hsl(var(--chart-4))",
                         }}
                       />
@@ -621,7 +622,7 @@ export default function ResultsPage() {
                 ))}
               </div>
               <p className="text-xs text-muted-foreground mt-3">
-                Trained on 17,429 images (13,043 train / 3,261 val) · 100 epochs · ~25ms inference on GPU
+                Trained on ~16,500 images (7 merged datasets) · 100 epochs · 640×640 · Precision 83% · Recall 67% · mAP@50–95: 52%
               </p>
             </CardContent>
           </Card>

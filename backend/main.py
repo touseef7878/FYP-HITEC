@@ -329,9 +329,25 @@ async def favicon():
         return FileResponse(favicon_path, media_type="image/png")
     return JSONResponse({"error": "Favicon not found"}, status_code=404)
 
-# Load YOLO model - YOLOv11s (Small) custom-trained on marine debris
+# Load YOLO model - YOLOv26s (Small) custom-trained on marine debris
+# 9 classes: fishing_net, plastic_bottle, metal_can, tyre, glass_container,
+#            plastic_bag, plastic_fragments, other_debris, background
+# Trained on ~16,500 images (merged from 7 datasets), 100 epochs, 640×640
 WEIGHTS_PATH = os.path.join(os.path.dirname(__file__), "weights", "best.pt")
 model = None
+
+# YOLOv26s class metadata (thesis Chapter 5)
+YOLO_CLASS_META = {
+    "fishing_net":       {"map50": 0.994, "status": "Exceptional"},
+    "tyre":              {"map50": 0.891, "status": "Excellent"},
+    "glass_container":   {"map50": 0.747, "status": "Strong"},
+    "metal_can":         {"map50": 0.703, "status": "Good"},
+    "other_debris":      {"map50": 0.621, "status": "Moderate"},
+    "plastic_bag":       {"map50": 0.612, "status": "Moderate"},
+    "plastic_bottle":    {"map50": 0.536, "status": "Moderate"},
+    "plastic_fragments": {"map50": 0.210, "status": "Weak"},
+    "background":        {"map50": 0.000, "status": "N/A"},
+}
 
 def load_yolo_model():
     global model
@@ -343,7 +359,7 @@ def load_yolo_model():
 
         model = YOLO(WEIGHTS_PATH)
         # Ultralytics handles device placement internally — do not call model.to('cpu') manually.
-        logger.info(f"✅ YOLOv11s model loaded from {WEIGHTS_PATH}")
+        logger.info(f"✅ YOLOv26s model loaded from {WEIGHTS_PATH}")
         logger.info(f"   Classes: {list(model.names.values()) if model.names else 'Unknown'}")
 
         # Warmup: run one dummy inference so the first real video has no cold-start penalty
@@ -402,10 +418,19 @@ async def health_check():
             "loaded": True,
             "classes": list(model.names.values()) if model.names else [],
             "num_classes": len(model.names) if model.names else 0,
-            "model_type": getattr(model, 'model_name', 'Custom/Unknown')
+            "model_type": "YOLOv26s",
+            "architecture": "YOLOv26s (Small)",
+            "input_resolution": "640x640",
+            "training_images": 16500,
+            "epochs": 100,
+            "precision": 0.83,
+            "recall": 0.67,
+            "map50": 0.71,
+            "map50_95": 0.52,
+            "class_metadata": YOLO_CLASS_META
         }
         model_status = "loaded"
-        model_message = "Using YOLOv11s custom weights (best.pt) — trained on 17,429 marine debris images, 8 classes, 70.3% mAP50"
+        model_message = "Using YOLOv26s custom weights (best.pt) — trained on ~16,500 marine debris images, 9 classes, 71% mAP50"
     else:
         model_info = {"loaded": False}
         model_status = "failed"
@@ -1824,7 +1849,7 @@ async def download_report(
         )
 
 # ============================================================================
-# YOLO DETECTION ENDPOINTS (UNCHANGED)
+# YOLO DETECTION ENDPOINTS — YOLOv26s
 # ============================================================================
 
 @app.post("/detect")
@@ -3132,7 +3157,7 @@ async def generate_report(
             "report_version": "2.0",
             "data_sources": [],
             "methodology": {
-                "detection_model": "YOLOv11s Marine Debris Detection (70.3% mAP50, 8 classes)",
+                "detection_model": "YOLOv26s Marine Debris Detection (71% mAP50, 9 classes)",
                 "prediction_model": "LSTM Time Series Forecasting",
                 "confidence_threshold": "25%",
                 "analysis_period": f"{request.date_range_days} days"

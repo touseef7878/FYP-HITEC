@@ -216,16 +216,18 @@ export default function SettingsPage() {
               <div className="p-3 bg-muted/30 rounded-xl flex items-start gap-2.5 mb-3">
                 <Info className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
                 <div>
-                  <p className="font-medium text-xs sm:text-sm">YOLOv11s — Custom Marine Debris Model</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">Trained on 17,429 marine debris images</p>
+                  <p className="font-medium text-xs sm:text-sm">YOLOv26s — Custom Marine Debris Model</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Trained on ~16,500 images from 7 merged marine datasets</p>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-2 text-xs sm:text-sm">
                 {[
                   ["Version", "v1.0.0"],
-                  ["Classes", "8"],
+                  ["Classes", "9"],
                   ["Resolution", "640 × 640"],
-                  ["mAP50", "70.3%"],
+                  ["mAP50", "71%"],
+                  ["Precision", "83%"],
+                  ["Recall", "67%"],
                 ].map(([k, v]) => (
                   <div key={k} className="flex justify-between p-2 bg-muted/20 rounded-lg">
                     <span className="text-muted-foreground">{k}</span>

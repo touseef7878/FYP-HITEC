@@ -1,6 +1,6 @@
 ﻿# OceanGuard AI — Marine Plastic Detection Platform
 
-> AI-powered platform for detecting and forecasting marine plastic pollution using YOLOv11s and LSTM neural networks.
+> AI-powered platform for detecting and forecasting marine plastic pollution using YOLOv26s and LSTM neural networks.
 
 **HITEC University Taxila — Final Year Project 2026**
 
@@ -16,7 +16,7 @@ OceanGuard AI is a full-stack research platform that combines computer vision an
 
 | Area | Highlights |
 |---|---|
-| **Detection** | YOLOv11s · 8 debris classes · 70.3% mAP50 · image + video · drag-drop · before/after comparison |
+| **Detection** | YOLOv26s · 9 debris classes · 71% mAP50 · image + video · drag-drop · before/after comparison |
 | **Forecasting** | 3-step LSTM pipeline · 4 ocean regions · 7–90 day forecasts · confidence intervals · CSV export |
 | **Heatmap** | Leaflet map · current + predicted modes · real-time data fetch · 1-hour cooldown |
 | **Reports** | PDF generation · YOLO / LSTM / Comprehensive types · configurable date range |
@@ -30,7 +30,7 @@ OceanGuard AI is a full-stack research platform that combines computer vision an
 
 **Frontend** — React 18 + TypeScript, Vite, Tailwind CSS, shadcn/ui, React Query v5, Recharts, Leaflet, Framer Motion, jsPDF, `@google/genai`, Vitest
 
-**Backend** — FastAPI, SQLite (WAL + connection pool), Ultralytics YOLOv11s, TensorFlow/Keras, OpenCV, bcrypt, PyJWT
+**Backend** — FastAPI, SQLite (WAL + connection pool), Ultralytics YOLOv26s, TensorFlow/Keras, OpenCV, bcrypt, PyJWT
 
 **Data Sources** — Open-Meteo (free, no key) · WAQI (AQI) · NOAA CDO (climate)
 
@@ -76,7 +76,7 @@ This creates `marine_detection.db` with 10 tables, 23 indexes, and one default a
 
 > **Change the admin password before any public deployment.**
 
-Place YOLOv11s weights at `backend/weights/best.pt`.
+Place YOLOv26s weights at `backend/weights/best.pt`.
 
 ### 3. Frontend
 ```bash
@@ -131,7 +131,7 @@ oceanscan-ai-main/
 │   │   ├── open_meteo_api.py      # Free weather archive (no key)
 │   │   ├── waqi_api.py            # Air quality API
 │   │   └── noaa_api.py            # Climate station data
-│   ├── weights/best.pt            # YOLOv11s weights (add manually)
+│   ├── weights/best.pt            # YOLOv26s weights (add manually)
 │   ├── main.py                    # FastAPI app — all endpoints
 │   ├── init_db.py                 # One-time DB setup
 │   ├── test_lstm_pipeline.py      # Backend test suite (10 groups)
@@ -218,16 +218,16 @@ POST /api/admin/system/{action}   # backup | optimize-db | cache-clear | export-
 
 ## ML Models
 
-### YOLOv11s — Object Detection
+### YOLOv26s — Object Detection
 
-Trained on 17,429 marine debris images across 8 classes:
+Trained on ~16,500 marine debris images across 9 classes:
 
 | Class | mAP50 | Class | mAP50 |
 |---|---|---|---|
 | Fishing Net | 99.4% | Metal Can | 70.3% |
-| Tyre | 89.1% | Cardboard | 68.5% |
-| Glass Bottle | 74.7% | Other Debris | 62.1% |
-| Plastic Bag | 61.2% | Plastic Bottle | 53.6% |
+| Tyre | 89.1% | Other Debris | 62.1% |
+| Glass Container | 74.7% | Plastic Bag | 61.2% |
+| Plastic Bottle | 53.6% | Plastic Fragments | 21.0% |
 
 **Overall mAP50: 70.3%** · ~25ms inference · 100 epochs · SGD + Mosaic/Mixup augmentation
 
@@ -304,7 +304,7 @@ python backend/test_lstm_pipeline.py --url http://localhost:8000
 
 | Name | Role |
 |---|---|
-| Touseef Ur Rehman | ML Engineer — YOLOv11s, LSTM, data pipeline |
+| Touseef Ur Rehman | ML Engineer — YOLOv26s, LSTM, data pipeline |
 | Qasim Shahzad | Backend Engineer — FastAPI, SQLite, authentication |
 | Zohaib Ashraf | Frontend Engineer — React, UI/UX, PDF reports |
 

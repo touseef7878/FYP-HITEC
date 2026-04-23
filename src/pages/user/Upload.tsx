@@ -114,7 +114,7 @@ export default function UploadPage() {
   const [estimatedTime, setEstimatedTime] = useState<number | null>(null);
   const [processingProgress, setProcessingProgress] = useState(0);
   const [logs, setLogs] = useState<string[]>([]);
-  const [confidence, setConfidence] = useState(25);
+  const [confidence, setConfidence] = useState(15);
   const [showSettings, setShowSettings] = useState(false);
   const [backendStatus, setBackendStatus] = useState<"unknown" | "online" | "offline">("unknown");
   const [lastDetectionId, setLastDetectionId] = useState<number | undefined>(undefined);
@@ -577,7 +577,7 @@ export default function UploadPage() {
                         className="w-full"
                       />
                       <p className="text-xs text-muted-foreground mt-1">
-                        Higher = fewer but more confident detections
+                        Lower = detects more objects (recommended: 15–25%). Higher = fewer but more certain detections.
                       </p>
                     </div>
                     <Button variant="secondary" size="sm" onClick={checkBackendHealth} className="text-xs">

@@ -1852,10 +1852,93 @@ async def download_report(
 # YOLO DETECTION ENDPOINTS — YOLOv26s
 # ============================================================================
 
+def _run_tiled_inference(model, image_bgr: np.ndarray, confidence: float,
+                          tile_size: int = 640, overlap: float = 0.2) -> list:
+    """
+    Tiled (sliding-window) inference for large or dense images.
+    Splits the image into overlapping tiles, runs YOLO on each tile,
+    maps detections back to full-image coordinates, then deduplicates
+    with NMS across all tiles.
+
+    Returns a flat list of detection dicts (same schema as normal inference).
+    """
+    h, w = image_bgr.shape[:2]
+    step = int(tile_size * (1 - overlap))
+    all_boxes  = []   # [x1, y1, x2, y2, conf, class_id, class_name]
+
+    for y in range(0, h, step):
+        for x in range(0, w, step):
+            x2 = min(x + tile_size, w)
+            y2 = min(y + tile_size, h)
+            tile = image_bgr[y:y2, x:x2]
+
+            # Pad tile to tile_size × tile_size so YOLO gets a square input
+            pad_h = tile_size - tile.shape[0]
+            pad_w = tile_size - tile.shape[1]
+            if pad_h > 0 or pad_w > 0:
+                tile = cv2.copyMakeBorder(tile, 0, pad_h, 0, pad_w,
+                                          cv2.BORDER_CONSTANT, value=(114, 114, 114))
+
+            try:
+                res = model(tile, conf=confidence, iou=0.45, agnostic_nms=True,
+                            imgsz=tile_size, verbose=False)[0]
+            except Exception:
+                continue
+
+            if res.boxes is None or len(res.boxes) == 0:
+                continue
+
+            for box in res.boxes:
+                class_id   = int(box.cls[0])
+                class_name = res.names[class_id]
+                if class_name.lower() == "background":
+                    continue
+                conf_val = float(box.conf[0])
+                bx1, by1, bx2, by2 = box.xyxy[0].tolist()
+                # Map back to full-image coords
+                all_boxes.append([
+                    x + bx1, y + by1, x + bx2, y + by2,
+                    conf_val, class_id, class_name
+                ])
+
+    if not all_boxes:
+        return []
+
+    # Cross-tile NMS using OpenCV's groupRectangles-style approach via numpy
+    # Group by class, apply per-class NMS
+    import torch
+    final_dets = []
+    class_ids_present = set(b[5] for b in all_boxes)
+
+    for cid in class_ids_present:
+        cls_boxes = [b for b in all_boxes if b[5] == cid]
+        boxes_t  = torch.tensor([[b[0], b[1], b[2], b[3]] for b in cls_boxes], dtype=torch.float32)
+        scores_t = torch.tensor([b[4] for b in cls_boxes], dtype=torch.float32)
+        # torchvision NMS
+        try:
+            from torchvision.ops import nms as tv_nms
+            keep = tv_nms(boxes_t, scores_t, iou_threshold=0.45).tolist()
+        except Exception:
+            # fallback: keep all
+            keep = list(range(len(cls_boxes)))
+
+        for k in keep:
+            b = cls_boxes[k]
+            final_dets.append({
+                "class":      b[6],
+                "confidence": round(b[4] * 100, 1),
+                "bbox": {
+                    "x1": int(b[0]), "y1": int(b[1]),
+                    "x2": int(b[2]), "y2": int(b[3])
+                }
+            })
+
+    return final_dets
+
 @app.post("/detect")
 async def detect_objects(
     file: UploadFile = File(...), 
-    confidence: float = 0.25,
+    confidence: float = 0.15,
     current_user: dict = Depends(get_current_user)
 ):
     if model is None:
@@ -1879,35 +1962,88 @@ async def detect_objects(
         else:
             image_bgr = image_np
         
-        # Run YOLO inference
-        results = model(image_bgr, conf=confidence)[0]
-        
-        # Process detections
+        # ── Inference strategy ────────────────────────────────────────────────
+        # For large/dense images (aerial shots, beach scenes): tiled inference
+        # catches small objects that get squashed at 640px scale.
+        # We also run a full-image pass at 1280px and merge both result sets.
+        h_img, w_img = image_bgr.shape[:2]
+        use_tiling = (w_img > 800 or h_img > 800)
+
+        raw_detections: list = []   # unified list before drawing
+
+        if use_tiling:
+            # 1) Tiled pass — catches small/dense objects
+            tiled = _run_tiled_inference(model, image_bgr, confidence,
+                                         tile_size=640, overlap=0.25)
+            raw_detections.extend(tiled)
+
+            # 2) Full-image pass at 1280px — catches large objects + TTA
+            full_res = model(
+                image_bgr, conf=confidence, iou=0.45, agnostic_nms=True,
+                augment=True, imgsz=1280, max_det=1000, verbose=False
+            )[0]
+            for box in full_res.boxes:
+                cid   = int(box.cls[0])
+                cname = full_res.names[cid]
+                if cname.lower() == "background":
+                    continue
+                cv  = float(box.conf[0])
+                bx  = box.xyxy[0].tolist()
+                raw_detections.append({
+                    "class": cname,
+                    "confidence": round(cv * 100, 1),
+                    "bbox": {"x1": int(bx[0]), "y1": int(bx[1]),
+                             "x2": int(bx[2]), "y2": int(bx[3])}
+                })
+
+            # 3) Deduplicate merged results with per-class NMS
+            import torch
+            try:
+                from torchvision.ops import nms as tv_nms
+                deduped = []
+                for cname in {d["class"] for d in raw_detections}:
+                    cls_dets = [d for d in raw_detections if d["class"] == cname]
+                    bt = torch.tensor([[d["bbox"]["x1"], d["bbox"]["y1"],
+                                        d["bbox"]["x2"], d["bbox"]["y2"]]
+                                       for d in cls_dets], dtype=torch.float32)
+                    st = torch.tensor([d["confidence"] / 100.0 for d in cls_dets],
+                                      dtype=torch.float32)
+                    keep = tv_nms(bt, st, iou_threshold=0.45).tolist()
+                    deduped.extend(cls_dets[k] for k in keep)
+                raw_detections = deduped
+            except Exception:
+                pass  # keep merged list as-is if torchvision unavailable
+        else:
+            # Small image — single pass with TTA
+            results = model(
+                image_bgr, conf=confidence, iou=0.45, agnostic_nms=True,
+                augment=True, imgsz=640, max_det=1000, verbose=False
+            )[0]
+            for box in results.boxes:
+                cid   = int(box.cls[0])
+                cname = results.names[cid]
+                if cname.lower() == "background":
+                    continue
+                cv  = float(box.conf[0])
+                bx  = box.xyxy[0].tolist()
+                raw_detections.append({
+                    "class": cname,
+                    "confidence": round(cv * 100, 1),
+                    "bbox": {"x1": int(bx[0]), "y1": int(bx[1]),
+                             "x2": int(bx[2]), "y2": int(bx[3])}
+                })
+
+        # ── Build detections + class_counts from raw_detections ───────────────
         detections = []
         class_counts = {}
-        
-        for box in results.boxes:
-            class_id = int(box.cls[0])
-            class_name = results.names[class_id]
-            conf = float(box.conf[0])
-            bbox = box.xyxy[0].tolist()
-            
-            detections.append({
-                "class": class_name,
-                "confidence": round(conf * 100, 1),
-                "bbox": {
-                    "x1": int(bbox[0]),
-                    "y1": int(bbox[1]),
-                    "x2": int(bbox[2]),
-                    "y2": int(bbox[3])
-                }
-            })
-            
-            # Count by class
+
+        for det in raw_detections:
+            class_name = det["class"]
+            detections.append(det)
             if class_name not in class_counts:
                 class_counts[class_name] = {"count": 0, "total_confidence": 0}
             class_counts[class_name]["count"] += 1
-            class_counts[class_name]["total_confidence"] += conf * 100
+            class_counts[class_name]["total_confidence"] += det["confidence"]
         
         # Draw bounding boxes on image
         annotated_image = image_bgr.copy()
@@ -2044,7 +2180,7 @@ async def detect_objects(
 @app.post("/detect-video")
 async def detect_video(
     file: UploadFile = File(...), 
-    confidence: float = 0.25,
+    confidence: float = 0.15,
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -2181,7 +2317,8 @@ def _process_video_sync(
     # Increase for more speed, decrease for higher accuracy on fast-moving objects
     SKIP_N      = 3
     BATCH_SIZE  = 8   # frames fed to YOLO at once
-    INFER_SIZE  = 640 # YOLO input resolution (standard YOLOv8/11 size)
+    INFER_SIZE  = 640 # YOLO input resolution
+    INFER_IOU   = 0.45  # looser NMS — catch overlapping objects of different classes
     # ─────────────────────────────────────────────────────────────────────────
 
     start_time = _time.time()
@@ -2266,10 +2403,10 @@ def _process_video_sync(
             if not batch_frames:
                 return
 
-            # Batch inference on downscaled frames
+            # Batch inference on downscaled frames — low conf + loose NMS
             try:
-                batch_results = model(batch_small, conf=confidence, verbose=False,
-                                      imgsz=INFER_SIZE)
+                batch_results = model(batch_small, conf=confidence, iou=INFER_IOU,
+                                      agnostic_nms=True, verbose=False, imgsz=INFER_SIZE)
             except Exception as e:
                 logger.warning(f"Batch inference failed: {e}")
                 batch_results = [None] * len(batch_frames)
@@ -2287,6 +2424,11 @@ def _process_video_sync(
                     for box in result.boxes:
                         class_id   = int(box.cls[0])
                         class_name = result.names[class_id]
+                        
+                        # Skip background — not actual debris
+                        if class_name.lower() == "background":
+                            continue
+                        
                         conf_val   = float(box.conf[0])
                         bbox       = box.xyxy[0].tolist()
 

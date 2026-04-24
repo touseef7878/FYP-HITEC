@@ -471,7 +471,7 @@ export default function ResultsPage() {
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Classes</span>
-                      <span>{currentResult.summary.length} / 9</span>
+                      <span>{currentResult.summary.length} / 8</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Detections</span>

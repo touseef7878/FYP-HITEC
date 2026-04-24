@@ -330,8 +330,8 @@ async def favicon():
     return JSONResponse({"error": "Favicon not found"}, status_code=404)
 
 # Load YOLO model - YOLOv26s (Small) custom-trained on marine debris
-# 9 classes: fishing_net, plastic_bottle, metal_can, tyre, glass_container,
-#            plastic_bag, plastic_fragments, other_debris, background
+# 8 classes: fishing_net, plastic_bottle, metal_can, tyre, glass_container,
+#            plastic_bag, plastic_fragments, other_debris
 # Trained on ~16,500 images (merged from 7 datasets), 100 epochs, 640×640
 WEIGHTS_PATH = os.path.join(os.path.dirname(__file__), "weights", "best.pt")
 model = None
@@ -346,7 +346,6 @@ YOLO_CLASS_META = {
     "plastic_bag":       {"map50": 0.612, "status": "Moderate"},
     "plastic_bottle":    {"map50": 0.536, "status": "Moderate"},
     "plastic_fragments": {"map50": 0.210, "status": "Weak"},
-    "background":        {"map50": 0.000, "status": "N/A"},
 }
 
 def load_yolo_model():
@@ -430,7 +429,7 @@ async def health_check():
             "class_metadata": YOLO_CLASS_META
         }
         model_status = "loaded"
-        model_message = "Using YOLOv26s custom weights (best.pt) — trained on ~16,500 marine debris images, 9 classes, 71% mAP50"
+        model_message = "Using YOLOv26s custom weights (best.pt) — trained on ~16,500 marine debris images, 8 classes, 71% mAP50"
     else:
         model_info = {"loaded": False}
         model_status = "failed"
@@ -1852,6 +1851,116 @@ async def download_report(
 # YOLO DETECTION ENDPOINTS — YOLOv26s
 # ============================================================================
 
+def _dark_channel_prior(image_bgr: np.ndarray,
+                         patch_size: int = 15,
+                         omega: float = 0.95,
+                         t_min: float = 0.1) -> np.ndarray:
+    """
+    Dark Channel Prior (DCP) dehazing — He et al. 2009.
+    Enhances contrast in murky/hazy underwater images before YOLO inference.
+
+    Steps:
+      1. Compute dark channel (min over local patch and RGB channels)
+      2. Estimate atmospheric light A from the brightest dark-channel pixels
+      3. Estimate transmission map t(x) = 1 - omega * dark(I/A)
+      4. Soft-matting via guided filter (fast approximation with box filter)
+      5. Recover scene radiance J = (I - A) / max(t, t_min) + A
+
+    Args:
+        image_bgr : uint8 BGR image
+        patch_size: local patch radius for dark channel (default 15)
+        omega     : haze retention factor — 0.95 keeps slight depth cue
+        t_min     : minimum transmission to avoid division by zero
+
+    Returns:
+        Enhanced uint8 BGR image (same shape as input)
+    """
+    img = image_bgr.astype(np.float64) / 255.0
+    h, w = img.shape[:2]
+
+    # ── 1. Dark channel ───────────────────────────────────────────────────────
+    dark = np.min(img, axis=2)  # min over RGB channels
+    kernel = cv2.getStructuringElement(
+        cv2.MORPH_RECT, (patch_size, patch_size)
+    )
+    dark = cv2.erode(dark, kernel)  # min over local patch (erosion = min filter)
+
+    # ── 2. Atmospheric light A ────────────────────────────────────────────────
+    # Take top 0.1% brightest pixels in dark channel as candidates
+    num_pixels = h * w
+    num_bright = max(1, int(num_pixels * 0.001))
+    flat_dark  = dark.flatten()
+    indices    = np.argpartition(flat_dark, -num_bright)[-num_bright:]
+    # A = max intensity among those pixels across all channels
+    bright_pixels = img.reshape(-1, 3)[indices]
+    A = bright_pixels.max(axis=0)  # shape (3,)
+    A = np.clip(A, 0.1, 1.0)       # safety clamp
+
+    # ── 3. Transmission map ───────────────────────────────────────────────────
+    # t(x) = 1 - omega * dark_channel(I / A)
+    norm = img / A[np.newaxis, np.newaxis, :]
+    dark_norm = np.min(norm, axis=2)
+    dark_norm = cv2.erode(dark_norm.astype(np.float32), kernel).astype(np.float64)
+    t = 1.0 - omega * dark_norm
+
+    # ── 4. Guided filter (box-filter approximation) ───────────────────────────
+    # Smooth transmission using the gray image as guide
+    guide  = cv2.cvtColor((img * 255).astype(np.uint8), cv2.COLOR_BGR2GRAY).astype(np.float64) / 255.0
+    r      = patch_size
+    eps    = 1e-3
+    mean_I = cv2.boxFilter(guide, cv2.CV_64F, (r, r))
+    mean_t = cv2.boxFilter(t,     cv2.CV_64F, (r, r))
+    mean_It= cv2.boxFilter(guide * t, cv2.CV_64F, (r, r))
+    cov_It = mean_It - mean_I * mean_t
+    mean_II= cv2.boxFilter(guide * guide, cv2.CV_64F, (r, r))
+    var_I  = mean_II - mean_I * mean_I
+    a_gf   = cov_It / (var_I + eps)
+    b_gf   = mean_t - a_gf * mean_I
+    mean_a = cv2.boxFilter(a_gf, cv2.CV_64F, (r, r))
+    mean_b = cv2.boxFilter(b_gf, cv2.CV_64F, (r, r))
+    t_refined = np.clip(mean_a * guide + mean_b, t_min, 1.0)
+
+    # ── 5. Scene radiance recovery ────────────────────────────────────────────
+    J = np.zeros_like(img)
+    for c in range(3):
+        J[:, :, c] = (img[:, :, c] - A[c]) / t_refined + A[c]
+
+    J = np.clip(J, 0.0, 1.0)
+
+    # ── 6. CLAHE on L channel for extra contrast boost ────────────────────────
+    J_uint8 = (J * 255).astype(np.uint8)
+    lab     = cv2.cvtColor(J_uint8, cv2.COLOR_BGR2LAB)
+    clahe   = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    lab[:, :, 0] = clahe.apply(lab[:, :, 0])
+    J_uint8 = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+
+    return J_uint8
+
+
+def _is_underwater_or_murky(image_bgr: np.ndarray) -> bool:
+    """
+    Heuristic to detect if an image is underwater/murky and needs DCP.
+    Triggers only when there is a clear blue/green colour cast (>20% over red),
+    or when both low contrast AND a mild cast are present.
+    Avoids false positives on normal clear images.
+    """
+    b, g, r = cv2.split(image_bgr.astype(np.float32))
+    mean_b  = float(b.mean())
+    mean_g  = float(g.mean())
+    mean_r  = max(float(r.mean()), 1.0)
+
+    # Strong underwater cast — blue or green >20% brighter than red
+    strong_cast = (mean_b > mean_r * 1.20) or (mean_g > mean_r * 1.20)
+
+    # Low contrast
+    gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY).astype(np.float32)
+    low_contrast = float(gray.std()) < 35.0
+
+    # Mild cast + low contrast together
+    mild_cast = (mean_b > mean_r * 1.05) or (mean_g > mean_r * 1.05)
+
+    return strong_cast or (low_contrast and mild_cast)
+
 def _run_tiled_inference(model, image_bgr: np.ndarray, confidence: float,
                           tile_size: int = 640, overlap: float = 0.2) -> list:
     """
@@ -1891,8 +2000,6 @@ def _run_tiled_inference(model, image_bgr: np.ndarray, confidence: float,
             for box in res.boxes:
                 class_id   = int(box.cls[0])
                 class_name = res.names[class_id]
-                if class_name.lower() == "background":
-                    continue
                 conf_val = float(box.conf[0])
                 bx1, by1, bx2, by2 = box.xyxy[0].tolist()
                 # Map back to full-image coords
@@ -1937,8 +2044,8 @@ def _run_tiled_inference(model, image_bgr: np.ndarray, confidence: float,
 
 @app.post("/detect")
 async def detect_objects(
-    file: UploadFile = File(...), 
-    confidence: float = 0.15,
+    file: UploadFile = File(...),
+    confidence: float = 0.10,
     current_user: dict = Depends(get_current_user)
 ):
     if model is None:
@@ -1961,42 +2068,60 @@ async def detect_objects(
             image_bgr = cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR)
         else:
             image_bgr = image_np
+
+        # ── DCP preprocessing — enhance murky/underwater images ──────────────
+        dcp_applied = False
+        if _is_underwater_or_murky(image_bgr):
+            try:
+                image_bgr = _dark_channel_prior(image_bgr)
+                dcp_applied = True
+                logger.info("🌊 DCP dehazing applied (murky/underwater image detected)")
+            except Exception as _dcp_err:
+                logger.warning(f"DCP failed (non-fatal): {_dcp_err}")
         
         # ── Inference strategy ────────────────────────────────────────────────
-        # For large/dense images (aerial shots, beach scenes): tiled inference
-        # catches small objects that get squashed at 640px scale.
-        # We also run a full-image pass at 1280px and merge both result sets.
+        # Pass 1 — full image at native resolution (up to 1280px)
+        #   Catches large objects: fishing_net, tyre, plastic_bag
+        #   NO augment — augment=True breaks texture-based classes like fishing_net
+        # Pass 2 — tiled inference (only for very large/dense images > 1500px)
+        #   Catches small objects: plastic_bottle, metal_can, plastic_fragments
+        # Both passes merged + per-class NMS to deduplicate
         h_img, w_img = image_bgr.shape[:2]
-        use_tiling = (w_img > 800 or h_img > 800)
+        infer_size = min(max(w_img, h_img, 640), 1280)  # clamp 640–1280
 
-        raw_detections: list = []   # unified list before drawing
+        raw_detections: list = []
 
-        if use_tiling:
-            # 1) Tiled pass — catches small/dense objects
+        # ── Pass 1: full-image (always runs) ─────────────────────────────────
+        full_res = model(
+            image_bgr,
+            conf=confidence,
+            iou=0.5,
+            imgsz=infer_size,
+            max_det=1000,
+            verbose=False
+        )[0]
+        for box in full_res.boxes:
+            cid   = int(box.cls[0])
+            cname = full_res.names[cid]
+            cv    = float(box.conf[0])
+            bx    = box.xyxy[0].tolist()
+            raw_detections.append({
+                "class": cname,
+                "confidence": round(cv * 100, 1),
+                "bbox": {"x1": int(bx[0]), "y1": int(bx[1]),
+                         "x2": int(bx[2]), "y2": int(bx[3])}
+            })
+
+        # ── Pass 2: tiled (only for very large images with small objects) ─────
+        # Only tile if image is very large AND full-image pass found few/no objects
+        # This avoids breaking large-object detection with unnecessary tiling
+        if (w_img > 1500 or h_img > 1500) and len(raw_detections) < 3:
             tiled = _run_tiled_inference(model, image_bgr, confidence,
                                          tile_size=640, overlap=0.25)
             raw_detections.extend(tiled)
 
-            # 2) Full-image pass at 1280px — catches large objects + TTA
-            full_res = model(
-                image_bgr, conf=confidence, iou=0.45, agnostic_nms=True,
-                augment=True, imgsz=1280, max_det=1000, verbose=False
-            )[0]
-            for box in full_res.boxes:
-                cid   = int(box.cls[0])
-                cname = full_res.names[cid]
-                if cname.lower() == "background":
-                    continue
-                cv  = float(box.conf[0])
-                bx  = box.xyxy[0].tolist()
-                raw_detections.append({
-                    "class": cname,
-                    "confidence": round(cv * 100, 1),
-                    "bbox": {"x1": int(bx[0]), "y1": int(bx[1]),
-                             "x2": int(bx[2]), "y2": int(bx[3])}
-                })
-
-            # 3) Deduplicate merged results with per-class NMS
+        # ── Per-class NMS to deduplicate overlapping boxes ────────────────────
+        if raw_detections:
             import torch
             try:
                 from torchvision.ops import nms as tv_nms
@@ -2008,30 +2133,11 @@ async def detect_objects(
                                        for d in cls_dets], dtype=torch.float32)
                     st = torch.tensor([d["confidence"] / 100.0 for d in cls_dets],
                                       dtype=torch.float32)
-                    keep = tv_nms(bt, st, iou_threshold=0.45).tolist()
+                    keep = tv_nms(bt, st, iou_threshold=0.5).tolist()
                     deduped.extend(cls_dets[k] for k in keep)
                 raw_detections = deduped
             except Exception:
-                pass  # keep merged list as-is if torchvision unavailable
-        else:
-            # Small image — single pass with TTA
-            results = model(
-                image_bgr, conf=confidence, iou=0.45, agnostic_nms=True,
-                augment=True, imgsz=640, max_det=1000, verbose=False
-            )[0]
-            for box in results.boxes:
-                cid   = int(box.cls[0])
-                cname = results.names[cid]
-                if cname.lower() == "background":
-                    continue
-                cv  = float(box.conf[0])
-                bx  = box.xyxy[0].tolist()
-                raw_detections.append({
-                    "class": cname,
-                    "confidence": round(cv * 100, 1),
-                    "bbox": {"x1": int(bx[0]), "y1": int(bx[1]),
-                             "x2": int(bx[2]), "y2": int(bx[3])}
-                })
+                pass
 
         # ── Build detections + class_counts from raw_detections ───────────────
         detections = []
@@ -2117,7 +2223,8 @@ async def detect_objects(
                 'image_width': image.width,
                 'image_height': image.height,
                 'model_confidence': confidence,
-                'classes_detected': list(class_counts.keys())
+                'classes_detected': list(class_counts.keys()),
+                'dcp_applied': dcp_applied,
             }
         )
         
@@ -2179,8 +2286,8 @@ async def detect_objects(
 
 @app.post("/detect-video")
 async def detect_video(
-    file: UploadFile = File(...), 
-    confidence: float = 0.15,
+    file: UploadFile = File(...),
+    confidence: float = 0.10,
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -2318,7 +2425,6 @@ def _process_video_sync(
     SKIP_N      = 3
     BATCH_SIZE  = 8   # frames fed to YOLO at once
     INFER_SIZE  = 640 # YOLO input resolution
-    INFER_IOU   = 0.45  # looser NMS — catch overlapping objects of different classes
     # ─────────────────────────────────────────────────────────────────────────
 
     start_time = _time.time()
@@ -2387,6 +2493,20 @@ def _process_video_sync(
         frames_with_detections = 0
         last_progress_update = _time.time()
 
+        # Check first frame for underwater/murky content — apply DCP to all frames if detected
+        use_dcp = False
+        try:
+            ret_probe, frame_probe = cap.read()
+            if ret_probe and frame_probe is not None:
+                probe_small = cv2.resize(frame_probe, (INFER_SIZE, INFER_SIZE))
+                use_dcp = _is_underwater_or_murky(probe_small)
+                if use_dcp:
+                    logger.info("🌊 Video: DCP dehazing enabled for all frames")
+                # Seek back to start
+                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        except Exception:
+            pass
+
         # Sliding window: detections from the last inferred frame
         last_inferred_dets: list = []
 
@@ -2403,10 +2523,10 @@ def _process_video_sync(
             if not batch_frames:
                 return
 
-            # Batch inference on downscaled frames — low conf + loose NMS
+            # Batch inference — standard NMS (not agnostic) to preserve class separation
             try:
-                batch_results = model(batch_small, conf=confidence, iou=INFER_IOU,
-                                      agnostic_nms=True, verbose=False, imgsz=INFER_SIZE)
+                batch_results = model(batch_small, conf=confidence, iou=0.5,
+                                      verbose=False, imgsz=INFER_SIZE)
             except Exception as e:
                 logger.warning(f"Batch inference failed: {e}")
                 batch_results = [None] * len(batch_frames)
@@ -2424,11 +2544,6 @@ def _process_video_sync(
                     for box in result.boxes:
                         class_id   = int(box.cls[0])
                         class_name = result.names[class_id]
-                        
-                        # Skip background — not actual debris
-                        if class_name.lower() == "background":
-                            continue
-                        
                         conf_val   = float(box.conf[0])
                         bbox       = box.xyxy[0].tolist()
 
@@ -2494,6 +2609,12 @@ def _process_video_sync(
 
                 # Downscale for inference
                 small = cv2.resize(frame, (INFER_SIZE, INFER_SIZE))
+                # Apply DCP if video is murky/underwater (checked once, applied to all frames)
+                if use_dcp:
+                    try:
+                        small = _dark_channel_prior(small, patch_size=7)
+                    except Exception:
+                        pass
                 batch_frames.append(frame)
                 batch_indices.append(frame_count)
                 batch_small.append(small)

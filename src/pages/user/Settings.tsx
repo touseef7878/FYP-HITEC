@@ -223,7 +223,7 @@ export default function SettingsPage() {
               <div className="grid grid-cols-2 gap-2 text-xs sm:text-sm">
                 {[
                   ["Version", "v1.0.0"],
-                  ["Classes", "9"],
+                  ["Classes", "8"],
                   ["Resolution", "640 × 640"],
                   ["mAP50", "71%"],
                   ["Precision", "83%"],

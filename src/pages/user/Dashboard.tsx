@@ -123,9 +123,9 @@ export default function DashboardPage() {
         <div className="mb-5 sm:mb-6 flex flex-col xs:flex-row xs:items-center justify-between gap-3">
           <div>
             <h1 className="section-header mb-1">Analytics Dashboard</h1>
-            <p className="text-muted-foreground text-xs sm:text-sm">Real-time insights from marine plastic detection analysis</p>
+            <p className="text-muted-foreground text-xs sm:text-sm font-medium">Real-time insights from marine plastic detection analysis</p>
           </div>
-          <Button onClick={handleRefresh} variant="outline" size="sm" disabled={isFetching} className="self-start xs:self-auto">
+          <Button onClick={handleRefresh} variant="outline" size="sm" disabled={isFetching} className="self-start xs:self-auto font-semibold">
             <RefreshCw className={`h-4 w-4 mr-2 ${isFetching ? "animate-spin" : ""}`} />
             Refresh
           </Button>
@@ -135,20 +135,20 @@ export default function DashboardPage() {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6 sm:mb-8">
           {stats.map((stat, index) => (
             <Card key={index} className="glass-card hover-lift">
-              <CardContent className="pt-4 sm:pt-6 pb-4 sm:pb-6 px-4 sm:px-6">
+              <CardContent className="pt-4 sm:pt-5 pb-4 sm:pb-5 px-4 sm:px-5">
                 <div className="flex items-start justify-between">
                   <div className="min-w-0">
-                    <p className="text-xs sm:text-sm text-muted-foreground mb-1 truncate">{stat.title}</p>
-                    <p className="text-xl sm:text-2xl font-bold">{stat.value}</p>
+                    <p className="text-[11px] sm:text-xs text-muted-foreground mb-1.5 truncate font-semibold uppercase tracking-wider">{stat.title}</p>
+                    <p className="font-display text-xl sm:text-2xl font-bold tracking-tight">{stat.value}</p>
                   </div>
-                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg ocean-gradient flex items-center justify-center flex-shrink-0 ml-2">
+                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl ocean-gradient flex items-center justify-center flex-shrink-0 ml-2 shadow-sm">
                     <stat.icon className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
                   </div>
                 </div>
-                <div className="flex items-center gap-1 mt-2">
+                <div className="flex items-center gap-1 mt-2.5">
                   <ArrowUpRight className="h-3.5 w-3.5 text-success" />
-                  <span className="text-xs sm:text-sm font-medium text-success">Active</span>
-                  <span className="text-xs sm:text-sm text-muted-foreground">monitoring</span>
+                  <span className="text-xs font-bold text-success">Active</span>
+                  <span className="text-xs text-muted-foreground font-medium">monitoring</span>
                 </div>
               </CardContent>
             </Card>
@@ -159,7 +159,7 @@ export default function DashboardPage() {
           {/* Detection Trend */}
           <Card className="glass-card h-full">
             <CardHeader className="pb-2 sm:pb-4">
-              <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+              <CardTitle className="flex items-center gap-2 text-[13.5px] sm:text-[15px] font-display font-bold tracking-tight">
                 <TrendingUp className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
                 Detection Trend
               </CardTitle>
@@ -171,21 +171,21 @@ export default function DashboardPage() {
                     <AreaChart data={analyticsData.trendData}>
                       <defs>
                         <linearGradient id="colorDetections" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="hsl(203, 77%, 26%)" stopOpacity={0.3} />
-                          <stop offset="95%" stopColor="hsl(203, 77%, 26%)" stopOpacity={0} />
+                          <stop offset="5%" stopColor="hsl(207, 90%, 30%)" stopOpacity={0.28} />
+                          <stop offset="95%" stopColor="hsl(207, 90%, 30%)" stopOpacity={0} />
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                      <XAxis dataKey="date" className="text-xs" tick={{ fontSize: 11 }} />
-                      <YAxis className="text-xs" tick={{ fontSize: 11 }} />
+                      <XAxis dataKey="date" className="text-xs" tick={{ fontSize: 11, fontFamily: 'Plus Jakarta Sans' }} />
+                      <YAxis className="text-xs" tick={{ fontSize: 11, fontFamily: 'Plus Jakarta Sans' }} />
                       <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
-                      <Area type="monotone" dataKey="detections" stroke="hsl(203, 77%, 26%)" strokeWidth={2} fill="url(#colorDetections)" />
+                      <Area type="monotone" dataKey="detections" stroke="hsl(207, 90%, 30%)" strokeWidth={2.5} fill="url(#colorDetections)" />
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>
               ) : (
                 <div className="flex items-center justify-center h-[220px] sm:h-[280px]">
-                  <p className="text-muted-foreground text-sm">No trend data available</p>
+                  <p className="text-muted-foreground text-sm font-medium">No trend data available</p>
                 </div>
               )}
             </CardContent>
@@ -194,7 +194,7 @@ export default function DashboardPage() {
           {/* Class Distribution */}
           <Card className="glass-card h-full">
             <CardHeader className="pb-2 sm:pb-4">
-              <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+              <CardTitle className="flex items-center gap-2 text-[13.5px] sm:text-[15px] font-display font-bold tracking-tight">
                 <BarChart3 className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
                 Class Distribution
               </CardTitle>
@@ -235,7 +235,7 @@ export default function DashboardPage() {
         {/* Object Counts */}
         <Card className="glass-card">
           <CardHeader className="pb-2 sm:pb-4">
-            <CardTitle className="text-sm sm:text-base">Objects by Class (Total Count)</CardTitle>
+            <CardTitle className="text-[13.5px] sm:text-[15px] font-display font-bold tracking-tight">Objects by Class (Total Count)</CardTitle>
           </CardHeader>
           <CardContent>
             {analyticsData.objectCounts.length > 0 ? (
@@ -243,16 +243,16 @@ export default function DashboardPage() {
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={analyticsData.objectCounts}>
                     <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                    <XAxis dataKey="class" className="text-xs" tick={{ fontSize: 11 }} />
-                    <YAxis className="text-xs" tick={{ fontSize: 11 }} />
+                    <XAxis dataKey="class" className="text-xs" tick={{ fontSize: 11, fontFamily: 'Plus Jakarta Sans' }} />
+                    <YAxis className="text-xs" tick={{ fontSize: 11, fontFamily: 'Plus Jakarta Sans' }} />
                     <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
-                    <Bar dataKey="count" fill="hsl(170, 50%, 45%)" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="count" fill="hsl(172, 60%, 38%)" radius={[5, 5, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
             ) : (
               <div className="flex items-center justify-center h-[220px] sm:h-[280px]">
-                <p className="text-muted-foreground text-sm">No object count data available</p>
+                <p className="text-muted-foreground text-sm font-medium">No object count data available</p>
               </div>
             )}
           </CardContent>

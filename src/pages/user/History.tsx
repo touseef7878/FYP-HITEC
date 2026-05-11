@@ -263,7 +263,7 @@ export default function HistoryPage() {
         <div className="max-w-4xl sm:max-w-5xl mx-auto">
           <div className="mb-4 sm:mb-6">
             <h1 className="section-header mb-1">Detection History</h1>
-            <p className="text-muted-foreground text-xs sm:text-sm">
+            <p className="text-muted-foreground text-xs sm:text-sm font-medium">
               View and manage your past detections
             </p>
           </div>
@@ -278,12 +278,12 @@ export default function HistoryPage() {
                     placeholder="Search by filename..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-9 h-9 text-sm"
+                    className="pl-9 h-9 text-[13px] font-medium"
                   />
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Select value={typeFilter} onValueChange={setTypeFilter}>
-                    <SelectTrigger className="w-[110px] h-8 text-xs">
+                    <SelectTrigger className="w-[115px] h-8 text-[12px] font-semibold">
                       <Filter className="h-3 w-3 mr-1" />
                       <SelectValue placeholder="Type" />
                     </SelectTrigger>
@@ -294,7 +294,7 @@ export default function HistoryPage() {
                     </SelectContent>
                   </Select>
                   <Select value={dateFilter} onValueChange={setDateFilter}>
-                    <SelectTrigger className="w-[110px] h-8 text-xs">
+                    <SelectTrigger className="w-[115px] h-8 text-[12px] font-semibold">
                       <Calendar className="h-3 w-3 mr-1" />
                       <SelectValue placeholder="Date" />
                     </SelectTrigger>
@@ -305,12 +305,12 @@ export default function HistoryPage() {
                       <SelectItem value="month">This Month</SelectItem>
                     </SelectContent>
                   </Select>
-                  <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isLoading} className="h-8 text-xs px-2.5">
+                  <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isLoading} className="h-8 text-[12px] px-2.5 font-semibold">
                     <RefreshCw className={`h-3 w-3 mr-1 ${isLoading ? "animate-spin" : ""}`} />
                     Refresh
                   </Button>
                   {historyData.length > 0 && (
-                    <Button variant="outline" size="sm" onClick={handleClearAll} className="h-8 text-xs px-2.5 text-destructive hover:text-destructive">
+                    <Button variant="outline" size="sm" onClick={handleClearAll} className="h-8 text-[12px] px-2.5 text-destructive hover:text-destructive font-semibold">
                       <Trash2 className="h-3 w-3 mr-1" />
                       Clear All
                     </Button>
@@ -350,7 +350,7 @@ export default function HistoryPage() {
                     <CardContent className="py-3 sm:py-4 px-3 sm:px-4">
                       <div className="flex items-center gap-3">
                         {/* Icon */}
-                        <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
+                        <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
                           {item.type === "image"
                             ? <Image className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
                             : <Video className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />}
@@ -359,10 +359,10 @@ export default function HistoryPage() {
                         {/* Main Content */}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5 mb-0.5">
-                            <h3 className="font-medium truncate text-xs sm:text-sm">{item.filename}</h3>
-                            <Badge variant="secondary" className="text-xs px-1.5 py-0 flex-shrink-0">{item.type}</Badge>
+                            <h3 className="font-semibold truncate text-[12.5px] sm:text-[13.5px] tracking-tight">{item.filename}</h3>
+                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0 flex-shrink-0 font-bold uppercase">{item.type}</Badge>
                           </div>
-                          <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs text-muted-foreground">
+                          <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-[11px] text-muted-foreground font-medium">
                             <span className="flex items-center gap-1">
                               <Clock className="h-3 w-3" />
                               {item.date}
@@ -371,14 +371,14 @@ export default function HistoryPage() {
                               <Package className="h-3 w-3" />
                               {item.objects} obj
                             </span>
-                            <span>{item.confidence.toFixed(0)}%</span>
+                            <span className="font-semibold text-foreground/70">{item.confidence.toFixed(0)}%</span>
                           </div>
-                          <div className="flex flex-wrap gap-1 mt-1">
+                          <div className="flex flex-wrap gap-1 mt-1.5">
                             {item.classes.slice(0, 3).map((cls, i) => (
-                              <Badge key={i} variant="outline" className="text-xs px-1.5 py-0">{cls}</Badge>
+                              <Badge key={i} variant="outline" className="text-[10px] px-1.5 py-0 font-semibold">{cls}</Badge>
                             ))}
                             {item.classes.length > 3 && (
-                              <Badge variant="outline" className="text-xs px-1.5 py-0">+{item.classes.length - 3}</Badge>
+                              <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-semibold">+{item.classes.length - 3}</Badge>
                             )}
                           </div>
                         </div>

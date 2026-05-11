@@ -336,11 +336,11 @@ export default function PredictionsPage() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h1 className="section-header mb-1">Marine Pollution Forecasting</h1>
-              <p className="text-muted-foreground text-xs sm:text-sm">
+              <p className="text-muted-foreground text-xs sm:text-sm font-medium">
                 LSTM neural network predictions using real environmental data
               </p>
             </div>
-            <Button variant="outline" size="sm" onClick={checkApiHealth} disabled={loadingHealth} className="gap-1.5 text-xs self-start sm:self-auto">
+            <Button variant="outline" size="sm" onClick={checkApiHealth} disabled={loadingHealth} className="gap-1.5 text-[12.5px] font-semibold self-start sm:self-auto">
               {loadingHealth ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wifi className="h-3.5 w-3.5" />}
               Check APIs
             </Button>
@@ -350,7 +350,7 @@ export default function PredictionsPage() {
           {apiHealth && (
             <Card className="glass-card">
               <CardHeader className="pb-2">
-                <CardTitle className="text-xs sm:text-sm flex items-center gap-2">
+                <CardTitle className="text-[12.5px] sm:text-[13.5px] font-display font-bold tracking-tight flex items-center gap-2">
                   <Activity className="h-4 w-4 text-primary" />
                   Data Source Status
                 </CardTitle>
@@ -358,18 +358,18 @@ export default function PredictionsPage() {
               <CardContent>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   {Object.entries(apiHealth).map(([name, info]) => (
-                    <div key={name} className="flex items-center justify-between p-2.5 bg-muted/30 rounded-xl">
+                    <div key={name} className="flex items-center justify-between p-2.5 bg-muted/40 rounded-xl">
                       <div>
-                        <p className="text-xs font-medium capitalize">{name.replace('_', '-')}</p>
-                        <p className="text-xs text-muted-foreground">
+                        <p className="text-[12.5px] font-bold capitalize">{name.replace('_', '-')}</p>
+                        <p className="text-[11px] text-muted-foreground font-medium">
                           {info.key_required ? 'API key' : 'Free / no key'}
                           {name === 'waqi' && info.sample_aqi ? ` · AQI ${info.sample_aqi}` : ''}
                           {name === 'noaa' && info.datasets_available ? ` · ${info.datasets_available} datasets` : ''}
                         </p>
                       </div>
                       {info.status === 'ok'
-                        ? <CheckCircle className="h-4 w-4 text-green-500 flex-shrink-0" />
-                        : <XCircle    className="h-4 w-4 text-red-500 flex-shrink-0" />}
+                        ? <CheckCircle className="h-4 w-4 text-success flex-shrink-0" />
+                        : <XCircle    className="h-4 w-4 text-destructive flex-shrink-0" />}
                     </div>
                   ))}
                 </div>
@@ -385,21 +385,21 @@ export default function PredictionsPage() {
               return (
                 <Card
                   key={r.id}
-                  className={`glass-card cursor-pointer transition-all hover-lift ${active ? 'ring-2 ring-primary' : ''}`}
+                  className={`glass-card cursor-pointer transition-all hover-lift ${active ? 'ring-2 ring-primary shadow-glow' : ''}`}
                   onClick={() => { setSelectedRegion(r.id); setPredictions(null); }}
                 >
                   <CardContent className="p-3 sm:p-4">
                     <div className="flex items-start justify-between mb-2">
                       <MapPin className={`h-4 w-4 flex-shrink-0 ${active ? 'text-primary' : 'text-muted-foreground'}`} />
                       <div className="flex gap-1">
-                        {s?.dataset_cached && <div className="w-2 h-2 rounded-full bg-green-500" title="Data cached" />}
-                        {s?.model_trained  && <div className="w-2 h-2 rounded-full bg-blue-500"  title="Model trained" />}
+                        {s?.dataset_cached && <div className="w-2 h-2 rounded-full bg-success" title="Data cached" />}
+                        {s?.model_trained  && <div className="w-2 h-2 rounded-full bg-primary"  title="Model trained" />}
                       </div>
                     </div>
-                    <p className={`text-xs sm:text-sm font-semibold leading-tight ${active ? 'text-primary' : ''}`}>{r.name}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{r.coords}</p>
+                    <p className={`text-[12.5px] sm:text-[13.5px] font-bold leading-tight tracking-tight ${active ? 'text-primary' : ''}`}>{r.name}</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5 font-medium">{r.coords}</p>
                     {s?.dataset_info && (
-                      <p className="text-xs text-muted-foreground mt-1">{s.dataset_info.total_records} rows</p>
+                      <p className="text-[11px] text-muted-foreground mt-1 font-semibold">{s.dataset_info.total_records} rows</p>
                     )}
                   </CardContent>
                 </Card>
@@ -410,7 +410,7 @@ export default function PredictionsPage() {
           {/* Pipeline — 3 steps */}
           <Card className="glass-card">
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm sm:text-base flex items-center gap-2">
+              <CardTitle className="font-display text-[13.5px] sm:text-[15px] font-bold tracking-tight flex items-center gap-2">
                 <Zap className="h-4 w-4 text-primary" />
                 Prediction Pipeline — {REGIONS.find(r => r.id === selectedRegion)?.name}
               </CardTitle>
@@ -419,25 +419,25 @@ export default function PredictionsPage() {
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
 
                 {/* Step 1 */}
-                <div className="p-3 sm:p-4 border rounded-xl space-y-3">
-                  <div className="flex items-center gap-2">
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white ${current?.dataset_cached ? 'bg-green-500' : 'bg-primary'}`}>
+                <div className="p-3.5 sm:p-4 border border-border/60 rounded-2xl space-y-3 bg-muted/20">
+                  <div className="flex items-center gap-2.5">
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white ${current?.dataset_cached ? 'bg-success' : 'bg-primary'}`}>
                       {current?.dataset_cached ? '✓' : '1'}
                     </div>
                     <div>
-                      <p className="text-xs sm:text-sm font-semibold">Fetch Data</p>
-                      <p className="text-xs text-muted-foreground">Real + synthetic</p>
+                      <p className="text-[13px] sm:text-[13.5px] font-bold tracking-tight">Fetch Data</p>
+                      <p className="text-[11px] text-muted-foreground font-medium">Real + synthetic</p>
                     </div>
                   </div>
                   {current?.dataset_info && (
-                    <div className="text-xs text-muted-foreground space-y-0.5">
+                    <div className="text-[11px] text-muted-foreground space-y-0.5 font-medium">
                       <p>{current.dataset_info.total_records} records</p>
                       <p>{current.dataset_info.date_range.start} → {current.dataset_info.date_range.end}</p>
                     </div>
                   )}
                   <Button
                     size="sm"
-                    className="w-full text-xs gap-1.5"
+                    className="w-full text-[12px] gap-1.5 font-bold"
                     onClick={handleFetch}
                     disabled={fetching || hasCooldown}
                     variant={current?.dataset_cached ? 'outline' : 'default'}
@@ -451,18 +451,18 @@ export default function PredictionsPage() {
                 </div>
 
                 {/* Step 2 */}
-                <div className="p-3 sm:p-4 border rounded-xl space-y-3">
-                  <div className="flex items-center gap-2">
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white ${current?.model_trained ? 'bg-green-500' : 'bg-primary'}`}>
+                <div className="p-3.5 sm:p-4 border border-border/60 rounded-2xl space-y-3 bg-muted/20">
+                  <div className="flex items-center gap-2.5">
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white ${current?.model_trained ? 'bg-success' : 'bg-primary'}`}>
                       {current?.model_trained ? '✓' : '2'}
                     </div>
                     <div>
-                      <p className="text-xs sm:text-sm font-semibold">Train Model</p>
-                      <p className="text-xs text-muted-foreground">LSTM neural network</p>
+                      <p className="text-[13px] sm:text-[13.5px] font-bold tracking-tight">Train Model</p>
+                      <p className="text-[11px] text-muted-foreground font-medium">LSTM neural network</p>
                     </div>
                   </div>
                   <div className="space-y-1.5">
-                    <p className="text-xs text-muted-foreground">Epochs: {epochs[0]}</p>
+                    <p className="text-[11px] text-muted-foreground font-semibold">Epochs: {epochs[0]}</p>
                     <Slider
                       value={epochs}
                       onValueChange={setEpochs}
@@ -473,7 +473,7 @@ export default function PredictionsPage() {
                   </div>
                   <Button
                     size="sm"
-                    className="w-full text-xs gap-1.5"
+                    className="w-full text-[12px] gap-1.5 font-bold"
                     onClick={handleTrain}
                     disabled={training || !current?.dataset_cached}
                     variant={current?.model_trained ? 'outline' : 'default'}
@@ -483,25 +483,25 @@ export default function PredictionsPage() {
                       : <><Brain className="h-3.5 w-3.5" />{current?.model_trained ? 'Retrain' : 'Train Model'}</>}
                   </Button>
                   {!current?.dataset_cached && (
-                    <p className="text-xs text-muted-foreground text-center">Fetch data first</p>
+                    <p className="text-[11px] text-muted-foreground text-center font-medium">Fetch data first</p>
                   )}
                 </div>
 
                 {/* Step 3 */}
-                <div className="p-3 sm:p-4 border rounded-xl space-y-3">
-                  <div className="flex items-center gap-2">
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white ${predictions ? 'bg-green-500' : 'bg-primary'}`}>
+                <div className="p-3.5 sm:p-4 border border-border/60 rounded-2xl space-y-3 bg-muted/20">
+                  <div className="flex items-center gap-2.5">
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white ${predictions ? 'bg-success' : 'bg-primary'}`}>
                       {predictions ? '✓' : '3'}
                     </div>
                     <div>
-                      <p className="text-xs sm:text-sm font-semibold">Generate Forecast</p>
-                      <p className="text-xs text-muted-foreground">Pollution predictions</p>
+                      <p className="text-[13px] sm:text-[13.5px] font-bold tracking-tight">Generate Forecast</p>
+                      <p className="text-[11px] text-muted-foreground font-medium">Pollution predictions</p>
                     </div>
                   </div>
                   <div className="space-y-1.5">
-                    <p className="text-xs text-muted-foreground">Forecast horizon</p>
+                    <p className="text-[11px] text-muted-foreground font-semibold">Forecast horizon</p>
                     <Select value={daysAhead} onValueChange={setDaysAhead}>
-                      <SelectTrigger className="h-8 text-xs">
+                      <SelectTrigger className="h-8 text-[12px] font-semibold">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -513,7 +513,7 @@ export default function PredictionsPage() {
                   </div>
                   <Button
                     size="sm"
-                    className="w-full text-xs gap-1.5"
+                    className="w-full text-[12px] gap-1.5 font-bold"
                     onClick={handlePredict}
                     disabled={predicting || !current?.model_trained}
                   >
@@ -522,7 +522,7 @@ export default function PredictionsPage() {
                       : <><Play className="h-3.5 w-3.5" />Predict {daysAhead} Days</>}
                   </Button>
                   {!current?.model_trained && (
-                    <p className="text-xs text-muted-foreground text-center">Train model first</p>
+                    <p className="text-[11px] text-muted-foreground text-center font-medium">Train model first</p>
                   )}
                 </div>
               </div>
@@ -541,11 +541,11 @@ export default function PredictionsPage() {
                     { label: 'Trend Change',   value: `${predSummary.trend_change_percent?.toFixed(1) ?? '—'}`, unit: '%' },
                     { label: 'Risk Level',     value: riskLevel, unit: '', color: RISK_COLOR[riskLevel] },
                   ].map(({ label, value, unit, color }) => (
-                    <Card key={label} className="glass-card">
+                    <Card key={label} className="glass-card hover-lift">
                       <CardContent className="p-3 sm:p-4">
-                        <p className="text-xs text-muted-foreground mb-1">{label}</p>
-                        <p className={`text-lg sm:text-xl font-bold ${color ?? ''}`}>
-                          {value}<span className="text-xs font-normal text-muted-foreground ml-0.5">{unit}</span>
+                        <p className="text-[11px] text-muted-foreground mb-1.5 font-bold uppercase tracking-wider">{label}</p>
+                        <p className={`font-display text-xl sm:text-2xl font-bold tracking-tight ${color ?? ''}`}>
+                          {value}<span className="text-[11px] font-semibold text-muted-foreground ml-0.5">{unit}</span>
                         </p>
                       </CardContent>
                     </Card>

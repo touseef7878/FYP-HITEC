@@ -309,7 +309,7 @@ export default function ReportsPage() {
         <div className="max-w-4xl mx-auto">
           <div className="mb-4 sm:mb-6">
             <h1 className="section-header mb-1">Reports</h1>
-            <p className="text-muted-foreground text-xs sm:text-sm">
+            <p className="text-muted-foreground text-xs sm:text-sm font-medium">
               Generate and download PDF analysis reports
             </p>
           </div>
@@ -319,28 +319,28 @@ export default function ReportsPage() {
             <CardContent className="py-5 sm:py-8 px-4 sm:px-6">
               <div className="flex flex-col gap-4">
                 <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-2xl ocean-gradient flex items-center justify-center flex-shrink-0">
+                  <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-2xl ocean-gradient flex items-center justify-center flex-shrink-0 shadow-glow">
                     <FileText className="h-6 w-6 sm:h-8 sm:w-8 text-white" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h2 className="text-base sm:text-xl font-bold mb-1">Generate New Report</h2>
-                    <p className="text-muted-foreground text-xs sm:text-sm mb-3">
+                    <h2 className="font-display text-base sm:text-xl font-bold mb-1 tracking-tight">Generate New Report</h2>
+                    <p className="text-muted-foreground text-[12px] sm:text-[13px] mb-3 font-medium">
                       Create a PDF report with detection statistics, charts, and analysis.
                     </p>
                     <div className="flex flex-wrap gap-1.5">
                       {["Detection Summary", "Class Distribution", "Trend Analysis", "LSTM Predictions"].map(b => (
-                        <Badge key={b} variant="secondary" className="text-xs">{b}</Badge>
+                        <Badge key={b} variant="secondary" className="text-[11px] font-semibold">{b}</Badge>
                       ))}
                     </div>
                   </div>
                 </div>
 
                 {/* Config */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3 sm:p-4 bg-muted/30 rounded-xl">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3 sm:p-4 bg-muted/40 rounded-2xl">
                   <div className="space-y-1.5">
-                    <Label htmlFor="report-type" className="text-xs sm:text-sm">Report Type</Label>
+                    <Label htmlFor="report-type" className="text-[12px] sm:text-[13px] font-bold">Report Type</Label>
                     <Select value={reportType} onValueChange={setReportType}>
-                      <SelectTrigger className="h-8 sm:h-9 text-xs sm:text-sm">
+                      <SelectTrigger className="h-8 sm:h-9 text-[12px] sm:text-[13px] font-semibold">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -351,9 +351,9 @@ export default function ReportsPage() {
                     </Select>
                   </div>
                   <div className="space-y-1.5">
-                    <Label htmlFor="date-range" className="text-xs sm:text-sm">Date Range</Label>
+                    <Label htmlFor="date-range" className="text-[12px] sm:text-[13px] font-bold">Date Range</Label>
                     <Select value={dateRange.toString()} onValueChange={(v) => setDateRange(parseInt(v))}>
-                      <SelectTrigger className="h-8 sm:h-9 text-xs sm:text-sm">
+                      <SelectTrigger className="h-8 sm:h-9 text-[12px] sm:text-[13px] font-semibold">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -365,13 +365,13 @@ export default function ReportsPage() {
                     </Select>
                   </div>
                   <div className="space-y-1.5">
-                    <Label htmlFor="custom-title" className="text-xs sm:text-sm">Custom Title</Label>
+                    <Label htmlFor="custom-title" className="text-[12px] sm:text-[13px] font-bold">Custom Title</Label>
                     <Input
                       id="custom-title"
                       placeholder="Optional title..."
                       value={customTitle}
                       onChange={(e) => setCustomTitle(e.target.value)}
-                      className="h-8 sm:h-9 text-xs sm:text-sm"
+                      className="h-8 sm:h-9 text-[12px] sm:text-[13px] font-medium"
                     />
                   </div>
                 </div>
@@ -380,7 +380,7 @@ export default function ReportsPage() {
                   size="default"
                   onClick={handleGenerateReport}
                   disabled={isGenerating}
-                  className="w-full sm:w-auto sm:self-center text-sm"
+                  className="w-full sm:w-auto sm:self-center text-[13px] font-bold"
                 >
                   {isGenerating
                     ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Generating...</>
@@ -393,14 +393,14 @@ export default function ReportsPage() {
           {/* Report History */}
           <Card className="glass-card">
             <CardHeader>
-              <CardTitle>Report History</CardTitle>
+              <CardTitle className="font-display text-[15px] font-bold tracking-tight">Report History</CardTitle>
             </CardHeader>
             <CardContent>
               {reports.length === 0 ? (
                 <div className="py-12 text-center">
-                  <FileX className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                  <h3 className="text-lg font-medium mb-2">No Reports Generated</h3>
-                  <p className="text-muted-foreground mb-4">
+                  <FileX className="h-10 w-10 text-muted-foreground mx-auto mb-3 opacity-50" />
+                  <h3 className="font-display text-base font-bold mb-2 tracking-tight">No Reports Generated</h3>
+                  <p className="text-muted-foreground text-[13px] mb-4 font-medium">
                     Generate your first report to see it here
                   </p>
                 </div>
@@ -409,25 +409,25 @@ export default function ReportsPage() {
                   variants={staggerContainer}
                   initial="hidden"
                   animate="show"
-                  className="space-y-4"
+                  className="space-y-3"
                 >
                   {reports.map((report) => (
                     <motion.div
                       key={report.id}
                       variants={fadeInUp}
-                      className="flex items-center gap-3 p-3 sm:p-4 bg-muted/30 rounded-xl hover:bg-muted/50 transition-colors"
+                      className="flex items-center gap-3 p-3 sm:p-4 bg-muted/40 rounded-2xl hover:bg-muted/60 transition-colors"
                     >
-                      <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
+                      <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
                         <FileText className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 mb-0.5">
-                          <h3 className="font-medium truncate text-xs sm:text-sm">{report.title}</h3>
-                          <Badge variant={getReportTypeBadge(report.report_type) as any} className="text-xs px-1.5 py-0 flex-shrink-0">
+                          <h3 className="font-semibold truncate text-[12.5px] sm:text-[13.5px] tracking-tight">{report.title}</h3>
+                          <Badge variant={getReportTypeBadge(report.report_type) as any} className="text-[10px] px-1.5 py-0 flex-shrink-0 font-bold">
                             {getReportTypeLabel(report.report_type)}
                           </Badge>
                         </div>
-                        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                        <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground font-medium">
                           <span className="flex items-center gap-1">
                             <Calendar className="h-3 w-3" />
                             {new Date(report.created_at).toLocaleDateString()}
@@ -436,7 +436,7 @@ export default function ReportsPage() {
                         </div>
                       </div>
                       <div className="flex items-center gap-1 flex-shrink-0">
-                        <Badge variant="secondary" className="text-xs px-1.5 py-0 hidden sm:flex items-center gap-1">
+                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 hidden sm:flex items-center gap-1 font-bold">
                           <CheckCircle className="h-3 w-3" />
                           Ready
                         </Badge>

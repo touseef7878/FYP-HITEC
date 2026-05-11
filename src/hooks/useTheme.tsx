@@ -22,9 +22,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const root = window.document.documentElement;
+    // Add transition class before switching, remove after
+    root.classList.add("theme-transition");
     root.classList.remove("light", "dark");
     root.classList.add(theme);
     localStorage.setItem("theme", theme);
+    const t = setTimeout(() => root.classList.remove("theme-transition"), 300);
+    return () => clearTimeout(t);
   }, [theme]);
 
   const toggleTheme = () => {

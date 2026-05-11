@@ -25,21 +25,21 @@ function Field({
 }) {
   return (
     <div>
-      <div className={`relative border rounded-xl bg-white transition-colors ${
-        error ? 'border-red-400' : 'border-gray-200 focus-within:border-gray-400'
+      <div className={`relative border rounded-xl bg-background transition-colors ${
+        error ? 'border-destructive' : 'border-border focus-within:border-primary/60 focus-within:ring-1 focus-within:ring-primary/20'
       }`}>
-        <label htmlFor={id} className="absolute top-2 left-3.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wider pointer-events-none">
+        <label htmlFor={id} className="absolute top-2 left-3.5 text-[10px] font-bold text-muted-foreground uppercase tracking-wider pointer-events-none">
           {label}
         </label>
         <input
           id={id} name={name} type={type} value={value} onChange={onChange}
           placeholder={placeholder}
-          className="w-full pt-6 pb-2.5 px-3.5 text-sm text-gray-900 bg-transparent outline-none rounded-xl placeholder:text-gray-300"
+          className="w-full pt-6 pb-2.5 px-3.5 text-[13.5px] text-foreground bg-transparent outline-none rounded-xl placeholder:text-muted-foreground/50 font-medium"
           autoComplete={name}
         />
         {children}
       </div>
-      {error && <p className="text-red-500 text-xs mt-1 ml-1">{error}</p>}
+      {error && <p className="text-destructive text-xs mt-1 ml-1 font-medium">{error}</p>}
     </div>
   );
 }
@@ -82,36 +82,38 @@ export default function AuthPage() {
           style={{ willChange: 'transform', transform: 'translateZ(0)' }}
         />
         {/* Dark overlay so form text is readable */}
-        <div className="absolute inset-0 bg-black/55" />
+        <div className="absolute inset-0 bg-black/60" />
       </div>
 
       {/* ── LEFT — Form panel ── */}
       <div className="relative z-10 flex flex-col justify-center min-h-screen lg:min-h-0
                       px-5 py-8 sm:px-10
-                      lg:bg-[#f5f5f3] lg:px-12 xl:px-16">
+                      lg:bg-background lg:px-12 xl:px-16">
 
         {/* Card wrapper on mobile (glass effect) */}
         <div className="lg:contents">
-          <div className="bg-white/90 backdrop-blur-md rounded-3xl p-6 sm:p-8 shadow-2xl
-                          lg:bg-transparent lg:backdrop-blur-none lg:rounded-none lg:p-0 lg:shadow-none">
+          <div className="bg-background/92 backdrop-blur-xl rounded-3xl p-6 sm:p-8 shadow-2xl border border-border/50
+                          lg:bg-transparent lg:backdrop-blur-none lg:rounded-none lg:p-0 lg:shadow-none lg:border-0">
 
             {/* Logo + title */}
-            <div className="flex flex-col items-center mb-6">
-              <div className="w-12 h-12 rounded-2xl bg-gray-900 flex items-center justify-center mb-3 shadow-md">
+            <div className="flex flex-col items-center mb-7">
+              <div className="w-12 h-12 rounded-2xl bg-foreground flex items-center justify-center mb-3 shadow-md">
                 <img src={logoImg} alt="OceanGuard" className="w-8 h-8 rounded-xl" />
               </div>
-              <h1 className="text-lg font-bold text-gray-900">OceanGuard AI</h1>
-              <p className="text-xs text-gray-400 mt-0.5 text-center">
+              <h1 className="font-display text-lg font-bold text-foreground tracking-tight">OceanGuard AI</h1>
+              <p className="text-xs text-muted-foreground mt-0.5 text-center font-medium">
                 {tab === 'register' ? 'This is the start of something good.' : 'Welcome back. Sign in to continue.'}
               </p>
             </div>
 
             {/* Tab switcher */}
-            <div className="flex rounded-full bg-gray-100 border border-gray-200 p-1 mb-6">
+            <div className="flex rounded-full bg-muted border border-border p-1 mb-6">
               {(['register', 'login'] as const).map(t => (
                 <button key={t} onClick={() => setTab(t)}
-                  className={`flex-1 py-2 text-sm font-semibold rounded-full transition-all duration-200 ${
-                    tab === t ? 'bg-gray-900 text-white shadow' : 'text-gray-500 hover:text-gray-700'
+                  className={`flex-1 py-2 text-[13px] font-bold rounded-full transition-all duration-200 tracking-[-0.01em] ${
+                    tab === t
+                      ? 'bg-foreground text-background shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
                   }`}>
                   {t === 'register' ? 'Register' : 'Login'}
                 </button>
@@ -233,12 +235,12 @@ function RegisterPanel({ onSuccess, onSwitch }: { onSuccess: () => void; onSwitc
         onChange={onChange} placeholder="••••••••••" error={errors.password}>
         <div className="absolute top-1/2 -translate-y-1/2 right-3 flex items-center gap-2">
           {strength.label && (
-            <span className={`text-xs font-semibold ${
-              strength.label === 'Strong' ? 'text-emerald-500' :
-              strength.label === 'Fair'   ? 'text-yellow-500' : 'text-red-400'
+            <span className={`text-[11px] font-bold ${
+              strength.label === 'Strong' ? 'text-success' :
+              strength.label === 'Fair'   ? 'text-warning' : 'text-destructive'
             }`}>{strength.label}</span>
           )}
-          <button type="button" onClick={() => setShowPw(v => !v)} className="text-gray-400 hover:text-gray-600">
+          <button type="button" onClick={() => setShowPw(v => !v)} className="text-muted-foreground hover:text-foreground">
             {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
           </button>
         </div>
@@ -250,15 +252,15 @@ function RegisterPanel({ onSuccess, onSwitch }: { onSuccess: () => void; onSwitc
       </Field>
 
       <button type="submit" disabled={loading}
-        className="w-full py-3 rounded-xl bg-gray-900 text-white text-sm font-semibold
-                   hover:bg-gray-800 active:scale-[0.98] transition-all flex items-center
-                   justify-center gap-2 shadow-md mt-1">
+        className="w-full py-3 rounded-xl bg-foreground text-background text-[13.5px] font-bold
+                   hover:opacity-90 active:scale-[0.98] transition-all flex items-center
+                   justify-center gap-2 shadow-md mt-1 tracking-[-0.01em]">
         {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Create your account →'}
       </button>
 
-      <p className="text-center text-sm text-gray-500 pt-0.5">
+      <p className="text-center text-[13px] text-muted-foreground pt-0.5 font-medium">
         Already have an account?{' '}
-        <button type="button" onClick={onSwitch} className="font-semibold text-gray-900 hover:underline">
+        <button type="button" onClick={onSwitch} className="font-bold text-foreground hover:underline">
           Sign in
         </button>
       </p>
@@ -299,27 +301,27 @@ function LoginPanel({ onSuccess, onSwitch }: { onSuccess: () => void; onSwitch: 
         type={showPw ? 'text' : 'password'} value={form.password}
         onChange={onChange} placeholder="••••••••••">
         <button type="button" onClick={() => setShowPw(v => !v)}
-          className="absolute top-1/2 -translate-y-1/2 right-3 text-gray-400 hover:text-gray-600">
+          className="absolute top-1/2 -translate-y-1/2 right-3 text-muted-foreground hover:text-foreground">
           {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
         </button>
       </Field>
 
       <label className="flex items-center gap-2 cursor-pointer select-none">
         <input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)}
-          className="w-3.5 h-3.5 rounded border-gray-300 accent-gray-900" />
-        <span className="text-xs text-gray-500">Remember me</span>
+          className="w-3.5 h-3.5 rounded border-border accent-primary" />
+        <span className="text-[12.5px] text-muted-foreground font-medium">Remember me</span>
       </label>
 
       <button type="submit" disabled={loading}
-        className="w-full py-3 rounded-xl bg-gray-900 text-white text-sm font-semibold
-                   hover:bg-gray-800 active:scale-[0.98] transition-all flex items-center
-                   justify-center gap-2 shadow-md mt-1">
+        className="w-full py-3 rounded-xl bg-foreground text-background text-[13.5px] font-bold
+                   hover:opacity-90 active:scale-[0.98] transition-all flex items-center
+                   justify-center gap-2 shadow-md mt-1 tracking-[-0.01em]">
         {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Sign in →'}
       </button>
 
-      <p className="text-center text-sm text-gray-500 pt-0.5">
+      <p className="text-center text-[13px] text-muted-foreground pt-0.5 font-medium">
         Don't have an account?{' '}
-        <button type="button" onClick={onSwitch} className="font-semibold text-gray-900 hover:underline">
+        <button type="button" onClick={onSwitch} className="font-bold text-foreground hover:underline">
           Sign up
         </button>
       </p>

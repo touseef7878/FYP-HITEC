@@ -2,120 +2,205 @@
 @tailwind components;
 @tailwind utilities;
 
-/* 🌊 Marine Plastic Detection Platform - Ocean Blues & Teals Design System */
+/* ═══════════════════════════════════════════════════════════════════════════
+   OceanGuard AI — Design System
+   Font: Plus Jakarta Sans (body) + Space Grotesk (display/headings)
+   Theme: Deep ocean blues & teals — refined, professional, modern
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 @layer base {
+  /* ── Light Mode ─────────────────────────────────────────────────────────── */
   :root {
-    --background: 200 50% 98%;
-    --foreground: 210 40% 20%;
-    --card: 200 40% 100%;
-    --card-foreground: 210 40% 20%;
-    --popover: 200 40% 100%;
-    --popover-foreground: 210 40% 20%;
-    --primary: 203 77% 26%;
-    --primary-foreground: 200 50% 98%;
-    --secondary: 170 50% 45%;
-    --secondary-foreground: 200 50% 98%;
-    --accent: 177 59% 41%;
-    --accent-foreground: 200 50% 98%;
-    --muted: 200 30% 94%;
-    --muted-foreground: 210 20% 45%;
-    --destructive: 0 72% 51%;
+    /* Backgrounds */
+    --background:        210 40% 97%;
+    --foreground:        215 35% 15%;
+
+    /* Cards & Surfaces */
+    --card:              0 0% 100%;
+    --card-foreground:   215 35% 15%;
+    --popover:           0 0% 100%;
+    --popover-foreground: 215 35% 15%;
+
+    /* Brand — deep ocean blue */
+    --primary:           207 90% 30%;
+    --primary-foreground: 0 0% 100%;
+
+    /* Secondary — teal */
+    --secondary:         172 60% 38%;
+    --secondary-foreground: 0 0% 100%;
+
+    /* Accent — cyan-teal */
+    --accent:            185 65% 42%;
+    --accent-foreground: 0 0% 100%;
+
+    /* Neutrals */
+    --muted:             210 30% 93%;
+    --muted-foreground:  215 20% 48%;
+
+    /* Semantic */
+    --destructive:       0 72% 51%;
     --destructive-foreground: 0 0% 100%;
-    --success: 160 84% 39%;
+    --success:           158 80% 36%;
     --success-foreground: 0 0% 100%;
-    --warning: 38 92% 50%;
-    --warning-foreground: 0 0% 10%;
-    --border: 200 30% 88%;
-    --input: 200 30% 88%;
-    --ring: 203 77% 26%;
-    --radius: 0.75rem;
-    --glass-bg: 200 50% 100% / 0.7;
-    --glass-border: 200 30% 90% / 0.5;
-    --sidebar-background: 200 40% 98%;
-    --sidebar-foreground: 210 40% 25%;
-    --sidebar-primary: 203 77% 26%;
-    --sidebar-primary-foreground: 200 50% 98%;
-    --sidebar-accent: 177 59% 41%;
-    --sidebar-accent-foreground: 200 50% 98%;
-    --sidebar-border: 200 30% 90%;
-    --sidebar-ring: 203 77% 40%;
-    --chart-1: 203 77% 26%;
-    --chart-2: 170 50% 45%;
-    --chart-3: 177 59% 41%;
-    --chart-4: 160 84% 39%;
-    --chart-5: 38 92% 50%;
+    --warning:           38 95% 48%;
+    --warning-foreground: 0 0% 8%;
+
+    /* Borders & Inputs */
+    --border:            210 25% 88%;
+    --input:             210 25% 88%;
+    --ring:              207 90% 30%;
+
+    /* Radius */
+    --radius:            0.75rem;
+
+    /* Glass */
+    --glass-bg:          210 50% 100% / 0.72;
+    --glass-border:      210 30% 90% / 0.6;
+
+    /* Sidebar */
+    --sidebar-background:  210 35% 98%;
+    --sidebar-foreground:  215 35% 20%;
+    --sidebar-primary:     207 90% 30%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent:      185 65% 42%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border:      210 25% 90%;
+    --sidebar-ring:        207 90% 40%;
+
+    /* Charts */
+    --chart-1: 207 90% 30%;
+    --chart-2: 172 60% 38%;
+    --chart-3: 185 65% 42%;
+    --chart-4: 158 80% 36%;
+    --chart-5: 38 95% 48%;
   }
 
+  /* ── Dark Mode ──────────────────────────────────────────────────────────── */
   .dark {
-    --background: 215 50% 8%;
-    --foreground: 200 40% 95%;
-    --card: 215 45% 12%;
-    --card-foreground: 200 40% 95%;
-    --popover: 215 45% 12%;
-    --popover-foreground: 200 40% 95%;
-    --primary: 200 70% 55%;
-    --primary-foreground: 215 50% 8%;
-    --secondary: 170 50% 40%;
-    --secondary-foreground: 200 40% 95%;
-    --accent: 177 59% 45%;
-    --accent-foreground: 215 50% 8%;
-    --muted: 215 40% 18%;
-    --muted-foreground: 200 20% 65%;
-    --destructive: 0 62% 45%;
+    /* Backgrounds — rich deep navy, not pure black */
+    --background:        222 47% 7%;
+    --foreground:        210 35% 93%;
+
+    /* Cards — slightly lighter than bg for depth */
+    --card:              222 42% 11%;
+    --card-foreground:   210 35% 93%;
+    --popover:           222 42% 11%;
+    --popover-foreground: 210 35% 93%;
+
+    /* Brand — bright ocean blue for dark bg */
+    --primary:           205 85% 58%;
+    --primary-foreground: 222 47% 7%;
+
+    /* Secondary — vibrant teal */
+    --secondary:         172 55% 44%;
+    --secondary-foreground: 222 47% 7%;
+
+    /* Accent — cyan */
+    --accent:            185 60% 48%;
+    --accent-foreground: 222 47% 7%;
+
+    /* Neutrals */
+    --muted:             222 38% 16%;
+    --muted-foreground:  210 20% 58%;
+
+    /* Semantic */
+    --destructive:       0 65% 50%;
     --destructive-foreground: 0 0% 100%;
-    --success: 160 70% 45%;
+    --success:           158 65% 42%;
     --success-foreground: 0 0% 100%;
-    --warning: 38 80% 55%;
-    --warning-foreground: 0 0% 10%;
-    --border: 215 40% 20%;
-    --input: 215 40% 20%;
-    --ring: 200 70% 55%;
-    --glass-bg: 215 45% 15% / 0.8;
-    --glass-border: 215 40% 25% / 0.5;
-    --sidebar-background: 215 50% 10%;
-    --sidebar-foreground: 200 40% 90%;
-    --sidebar-primary: 200 70% 55%;
-    --sidebar-primary-foreground: 215 50% 8%;
-    --sidebar-accent: 177 59% 45%;
-    --sidebar-accent-foreground: 215 50% 8%;
-    --sidebar-border: 215 40% 18%;
-    --sidebar-ring: 200 70% 55%;
-    --chart-1: 200 70% 55%;
-    --chart-2: 170 50% 50%;
-    --chart-3: 177 59% 50%;
-    --chart-4: 160 70% 50%;
-    --chart-5: 38 80% 55%;
+    --warning:           38 85% 55%;
+    --warning-foreground: 0 0% 8%;
+
+    /* Borders & Inputs */
+    --border:            222 35% 20%;
+    --input:             222 35% 20%;
+    --ring:              205 85% 58%;
+
+    /* Glass */
+    --glass-bg:          222 42% 13% / 0.85;
+    --glass-border:      222 35% 25% / 0.6;
+
+    /* Sidebar — slightly different from page bg */
+    --sidebar-background:  222 47% 9%;
+    --sidebar-foreground:  210 35% 88%;
+    --sidebar-primary:     205 85% 58%;
+    --sidebar-primary-foreground: 222 47% 7%;
+    --sidebar-accent:      185 60% 48%;
+    --sidebar-accent-foreground: 222 47% 7%;
+    --sidebar-border:      222 35% 17%;
+    --sidebar-ring:        205 85% 58%;
+
+    /* Charts */
+    --chart-1: 205 85% 58%;
+    --chart-2: 172 55% 50%;
+    --chart-3: 185 60% 52%;
+    --chart-4: 158 65% 48%;
+    --chart-5: 38 85% 58%;
   }
 }
 
+/* ── Base Resets ─────────────────────────────────────────────────────────── */
 @layer base {
   * { @apply border-border; }
 
-  body {
-    @apply bg-background text-foreground antialiased;
-    font-feature-settings: "rlig" 1, "calt" 1;
-    /* GPU-accelerated text rendering */
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
+  html {
+    scroll-behavior: smooth;
+    text-rendering: optimizeLegibility;
   }
 
-  html { scroll-behavior: smooth; }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+    font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    /* Prevent layout shift from scrollbar */
+    scrollbar-gutter: stable;
+  }
 
-  /* Thin, fast scrollbar */
-  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  /* ── Typography scale ─────────────────────────────────────────────────── */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: "Space Grotesk", "Plus Jakarta Sans", system-ui, sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+  }
+
+  h1 { font-size: clamp(1.75rem, 4vw, 2.5rem); }
+  h2 { font-size: clamp(1.375rem, 3vw, 1.875rem); }
+  h3 { font-size: clamp(1.125rem, 2.5vw, 1.375rem); }
+  h4 { font-size: 1.125rem; }
+
+  p { line-height: 1.7; }
+
+  /* ── Scrollbar ────────────────────────────────────────────────────────── */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
   ::-webkit-scrollbar-track { @apply bg-transparent; }
-  ::-webkit-scrollbar-thumb { @apply bg-muted-foreground/25 rounded-full; }
-  ::-webkit-scrollbar-thumb:hover { @apply bg-muted-foreground/40; }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-muted-foreground/20 rounded-full;
+    transition: background 0.2s;
+  }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-muted-foreground/35; }
+
+  /* ── Focus ring ───────────────────────────────────────────────────────── */
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* ── Selection ────────────────────────────────────────────────────────── */
+  ::selection {
+    background: hsl(var(--primary) / 0.2);
+    color: hsl(var(--foreground));
+  }
 }
 
-/* ── Hero video ──────────────────────────────────────────────────────────── */
+/* ── Hero Section ────────────────────────────────────────────────────────── */
 .hero-section {
-  /* On mobile: full viewport minus the pt-14 offset from MainLayout */
   min-height: 480px;
   height: clamp(480px, 85vw, 720px);
   max-height: 720px;
-  /* No border-radius on mobile — flush edge to edge */
   border-radius: 0;
 }
 
@@ -123,7 +208,7 @@
   .hero-section {
     min-height: 520px;
     height: clamp(520px, 70vw, 700px);
-    border-radius: 1.25rem; /* rounded-2xl */
+    border-radius: 1.25rem;
     margin: 0.75rem;
   }
 }
@@ -132,7 +217,7 @@
   .hero-section {
     min-height: 580px;
     height: clamp(580px, 60vw, 720px);
-    border-radius: 1.5rem; /* rounded-3xl */
+    border-radius: 1.5rem;
     margin: 1rem;
   }
 }
@@ -143,11 +228,9 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
-  /* GPU layer — zero jank */
   will-change: transform;
   transform: translateZ(0);
-  /* Prevent flash of unstyled content */
-  background: #0a1628;
+  background: #060e1a;
 }
 
 .hero-overlay-lr {
@@ -156,9 +239,9 @@
   z-index: 1;
   background: linear-gradient(
     to right,
-    rgba(10, 22, 40, 0.92) 0%,
-    rgba(15, 76, 117, 0.72) 55%,
-    rgba(10, 22, 40, 0.55) 100%
+    rgba(6, 14, 26, 0.94) 0%,
+    rgba(10, 50, 90, 0.70) 55%,
+    rgba(6, 14, 26, 0.50) 100%
   );
 }
 
@@ -168,16 +251,15 @@
   z-index: 1;
   background: linear-gradient(
     to bottom,
-    transparent 40%,
-    rgba(10, 22, 40, 0.85) 100%
+    transparent 35%,
+    rgba(6, 14, 26, 0.88) 100%
   );
 }
 
-/* ── Page transition progress bar ───────────────────────────────────────── */
-/* Thin teal line that sweeps across the top on every navigation */
+/* ── Page progress bar ───────────────────────────────────────────────────── */
 @keyframes page-progress {
   0%   { transform: scaleX(0);    opacity: 1; }
-  60%  { transform: scaleX(0.85); opacity: 1; }
+  65%  { transform: scaleX(0.88); opacity: 1; }
   100% { transform: scaleX(1);    opacity: 0; }
 }
 
@@ -186,7 +268,7 @@
   top: 0;
   left: 0;
   right: 0;
-  height: 2.5px;
+  height: 2px;
   z-index: 9999;
   transform-origin: left center;
   background: linear-gradient(
@@ -195,71 +277,127 @@
     hsl(var(--accent)) 50%,
     hsl(var(--secondary)) 100%
   );
-  animation: page-progress 0.55s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  animation: page-progress 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
   pointer-events: none;
+  border-radius: 0 1px 1px 0;
 }
+
+/* ── Component Utilities ─────────────────────────────────────────────────── */
 @layer components {
+
+  /* Glass card — refined for both modes */
   .glass-card {
-    @apply backdrop-blur-md border rounded-xl;
+    @apply backdrop-blur-sm border rounded-2xl;
     background: hsl(var(--glass-bg));
     border-color: hsl(var(--glass-border));
+    box-shadow:
+      0 1px 3px hsl(var(--foreground) / 0.04),
+      0 4px 16px hsl(var(--foreground) / 0.04);
+    transition: box-shadow 0.2s ease, border-color 0.2s ease;
   }
 
+  .glass-card:hover {
+    border-color: hsl(var(--border));
+    box-shadow:
+      0 1px 3px hsl(var(--foreground) / 0.06),
+      0 8px 24px hsl(var(--foreground) / 0.07);
+  }
+
+  /* Ocean gradient */
   .ocean-gradient {
     background: linear-gradient(
       135deg,
       hsl(var(--primary)) 0%,
-      hsl(var(--secondary)) 50%,
+      hsl(var(--secondary)) 55%,
       hsl(var(--accent)) 100%
     );
   }
 
-  /* Buttery hover — GPU only, no layout shift */
+  /* Hover lift — GPU only */
   .hover-lift {
-    transition: transform 200ms ease-out, box-shadow 200ms ease-out;
+    transition: transform 180ms ease-out, box-shadow 180ms ease-out;
     will-change: transform;
   }
   .hover-lift:hover {
     transform: translateY(-2px) translateZ(0);
-    box-shadow: 0 8px 30px -8px hsl(var(--primary) / 0.25);
+    box-shadow:
+      0 4px 12px hsl(var(--primary) / 0.12),
+      0 12px 32px hsl(var(--primary) / 0.08);
   }
 
+  /* Page container */
   .page-container {
     @apply min-h-screen;
-    /* Comfortable padding on all screen sizes */
-    padding: 0.875rem;
+    padding: 1rem;
   }
+  @media (min-width: 640px)  { .page-container { padding: 1.375rem; } }
+  @media (min-width: 1024px) { .page-container { padding: 1.875rem; } }
+  @media (min-width: 1280px) { .page-container { padding: 2.25rem; } }
 
-  @media (min-width: 640px) {
-    .page-container { padding: 1.25rem; }
-  }
-
-  @media (min-width: 1024px) {
-    .page-container { padding: 1.75rem; }
-  }
-
-  @media (min-width: 1280px) {
-    .page-container { padding: 2rem; }
-  }
-
+  /* Section header */
   .section-header {
+    font-family: "Space Grotesk", "Plus Jakarta Sans", system-ui, sans-serif;
     @apply text-xl sm:text-2xl font-bold tracking-tight mb-4 sm:mb-6;
+    letter-spacing: -0.025em;
+  }
+
+  /* Stat card number */
+  .stat-value {
+    font-family: "Space Grotesk", system-ui, sans-serif;
+    @apply text-2xl sm:text-3xl font-bold tracking-tight;
+    letter-spacing: -0.03em;
+  }
+
+  /* Pill badge */
+  .pill-badge {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold;
+  }
+
+  /* Surface card (solid, no glass) */
+  .surface-card {
+    @apply bg-card border border-border rounded-2xl;
+    box-shadow: 0 1px 4px hsl(var(--foreground) / 0.05);
   }
 }
 
 /* ── Utilities ───────────────────────────────────────────────────────────── */
 @layer utilities {
+
+  /* Gradient text */
   .gradient-text {
     @apply bg-clip-text text-transparent;
-    background-image: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--accent)) 100%);
+    background-image: linear-gradient(
+      135deg,
+      hsl(var(--primary)) 0%,
+      hsl(var(--accent)) 100%
+    );
   }
 
-  /* xs breakpoint helper (below sm=640) */
+  /* Display font helper */
+  .font-display {
+    font-family: "Space Grotesk", "Plus Jakarta Sans", system-ui, sans-serif;
+    letter-spacing: -0.02em;
+  }
+
+  /* Subtle text shadow for hero overlays */
+  .text-shadow-sm {
+    text-shadow: 0 1px 4px rgba(0,0,0,0.4);
+  }
+
+  /* xs breakpoint helpers */
   @media (min-width: 480px) {
-    .xs\:flex-row { flex-direction: row; }
-    .xs\:w-auto { width: auto; }
+    .xs\:flex-row   { flex-direction: row; }
+    .xs\:w-auto     { width: auto; }
     .xs\:grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    .xs\:text-3xl { font-size: 1.875rem; line-height: 2.25rem; }
+    .xs\:text-3xl   { font-size: 1.875rem; line-height: 2.25rem; }
+  }
+
+  /* Smooth color transitions on theme switch */
+  .theme-transition,
+  .theme-transition * {
+    transition:
+      background-color 0.2s ease,
+      border-color 0.2s ease,
+      color 0.15s ease !important;
   }
 }
-

@@ -54,9 +54,9 @@ const FileItem = memo(({ file, isProcessing, onRemove }: {
       initial={{ opacity: 0, x: -20 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: 20 }}
-      className="flex items-center gap-4 p-3 bg-muted/30 rounded-lg"
+      className="flex items-center gap-3.5 p-3 bg-muted/40 rounded-xl"
     >
-      <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+      <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
         {file.file.type.startsWith("image/") ? (
           <Image className="h-5 w-5 text-primary" />
         ) : (
@@ -64,17 +64,17 @@ const FileItem = memo(({ file, isProcessing, onRemove }: {
         )}
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium truncate">
+        <p className="text-[13px] font-semibold truncate tracking-tight">
           {file.file.name}
         </p>
         {file.errorMessage && (
-          <p className="text-xs text-destructive truncate">
+          <p className="text-[11px] text-destructive truncate font-medium">
             {file.errorMessage}
           </p>
         )}
-        <div className="flex items-center gap-2 mt-1">
+        <div className="flex items-center gap-2 mt-1.5">
           <Progress value={file.progress} className="h-1.5 flex-1" />
-          <span className="text-xs text-muted-foreground w-10">
+          <span className="text-[11px] text-muted-foreground w-10 font-semibold">
             {file.progress}%
           </span>
         </div>
@@ -534,7 +534,7 @@ export default function UploadPage() {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h1 className="section-header mb-1">Upload & Detect</h1>
-                <p className="text-muted-foreground text-xs sm:text-sm">
+                <p className="text-muted-foreground text-xs sm:text-sm font-medium">
                   Upload images or videos to detect marine plastic debris
                 </p>
               </div>
@@ -547,7 +547,7 @@ export default function UploadPage() {
                     backendStatus === "unknown" && "bg-muted-foreground"
                   )}
                 />
-                <span className="text-xs text-muted-foreground capitalize hidden sm:inline">
+                <span className="text-[11px] text-muted-foreground capitalize hidden sm:inline font-semibold">
                   {backendStatus === "unknown" ? "Not checked" : backendStatus}
                 </span>
               </div>
@@ -592,34 +592,34 @@ export default function UploadPage() {
           {/* Drop Zone */}
           <Card
             className={cn(
-              "glass-card mb-4 sm:mb-6 transition-colors duration-200 cursor-pointer",
-              isDragOver && "ring-2 ring-primary border-primary bg-primary/5"
+              "glass-card mb-4 sm:mb-6 transition-all duration-200 cursor-pointer",
+              isDragOver && "ring-2 ring-primary border-primary bg-primary/5 scale-[1.01]"
             )}
             onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
             onDragLeave={() => setIsDragOver(false)}
             onDrop={handleDrop}
           >
-            <CardContent className="py-6 sm:py-10 px-4">
+            <CardContent className="py-8 sm:py-12 px-4">
               <label className="flex flex-col items-center justify-center cursor-pointer">
                 <div
                   className={cn(
-                    "w-14 h-14 sm:w-16 sm:h-16 rounded-full ocean-gradient flex items-center justify-center mb-3 transition-transform duration-200",
+                    "w-16 h-16 sm:w-18 sm:h-18 rounded-2xl ocean-gradient flex items-center justify-center mb-4 transition-transform duration-200 shadow-glow",
                     isDragOver && "scale-110"
                   )}
                 >
                   <FileUp className="h-7 w-7 sm:h-8 sm:w-8 text-white" />
                 </div>
-                <h3 className="text-base sm:text-lg font-semibold mb-1.5">
+                <h3 className="font-display text-base sm:text-lg font-bold mb-1.5 tracking-tight">
                   {isDragOver ? "Drop files here" : "Drag & drop files"}
                 </h3>
-                <p className="text-muted-foreground text-xs sm:text-sm mb-3 text-center">
-                  or click to browse (Images & Videos supported)
+                <p className="text-muted-foreground text-[12.5px] sm:text-[13.5px] mb-3.5 text-center font-medium">
+                  or click to browse — Images & Videos supported
                 </p>
-                <div className="flex flex-wrap justify-center gap-3 text-xs sm:text-sm text-muted-foreground">
-                  <span className="flex items-center gap-1">
+                <div className="flex flex-wrap justify-center gap-3 text-[11.5px] sm:text-[12.5px] text-muted-foreground font-semibold">
+                  <span className="flex items-center gap-1.5 px-2.5 py-1 bg-muted/60 rounded-full">
                     <Image className="h-3.5 w-3.5" /> PNG, JPG, JPEG
                   </span>
-                  <span className="flex items-center gap-1">
+                  <span className="flex items-center gap-1.5 px-2.5 py-1 bg-muted/60 rounded-full">
                     <Video className="h-3.5 w-3.5" /> MP4, AVI, MOV
                   </span>
                 </div>
@@ -645,7 +645,7 @@ export default function UploadPage() {
               >
                 <Card className="glass-card">
                   <CardHeader>
-                    <CardTitle className="text-lg">Upload Queue</CardTitle>
+                    <CardTitle className="font-display text-[15px] font-bold tracking-tight">Upload Queue</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
                     {files.map((file) => (
@@ -673,7 +673,7 @@ export default function UploadPage() {
               >
                 <Card className="glass-card">
                   <CardHeader>
-                    <CardTitle className="text-lg flex items-center gap-2">
+                    <CardTitle className="font-display text-[15px] font-bold tracking-tight flex items-center gap-2">
                       {isComplete ? (
                         <CheckCircle className="h-5 w-5 text-success" />
                       ) : isProcessing ? (
@@ -686,17 +686,17 @@ export default function UploadPage() {
                   </CardHeader>
                   <CardContent className="space-y-4">
                     {estimatedTime && !isComplete && (
-                      <div className="flex items-center justify-between text-sm">
+                      <div className="flex items-center justify-between text-[12.5px] font-medium">
                         <span className="text-muted-foreground">
                           Estimated Time: {Math.ceil(estimatedTime)} seconds
                         </span>
-                        <span className="text-muted-foreground">
+                        <span className="text-muted-foreground font-semibold">
                           Progress: {Math.round(processingProgress)}%
                         </span>
                       </div>
                     )}
-                    <Progress 
-                      value={processingProgress} 
+                    <Progress
+                      value={processingProgress}
                       className={`h-2 ${isComplete ? 'bg-success/20' : ''}`}
                     />
                     {isComplete && (

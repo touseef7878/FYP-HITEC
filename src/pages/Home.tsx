@@ -55,19 +55,19 @@ export default function HomePage() {
             {/* Badge */}
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 border border-white/20 mb-4">
               <GraduationCap className="h-3.5 w-3.5 text-cyan-300 flex-shrink-0" />
-              <span className="text-white/90 text-xs sm:text-sm font-medium">HITEC University Taxila — FYP 2026</span>
+              <span className="text-white/90 text-xs sm:text-sm font-semibold tracking-wide">HITEC University Taxila — FYP 2026</span>
             </div>
 
             {/* Logo + label */}
             <div className="flex items-center gap-2 sm:gap-3 mb-3">
               <img src={logoImg} alt="OceanGuard AI" className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl flex-shrink-0" />
-              <span className="text-cyan-300 text-xs sm:text-sm font-semibold uppercase tracking-widest">
+              <span className="text-cyan-300 text-xs sm:text-sm font-bold uppercase tracking-[0.15em]">
                 AI Research Platform
               </span>
             </div>
 
             {/* Headline */}
-            <h1 className="text-2xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-3 sm:mb-5 leading-tight">
+            <h1 className="font-display text-3xl sm:text-4xl md:text-5xl lg:text-[3.5rem] font-bold text-white mb-3 sm:mb-5 leading-[1.1] tracking-tight text-shadow-sm">
               Marine Plastic Pollution
               <br />
               <span className="bg-gradient-to-r from-cyan-300 via-teal-300 to-emerald-300 bg-clip-text text-transparent">
@@ -76,7 +76,7 @@ export default function HomePage() {
             </h1>
 
             {/* Sub */}
-            <p className="text-sm sm:text-base lg:text-lg text-white/70 mb-5 sm:mb-7 max-w-xl lg:max-w-2xl leading-relaxed">
+            <p className="text-sm sm:text-base lg:text-[1.05rem] text-white/70 mb-5 sm:mb-7 max-w-xl lg:max-w-2xl leading-relaxed font-medium">
               Computer vision and deep learning for real-time identification and tracking of marine debris.
               Combines YOLOv26s detection with LSTM forecasting for pollution analysis.
             </p>
@@ -144,10 +144,10 @@ export default function HomePage() {
         {/* Stats */}
         <section className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4 mt-5 sm:mt-7 mb-6 sm:mb-8">
           {stats.map((stat) => (
-            <Card key={stat.label} className="glass-card text-center py-3 sm:py-5 hover-lift">
+            <Card key={stat.label} className="glass-card text-center py-4 sm:py-6 hover-lift">
               <CardContent className="p-0">
-                <p className="text-lg sm:text-2xl lg:text-3xl font-bold gradient-text mb-0.5">{stat.value}</p>
-                <p className="text-xs sm:text-sm text-muted-foreground">{stat.label}</p>
+                <p className="font-display text-xl sm:text-2xl lg:text-3xl font-bold gradient-text mb-1 tracking-tight">{stat.value}</p>
+                <p className="text-[11px] sm:text-xs text-muted-foreground font-semibold uppercase tracking-wider">{stat.label}</p>
               </CardContent>
             </Card>
           ))}
@@ -155,19 +155,19 @@ export default function HomePage() {
 
         {/* Features */}
         <section className="mb-6 sm:mb-8">
-          <div className="text-center mb-4 sm:mb-6">
-            <h2 className="text-lg sm:text-xl lg:text-2xl font-bold mb-1">Key Features</h2>
-            <p className="text-muted-foreground text-xs sm:text-sm">Tools for marine pollution research and analysis</p>
+          <div className="text-center mb-5 sm:mb-7">
+            <h2 className="font-display text-lg sm:text-xl lg:text-2xl font-bold mb-1.5 tracking-tight">Key Features</h2>
+            <p className="text-muted-foreground text-xs sm:text-sm font-medium">Tools for marine pollution research and analysis</p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
             {features.map((feature) => (
               <Card key={feature.title} className="glass-card hover-lift">
                 <CardContent className="p-4 sm:p-5">
-                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl ocean-gradient flex items-center justify-center mb-3">
-                    <feature.icon className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
+                  <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl ocean-gradient flex items-center justify-center mb-3.5 shadow-sm">
+                    <feature.icon className="h-5 w-5 text-white" />
                   </div>
-                  <h3 className="font-semibold mb-1 text-sm sm:text-base">{feature.title}</h3>
-                  <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">{feature.description}</p>
+                  <h3 className="font-display font-bold mb-1.5 text-[13.5px] sm:text-[15px] tracking-tight">{feature.title}</h3>
+                  <p className="text-[12px] sm:text-[13px] text-muted-foreground leading-relaxed">{feature.description}</p>
                 </CardContent>
               </Card>
             ))}
@@ -176,22 +176,22 @@ export default function HomePage() {
 
         {/* Quick Actions */}
         <section className="mb-6 sm:mb-8">
-          <h2 className="text-base sm:text-lg font-semibold mb-3">Quick Actions</h2>
+          <h2 className="font-display text-base sm:text-lg font-bold mb-3 tracking-tight">Quick Actions</h2>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-4">
             {[
-              { to: "/upload",      icon: Upload,    bg: "bg-primary/10 group-hover:bg-primary/20",   ic: "text-primary",   title: "Upload Media",     desc: "Detect plastic in images/videos" },
-              { to: "/heatmap",     icon: Map,       bg: "bg-secondary/10 group-hover:bg-secondary/20", ic: "text-secondary", title: "Explore Map",      desc: "View global pollution zones" },
-              { to: "/predictions", icon: Zap,       bg: "bg-accent/10 group-hover:bg-accent/20",     ic: "text-accent",    title: "View Predictions", desc: "Trend analysis and forecasting" },
+              { to: "/upload",      icon: Upload,    bg: "bg-primary/10 group-hover:bg-primary/18",   ic: "text-primary",   title: "Upload Media",     desc: "Detect plastic in images/videos" },
+              { to: "/heatmap",     icon: Map,       bg: "bg-secondary/10 group-hover:bg-secondary/18", ic: "text-secondary", title: "Explore Map",      desc: "View global pollution zones" },
+              { to: "/predictions", icon: Zap,       bg: "bg-accent/10 group-hover:bg-accent/18",     ic: "text-accent",    title: "View Predictions", desc: "Trend analysis and forecasting" },
             ].map((item) => (
               <Link key={item.to} to={item.to}>
                 <Card className="glass-card hover-lift cursor-pointer group">
-                  <CardContent className="flex items-center gap-3 p-3.5 sm:p-5">
-                    <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl ${item.bg} flex items-center justify-center transition-colors flex-shrink-0`}>
-                      <item.icon className={`h-4 w-4 sm:h-5 sm:w-5 ${item.ic}`} />
+                  <CardContent className="flex items-center gap-3.5 p-4 sm:p-5">
+                    <div className={`w-10 h-10 sm:w-11 sm:h-11 rounded-xl ${item.bg} flex items-center justify-center transition-colors flex-shrink-0`}>
+                      <item.icon className={`h-5 w-5 ${item.ic}`} />
                     </div>
                     <div>
-                      <h3 className="font-semibold text-sm sm:text-base">{item.title}</h3>
-                      <p className="text-xs sm:text-sm text-muted-foreground">{item.desc}</p>
+                      <h3 className="font-display font-bold text-[13.5px] sm:text-[15px] tracking-tight">{item.title}</h3>
+                      <p className="text-[12px] sm:text-[13px] text-muted-foreground mt-0.5">{item.desc}</p>
                     </div>
                   </CardContent>
                 </Card>
@@ -201,12 +201,12 @@ export default function HomePage() {
         </section>
 
         {/* Footer */}
-        <footer className="text-center py-4 sm:py-6 border-t border-border/50">
-          <p className="text-xs sm:text-sm text-muted-foreground">
+        <footer className="text-center py-5 sm:py-7 border-t border-border/40">
+          <p className="text-[12px] sm:text-[13px] text-muted-foreground font-medium">
             Developed as part of Final Year Project at{" "}
-            <span className="text-foreground font-medium">HITEC University, Taxila</span>
+            <span className="text-foreground font-semibold">HITEC University, Taxila</span>
           </p>
-          <p className="text-xs text-muted-foreground mt-1">© 2025 — Touseef Ur Rehman, Qasim Shahzad, Zohaib Ashraf</p>
+          <p className="text-[11px] text-muted-foreground/70 mt-1">© 2026 — Touseef Ur Rehman, Qasim Shahzad, Zohaib Ashraf</p>
         </footer>
       </div>
     </MainLayout>

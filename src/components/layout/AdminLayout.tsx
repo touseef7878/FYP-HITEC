@@ -35,7 +35,7 @@ const NavLinks = ({
           to={href}
           onClick={onClick}
           className={cn(
-            'relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors',
+            'relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-semibold tracking-[-0.01em] transition-colors',
             active
               ? 'text-primary-foreground'
               : 'text-muted-foreground hover:text-foreground hover:bg-muted'
@@ -84,11 +84,11 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
             </button>
             <Link to="/admin" className="flex items-center gap-2">
               <Shield className="h-5 w-5 text-primary" />
-              <span className="font-bold text-base">Admin Panel</span>
+              <span className="font-display font-bold text-[15px] tracking-tight">Admin Panel</span>
             </Link>
             <div className="hidden sm:flex items-center gap-1 px-2.5 py-1 bg-primary/10 rounded-full">
               <Activity className="h-3.5 w-3.5 text-primary" />
-              <span className="text-xs font-medium text-primary">System Monitor</span>
+              <span className="text-[11px] font-semibold text-primary tracking-wide">System Monitor</span>
             </div>
           </div>
 

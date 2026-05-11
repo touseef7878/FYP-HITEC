@@ -145,23 +145,23 @@ export default function SettingsPage() {
 
           <div className="mb-4 sm:mb-6">
             <h1 className="section-header mb-1">Settings</h1>
-            <p className="text-muted-foreground text-xs sm:text-sm">Manage your account and preferences</p>
+            <p className="text-muted-foreground text-xs sm:text-sm font-medium">Manage your account and preferences</p>
           </div>
 
           {/* Account */}
           <Card className="glass-card mb-3 sm:mb-4">
             <CardHeader className="pb-2 sm:pb-4">
-              <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+              <CardTitle className="flex items-center gap-2 text-[13.5px] sm:text-[15px] font-display font-bold tracking-tight">
                 <User className="h-4 w-4 text-primary" />
                 Account
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="flex items-center justify-between gap-3 p-3 sm:p-4 bg-muted/30 rounded-xl">
+              <div className="flex items-center justify-between gap-3 p-3 sm:p-4 bg-muted/40 rounded-xl">
                 <div className="min-w-0">
-                  <p className="font-semibold text-sm sm:text-base truncate">{user?.username}</p>
-                  <p className="text-xs sm:text-sm text-muted-foreground truncate">{user?.email || "No email set"}</p>
-                  <span className="inline-block mt-1 text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
+                  <p className="font-display font-bold text-sm sm:text-[15px] truncate tracking-tight">{user?.username}</p>
+                  <p className="text-xs sm:text-[13px] text-muted-foreground truncate font-medium mt-0.5">{user?.email || "No email set"}</p>
+                  <span className="inline-block mt-1.5 text-[11px] px-2 py-0.5 rounded-full bg-primary/12 text-primary font-bold uppercase tracking-wide">
                     {user?.role}
                   </span>
                 </div>
@@ -170,7 +170,7 @@ export default function SettingsPage() {
                   size="sm"
                   onClick={handleLogout}
                   disabled={isLoggingOut}
-                  className="flex-shrink-0 text-xs sm:text-sm"
+                  className="flex-shrink-0 text-xs sm:text-[13px] font-bold"
                 >
                   {isLoggingOut
                     ? <RefreshCw className="h-3.5 w-3.5 animate-spin" />
@@ -183,20 +183,20 @@ export default function SettingsPage() {
           {/* Appearance */}
           <Card className="glass-card mb-3 sm:mb-4">
             <CardHeader className="pb-2 sm:pb-4">
-              <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+              <CardTitle className="flex items-center gap-2 text-[13.5px] sm:text-[15px] font-display font-bold tracking-tight">
                 <Monitor className="h-4 w-4 text-primary" />
                 Appearance
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between p-3 bg-muted/40 rounded-xl">
                 <div className="flex items-center gap-3">
                   {theme === "light"
                     ? <Sun className="h-4 w-4 text-warning" />
                     : <Moon className="h-4 w-4 text-primary" />}
                   <div>
-                    <Label className="text-sm sm:text-base">Dark Mode</Label>
-                    <p className="text-xs text-muted-foreground">Switch between light and dark</p>
+                    <Label className="text-[13.5px] sm:text-[15px] font-semibold">Dark Mode</Label>
+                    <p className="text-[11px] text-muted-foreground font-medium">Switch between light and dark</p>
                   </div>
                 </div>
                 <Switch checked={theme === "dark"} onCheckedChange={toggleTheme} />
@@ -207,20 +207,20 @@ export default function SettingsPage() {
           {/* Model Info */}
           <Card className="glass-card mb-3 sm:mb-4">
             <CardHeader className="pb-2 sm:pb-4">
-              <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+              <CardTitle className="flex items-center gap-2 text-[13.5px] sm:text-[15px] font-display font-bold tracking-tight">
                 <Cpu className="h-4 w-4 text-primary" />
                 Model Configuration
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="p-3 bg-muted/30 rounded-xl flex items-start gap-2.5 mb-3">
+              <div className="p-3 bg-primary/8 rounded-xl flex items-start gap-2.5 mb-3 border border-primary/15">
                 <Info className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
                 <div>
-                  <p className="font-medium text-xs sm:text-sm">YOLOv26s — Custom Marine Debris Model</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">Trained on ~16,500 images from 7 merged marine datasets</p>
+                  <p className="font-semibold text-[12.5px] sm:text-[13.5px]">YOLOv26s — Custom Marine Debris Model</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5 font-medium">Trained on ~16,500 images from 7 merged marine datasets</p>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-2 text-xs sm:text-sm">
+              <div className="grid grid-cols-2 gap-2 text-[12px] sm:text-[13px]">
                 {[
                   ["Version", "v1.0.0"],
                   ["Classes", "8"],
@@ -229,9 +229,9 @@ export default function SettingsPage() {
                   ["Precision", "83%"],
                   ["Recall", "67%"],
                 ].map(([k, v]) => (
-                  <div key={k} className="flex justify-between p-2 bg-muted/20 rounded-lg">
-                    <span className="text-muted-foreground">{k}</span>
-                    <span className="font-medium">{v}</span>
+                  <div key={k} className="flex justify-between p-2.5 bg-muted/40 rounded-xl">
+                    <span className="text-muted-foreground font-medium">{k}</span>
+                    <span className="font-bold">{v}</span>
                   </div>
                 ))}
               </div>
@@ -241,7 +241,7 @@ export default function SettingsPage() {
           {/* Data Management */}
           <Card className="glass-card mb-3 sm:mb-4">
             <CardHeader className="pb-2 sm:pb-4">
-              <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+              <CardTitle className="flex items-center gap-2 text-[13.5px] sm:text-[15px] font-display font-bold tracking-tight">
                 <Trash2 className="h-4 w-4 text-primary" />
                 Data Management
               </CardTitle>
@@ -254,9 +254,9 @@ export default function SettingsPage() {
                   { label: "Objects", value: stats.totalObjects },
                   { label: "Hotspots", value: stats.hotspots },
                 ].map((s) => (
-                  <div key={s.label} className="text-center p-2.5 sm:p-3 bg-muted/30 rounded-xl">
-                    <div className="text-lg sm:text-2xl font-bold text-primary">{s.value}</div>
-                    <div className="text-xs text-muted-foreground">{s.label}</div>
+                  <div key={s.label} className="text-center p-3 sm:p-3.5 bg-muted/40 rounded-xl">
+                    <div className="font-display text-xl sm:text-2xl font-bold text-primary tracking-tight">{s.value}</div>
+                    <div className="text-[11px] text-muted-foreground font-semibold uppercase tracking-wider mt-0.5">{s.label}</div>
                   </div>
                 ))}
               </div>
@@ -265,26 +265,26 @@ export default function SettingsPage() {
 
               {/* Export / Import */}
               <div className="grid grid-cols-2 gap-2">
-                <Button variant="outline" size="sm" onClick={handleExportData} className="text-xs sm:text-sm">
+                <Button variant="outline" size="sm" onClick={handleExportData} className="text-[12.5px] font-semibold">
                   <Download className="h-3.5 w-3.5 mr-1.5" />
                   Export Data
                 </Button>
-                <Button variant="outline" size="sm" onClick={handleImportData} className="text-xs sm:text-sm">
+                <Button variant="outline" size="sm" onClick={handleImportData} className="text-[12.5px] font-semibold">
                   <Upload className="h-3.5 w-3.5 mr-1.5" />
                   Import Data
                 </Button>
               </div>
 
               {/* Clear History */}
-              <div className="p-3 sm:p-4 bg-destructive/8 rounded-xl border border-destructive/20">
-                <h4 className="font-medium text-destructive text-xs sm:text-sm mb-1">Clear Detection History</h4>
-                <p className="text-xs text-muted-foreground mb-3">Permanently delete all detection history.</p>
+              <div className="p-3 sm:p-4 bg-destructive/6 rounded-xl border border-destructive/15">
+                <h4 className="font-bold text-destructive text-[12.5px] sm:text-[13.5px] mb-1">Clear Detection History</h4>
+                <p className="text-[11px] text-muted-foreground mb-3 font-medium">Permanently delete all detection history.</p>
                 <Button
                   variant="destructive"
                   size="sm"
                   onClick={() => setShowClearDialog(true)}
                   disabled={isClearing}
-                  className="text-xs sm:text-sm"
+                  className="text-[12.5px] font-bold"
                 >
                   {isClearing
                     ? <><RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" />Clearing...</>
@@ -293,12 +293,12 @@ export default function SettingsPage() {
               </div>
 
               {/* Delete All */}
-              <div className="p-3 sm:p-4 bg-red-500/8 rounded-xl border border-red-500/20">
-                <h4 className="font-medium text-red-600 text-xs sm:text-sm mb-1 flex items-center gap-1.5">
+              <div className="p-3 sm:p-4 bg-destructive/6 rounded-xl border border-destructive/15">
+                <h4 className="font-bold text-destructive text-[12.5px] sm:text-[13.5px] mb-1 flex items-center gap-1.5">
                   <AlertTriangle className="h-3.5 w-3.5" />
                   Delete ALL Account Data
                 </h4>
-                <p className="text-xs text-muted-foreground mb-3">
+                <p className="text-[11px] text-muted-foreground mb-3 font-medium">
                   Permanently removes all detections, reports, predictions, and files. Cannot be undone.
                 </p>
                 <Button
@@ -306,7 +306,7 @@ export default function SettingsPage() {
                   size="sm"
                   onClick={() => setShowDeleteDialog(true)}
                   disabled={isDeleting}
-                  className="bg-red-600 hover:bg-red-700 text-xs sm:text-sm"
+                  className="text-[12.5px] font-bold"
                 >
                   {isDeleting
                     ? <><RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" />Deleting...</>
@@ -317,8 +317,8 @@ export default function SettingsPage() {
           </Card>
 
           {/* About */}
-          <p className="text-center text-xs text-muted-foreground py-4">
-            OceanGuard AI — Marine Plastic Detection Platform · FYP 2025
+          <p className="text-center text-[11px] text-muted-foreground py-4 font-medium">
+            OceanGuard AI — Marine Plastic Detection Platform · FYP 2026
           </p>
         </div>
 

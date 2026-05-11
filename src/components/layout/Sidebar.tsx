@@ -32,24 +32,24 @@ const NavItem = memo(({ path, label, icon: Icon, isActive, isCollapsed, onClose 
     {isActive && (
       <motion.div
         layoutId="sidebar-active-pill"
-        className="absolute inset-0 bg-primary/10 rounded-lg border-r-2 border-primary"
+        className="absolute inset-0 bg-primary/12 rounded-xl border border-primary/20"
         transition={{ type: "spring", stiffness: 400, damping: 35 }}
       />
     )}
     <div className={cn(
-      "relative flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors duration-150 cursor-pointer",
-      "hover:bg-accent/10",
+      "relative flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors duration-150 cursor-pointer",
+      "hover:bg-muted/60",
       isActive && "text-primary",
       isCollapsed && "justify-center px-0"
     )}>
       <Icon className={cn(
-        "h-5 w-5 flex-shrink-0",
+        "h-[18px] w-[18px] flex-shrink-0",
         isActive ? "text-primary" : "text-muted-foreground"
       )} />
       {!isCollapsed && (
         <span className={cn(
-          "text-sm font-medium truncate",
-          isActive ? "text-primary" : "text-foreground"
+          "text-[13.5px] font-semibold truncate tracking-[-0.01em]",
+          isActive ? "text-primary" : "text-foreground/80"
         )}>
           {label}
         </span>
@@ -80,8 +80,8 @@ export const Sidebar = memo(() => {
         <img src={logoImg} alt="OceanGuard AI" className="w-9 h-9 rounded-xl flex-shrink-0" />
         {!isCollapsed && (
           <div className="overflow-hidden min-w-0">
-            <h1 className="font-bold text-base whitespace-nowrap gradient-text">OceanGuard AI</h1>
-            <p className="text-xs text-muted-foreground whitespace-nowrap">Marine Plastic Detection</p>
+            <h1 className="font-display font-bold text-[15px] whitespace-nowrap gradient-text">OceanGuard AI</h1>
+            <p className="text-[11px] text-muted-foreground whitespace-nowrap font-medium tracking-wide">Marine Plastic Detection</p>
           </div>
         )}
       </div>

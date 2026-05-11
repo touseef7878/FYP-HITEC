@@ -332,7 +332,8 @@ async def favicon():
 # Load YOLO model - YOLOv26s (Small) custom-trained on marine debris
 # 8 classes: fishing_net, plastic_bottle, metal_can, tyre, glass_container,
 #            plastic_bag, plastic_fragments, other_debris
-# Trained on ~16,500 images (merged from 7 datasets), 100 epochs, 640×640
+# Trained on Kaggle T4 GPU — 7 Roboflow datasets merged (~16,500 images)
+# 100 epochs, batch=16, imgsz=640, patience=20, augment=True
 WEIGHTS_PATH = os.path.join(os.path.dirname(__file__), "weights", "best.pt")
 model = None
 
@@ -416,12 +417,17 @@ async def health_check():
         model_info = {
             "loaded": True,
             "classes": list(model.names.values()) if model.names else [],
-            "num_classes": len(model.names) if model.names else 0,
+            "num_classes": 8,
             "model_type": "YOLOv26s",
-            "architecture": "YOLOv26s (Small)",
+            "architecture": "YOLOv26s (Small) — Kaggle T4 GPU trained",
+            "training_hardware": "Kaggle T4 GPU",
+            "training_datasets": "7 Roboflow datasets merged (80/20 train/val split)",
             "input_resolution": "640x640",
             "training_images": 16500,
             "epochs": 100,
+            "batch_size": 16,
+            "patience": 20,
+            "augment": True,
             "precision": 0.83,
             "recall": 0.67,
             "map50": 0.71,
@@ -429,7 +435,7 @@ async def health_check():
             "class_metadata": YOLO_CLASS_META
         }
         model_status = "loaded"
-        model_message = "Using YOLOv26s custom weights (best.pt) — trained on ~16,500 marine debris images, 8 classes, 71% mAP50"
+        model_message = "Using YOLOv26s custom weights (best.pt) — 7 Roboflow datasets merged, ~16,500 images, 8 classes, 71% mAP50"
     else:
         model_info = {"loaded": False}
         model_status = "failed"
@@ -3420,7 +3426,7 @@ async def generate_report(
             "report_version": "2.0",
             "data_sources": [],
             "methodology": {
-                "detection_model": "YOLOv26s Marine Debris Detection (71% mAP50, 9 classes)",
+                "detection_model": "YOLOv26s Marine Debris Detection (71% mAP50, 8 classes)",
                 "prediction_model": "LSTM Time Series Forecasting",
                 "confidence_threshold": "25%",
                 "analysis_period": f"{request.date_range_days} days"

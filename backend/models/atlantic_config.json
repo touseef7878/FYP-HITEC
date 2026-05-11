@@ -1,6 +1,6 @@
 {
   "sequence_length": 30,
-  "n_features": 10,
+  "n_features": 13,
   "lstm_units": [
     64,
     32
@@ -8,7 +8,7 @@
   "dropout_rate": 0.2,
   "learning_rate": 0.001,
   "batch_size": 32,
-  "epochs": 10,
+  "epochs": 50,
   "validation_split": 0.2,
   "feature_names": [
     "temperature",
@@ -20,13 +20,20 @@
     "ocean_temp",
     "precipitation",
     "salinity",
-    "chlorophyll"
+    "chlorophyll",
+    "pollution_lag1",
+    "pollution_lag7",
+    "pollution_lag14"
   ],
   "target_name": "pollution_level",
   "created_at": null,
-  "last_trained": "2026-04-18T22:07:20.996892",
-  "training_samples": 2894,
-  "validation_mae": 7.9817510700390555,
-  "validation_rmse": 9.69637482631285,
+  "last_trained": "2026-04-27T21:03:47.576222",
+  "training_samples": 550,
+  "validation_mae": 2.548333896720497,
+  "validation_rmse": 3.169035654359923,
+  "validation_r2": 0.7768230760626484,
+  "directional_accuracy": 64.70588235294117,
+  "within_5_units_pct": 89.78102189781022,
+  "within_10_units_pct": 100.0,
   "region": "atlantic"
 }

@@ -31,9 +31,10 @@ const NotFound        = lazy(() => import("@/pages/NotFound"));
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 5 * 60 * 1000,
-      gcTime: 10 * 60 * 1000,
-      refetchOnWindowFocus: false,
+      staleTime: 30 * 1000,          // 30 s default — pages override as needed
+      gcTime: 5 * 60 * 1000,         // keep unused cache for 5 min
+      refetchOnWindowFocus: true,    // refetch when user tabs back in
+      refetchOnMount: "always",      // always hit API on mount (pages can override)
       retry: 1,
     },
   },

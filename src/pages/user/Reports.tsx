@@ -1,9 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { motion } from "framer-motion";
 import logger from '@/utils/logger';
 import {
-  FileText, Download, Calendar, Clock, CheckCircle,
-  Loader2, Eye, FileX, ChevronDown, AlertTriangle,
+  FileText, Download, Calendar, CheckCircle,
+  Loader2, Eye, FileX, AlertTriangle, RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,18 +12,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
+  Dialog, DialogContent, DialogDescription,
+  DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { PageTransition, staggerContainer, fadeInUp } from "@/components/layout/PageTransition";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { downloadPDFReport, viewPDFReport } from "@/utils/generateReport";
+import { queryKeys } from "@/lib/queryKeys";
 import ENV from "@/config/env";
 
 const API_URL = ENV.API_URL;
@@ -39,69 +37,51 @@ interface Report {
   data_range_end?: string;
 }
 
+async function fetchReports(token: string): Promise<Report[]> {
+  const res = await fetch(`${API_URL}/api/reports`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  if (!data.success) throw new Error("API returned success=false");
+  return data.reports.map((r: any) => ({
+    id: r.id.toString(),
+    title: r.title,
+    report_type: r.report_type,
+    created_at: r.created_at,
+    status: r.status,
+    size: r.size,
+    data_range_start: r.data_range_start,
+    data_range_end: r.data_range_end,
+  }));
+}
+
 export default function ReportsPage() {
   const [isGenerating, setIsGenerating] = useState(false);
-  const [reports, setReports] = useState<Report[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [reportType, setReportType] = useState<string>("detection");
-  const [customTitle, setCustomTitle] = useState<string>("");
-  const [dateRange, setDateRange] = useState<number>(30);
+  const [reportType, setReportType]     = useState<string>("detection");
+  const [customTitle, setCustomTitle]   = useState<string>("");
+  const [dateRange, setDateRange]       = useState<number>(30);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [reportToDelete, setReportToDelete] = useState<Report | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const { toast } = useToast();
-  const { token } = useAuth();
+  const [reportToDelete, setReportToDelete]     = useState<Report | null>(null);
+  const [isDeleting, setIsDeleting]             = useState(false);
+  const { toast }       = useToast();
+  const { token }       = useAuth();
+  const queryClient     = useQueryClient();
 
-  // Load reports from backend
-  useEffect(() => {
-    const loadReports = async () => {
-      try {
-        if (!token) {
-          setIsLoading(false);
-          return;
-        }
-
-        const response = await fetch(`${API_URL}/api/reports`, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          if (data.success) {
-            setReports(data.reports.map((report: any) => ({
-              id: report.id.toString(),
-              title: report.title,
-              report_type: report.report_type,
-              created_at: report.created_at,
-              status: report.status,
-              size: report.size,
-              data_range_start: report.data_range_start,
-              data_range_end: report.data_range_end,
-            })));
-          }
-        } else if (response.status === 401) {
-          toast({
-            title: "Session Expired",
-            description: "Please log in again to view reports",
-            variant: "destructive",
-          });
-        }
-      } catch (error) {
-        logger.error('Error loading reports:', error);
-        toast({
-          title: "Error Loading Reports",
-          description: "Failed to load reports from server. Please check your connection.",
-          variant: "destructive",
-        });
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    loadReports();
-  }, [token, toast]);
+  // ── React Query ─────────────────────────────────────────────────────────────
+  const {
+    data: reports = [],
+    isLoading,
+    isFetching,
+  } = useQuery<Report[]>({
+    queryKey: queryKeys.reports(),
+    queryFn:  () => fetchReports(token!),
+    enabled:  !!token,
+    staleTime: 30 * 1000,
+    gcTime:    5 * 60 * 1000,
+    refetchOnWindowFocus: true,
+    refetchOnMount: "always",
+  });
 
   const handleGenerateReport = async () => {
     if (!token) {
@@ -144,27 +124,24 @@ export default function ReportsPage() {
       }
       
       if (data.success && data.report) {
-        // Add new report to the list
+        // Optimistic update — prepend new report to React Query cache immediately
         const newReport: Report = {
           id: data.report.id.toString(),
           title: data.report.title,
           report_type: data.report.report_type,
           created_at: data.report.created_at,
-          status: 'ready',
-          size: '1.2 MB',
+          status: "ready",
+          size: "1.2 MB",
         };
-        
-        setReports((prev) => [newReport, ...prev]);
-        
+        queryClient.setQueryData<Report[]>(queryKeys.reports(), (old = []) => [newReport, ...old]);
+
         toast({
           title: "Report Generated Successfully",
           description: "Your report is ready. Click View to preview or Download to save.",
         });
-
-        // Reset form
         setCustomTitle("");
       } else {
-        throw new Error(data.message || 'Report generation returned invalid data');
+        throw new Error(data.message || "Report generation returned invalid data");
       }
     } catch (error: any) {
       logger.error('Error generating report:', error);
@@ -222,9 +199,11 @@ export default function ReportsPage() {
         throw new Error(errorData.detail || 'Failed to delete report');
       }
 
-      // Remove from local state only after successful backend deletion
-      setReports(prev => prev.filter(report => report.id !== reportToDelete.id));
-      
+      // Optimistic update — remove from React Query cache immediately
+      queryClient.setQueryData<Report[]>(queryKeys.reports(), (old = []) =>
+        old.filter((r) => r.id !== reportToDelete.id)
+      );
+
       toast({
         title: "Report Deleted",
         description: `"${reportToDelete.title}" has been permanently deleted`,
@@ -284,17 +263,17 @@ export default function ReportsPage() {
     return (
       <MainLayout>
         <PageTransition className="page-container">
-          <div className="max-w-xl sm:max-w-2xl lg:max-w-4xl mx-auto">
-            <div className="mb-8">
-              <h1 className="section-header">Reports</h1>
-              <p className="text-muted-foreground">
-                Generate and download comprehensive analysis reports
+          <div className="max-w-4xl mx-auto">
+            <div className="mb-4 sm:mb-6">
+              <h1 className="section-header mb-1">Reports</h1>
+              <p className="text-muted-foreground text-xs sm:text-sm font-medium">
+                Generate and download PDF analysis reports
               </p>
             </div>
             <Card className="glass-card">
-              <CardContent className="py-12 text-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-                <p className="text-muted-foreground">Loading reports...</p>
+              <CardContent className="py-14 text-center">
+                <div className="w-8 h-8 rounded-full border-2 border-primary/20 border-t-primary animate-spin mx-auto mb-4" />
+                <p className="text-muted-foreground text-sm font-medium">Loading reports…</p>
               </CardContent>
             </Card>
           </div>
@@ -307,11 +286,22 @@ export default function ReportsPage() {
     <MainLayout>
       <PageTransition className="page-container">
         <div className="max-w-4xl mx-auto">
-          <div className="mb-4 sm:mb-6">
-            <h1 className="section-header mb-1">Reports</h1>
-            <p className="text-muted-foreground text-xs sm:text-sm font-medium">
-              Generate and download PDF analysis reports
-            </p>
+          <div className="mb-4 sm:mb-6 flex items-center justify-between gap-3">
+            <div>
+              <h1 className="section-header mb-1">Reports</h1>
+              <p className="text-muted-foreground text-xs sm:text-sm font-medium">
+                Generate and download PDF analysis reports
+              </p>
+            </div>
+            <Button
+              variant="outline" size="sm"
+              onClick={() => queryClient.invalidateQueries({ queryKey: queryKeys.reports() })}
+              disabled={isFetching}
+              className="flex-shrink-0 font-semibold text-[12.5px]"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${isFetching ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
           </div>
 
           {/* Generate Report Card */}

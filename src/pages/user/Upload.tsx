@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Upload,
   Image,
@@ -30,6 +31,7 @@ import {
 } from "@/components/ui/collapsible";
 import ENV from "@/config/env";
 import { DetectionResult, dataService } from "@/services/data.service";
+import { queryKeys } from "@/lib/queryKeys";
 
 const API_URL = ENV.API_URL;
 
@@ -121,6 +123,7 @@ export default function UploadPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { token } = useAuth();
+  const queryClient = useQueryClient();
 
   // Monitor file completion status
   useEffect(() => {
@@ -502,8 +505,17 @@ export default function UploadPage() {
         setProcessingProgress(0);
         setEstimatedTime(null);
 
-        // Fire the event AFTER navigation — History/Dashboard listeners
-        // are no longer mounted, so no background refetch hits the Results page
+        // ── CRITICAL FIX: Invalidate ALL data queries BEFORE navigating ──
+        // This ensures History, Dashboard, and Reports are stale and will
+        // refetch fresh data when the user navigates to those pages.
+        // Previously this fired AFTER navigate() which unmounted all listeners.
+        queryClient.invalidateQueries({ queryKey: queryKeys.history() });
+        queryClient.invalidateQueries({ queryKey: queryKeys.analytics() });
+        queryClient.invalidateQueries({ queryKey: queryKeys.reports() });
+        // Invalidate all heatmap variants (prefix match)
+        queryClient.invalidateQueries({ queryKey: ["heatmap"] });
+
+        // Broadcast to any same-window listeners still mounted
         localStorage.setItem('detection_completed', Date.now().toString());
         window.dispatchEvent(new Event('detectionComplete'));
 

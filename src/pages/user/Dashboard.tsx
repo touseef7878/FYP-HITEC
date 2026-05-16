@@ -10,6 +10,7 @@ import { PageTransition } from "@/components/layout/PageTransition";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { dataService, AnalyticsData } from "@/services/data.service";
 import { useToast } from "@/hooks/use-toast";
+import { queryKeys } from "@/lib/queryKeys";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar,
@@ -27,26 +28,27 @@ export default function DashboardPage() {
   const queryClient = useQueryClient();
 
   const { data: analyticsData, isLoading, isError, refetch, isFetching } = useQuery<AnalyticsData>({
-    queryKey: ["analytics"],
+    queryKey: queryKeys.analytics(),
     queryFn: () => dataService.getAnalytics(),
-    staleTime: 5 * 60 * 1000,       // 5 min — don't refetch if fresh
-    gcTime: 10 * 60 * 1000,          // 10 min cache
-    refetchOnWindowFocus: false,
+    staleTime: 30 * 1000,          // 30 s — treat as fresh for 30s only
+    gcTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: true,    // refetch when user tabs back in
+    refetchOnMount: "always",      // always hit API on mount
     retry: 1,
   });
 
   const handleRefresh = useCallback(async () => {
-    await queryClient.invalidateQueries({ queryKey: ["analytics"] });
-    await refetch();
+    await queryClient.invalidateQueries({ queryKey: queryKeys.analytics() });
     toast({ title: "Data Refreshed", description: "Analytics updated." });
-  }, [queryClient, refetch, toast]);
+  }, [queryClient, toast]);
 
   // Re-fetch when a detection completes (fired from Upload page)
+  // This is a belt-and-suspenders fallback — the primary mechanism is
+  // queryClient.invalidateQueries() called directly in Upload.tsx BEFORE navigate().
   const handleDetectionComplete = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ["analytics"] });
+    queryClient.invalidateQueries({ queryKey: queryKeys.analytics() });
   }, [queryClient]);
 
-  // Register event listener once on mount
   useEffect(() => {
     window.addEventListener("detectionComplete", handleDetectionComplete);
     return () => window.removeEventListener("detectionComplete", handleDetectionComplete);
@@ -85,8 +87,7 @@ export default function DashboardPage() {
             <Button onClick={handleRefresh} variant="outline" disabled={isFetching}>
               <RefreshCw className={`h-4 w-4 mr-2 ${isFetching ? "animate-spin" : ""}`} />
               Refresh
-            </Button>
-          </div>
+            </Button>          </div>
           {isError && (
             <div className="flex items-center gap-2 text-destructive mb-4 text-sm">
               <WifiOff className="h-4 w-4" />

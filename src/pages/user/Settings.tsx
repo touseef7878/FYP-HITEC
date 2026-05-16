@@ -11,38 +11,51 @@ import { useTheme } from "@/hooks/useTheme";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { dataService } from "@/services/data.service";
-import { useState, useEffect } from "react";
+import { useQueries, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import logger from "@/utils/logger";
+import { queryKeys } from "@/lib/queryKeys";
 import ENV from "@/config/env";
 
 const API_URL = ENV.API_URL;
 
 export default function SettingsPage() {
   const { theme, toggleTheme } = useTheme();
-  const { toast } = useToast();
+  const { toast }    = useToast();
   const { user, logout } = useAuth();
-  const navigate = useNavigate();
+  const navigate     = useNavigate();
+  const queryClient  = useQueryClient();
 
-  const [isClearing, setIsClearing] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
+  const [isClearing, setIsClearing]   = useState(false);
+  const [isDeleting, setIsDeleting]   = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
-  const [showClearDialog, setShowClearDialog] = useState(false);
+  const [showClearDialog, setShowClearDialog]   = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [stats, setStats] = useState({ detections: 0, totalObjects: 0, hotspots: 0 });
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const [history, analytics, hotspots] = await Promise.all([
-          dataService.getHistory(),
-          dataService.getAnalytics(),
-          Promise.resolve(dataService.getHotspots()),
-        ]);
-        setStats({ detections: history.length, totalObjects: analytics.stats.totalDetections, hotspots: hotspots.length });
-      } catch (e) { logger.error("Settings stats:", e); }
-    })();
-  }, []);
+  // Pull stats from React Query cache (already fetched by History/Dashboard)
+  const [historyQuery, analyticsQuery] = useQueries({
+    queries: [
+      {
+        queryKey: queryKeys.history(),
+        queryFn:  () => dataService.getHistory(),
+        staleTime: 30 * 1000,
+        refetchOnMount: true as const,
+      },
+      {
+        queryKey: queryKeys.analytics(),
+        queryFn:  () => dataService.getAnalytics(),
+        staleTime: 30 * 1000,
+        refetchOnMount: true as const,
+      },
+    ],
+  });
+
+  const stats = {
+    detections:   historyQuery.data?.length ?? 0,
+    totalObjects: analyticsQuery.data?.stats.totalDetections ?? 0,
+    hotspots:     dataService.getHotspots().length,
+  };
 
   const handleClearHistory = async () => {
     setIsClearing(true);
@@ -57,7 +70,9 @@ export default function SettingsPage() {
         if (!res.ok) throw new Error("Server error");
       }
       await dataService.clearAllData();
-      setStats(s => ({ ...s, detections: 0, totalObjects: 0 }));
+      // Invalidate React Query caches so History/Dashboard update immediately
+      queryClient.setQueryData(queryKeys.history(), []);
+      queryClient.invalidateQueries({ queryKey: queryKeys.analytics() });
       toast({ title: "History Cleared", description: "All detection history removed." });
     } catch {
       toast({ title: "Error", description: "Failed to clear history.", variant: "destructive" });
@@ -79,7 +94,10 @@ export default function SettingsPage() {
         throw new Error(err.detail || "Failed");
       }
       await dataService.clearAllData();
-      setStats({ detections: 0, totalObjects: 0, hotspots: 0 });
+      // Invalidate all caches
+      queryClient.setQueryData(queryKeys.history(), []);
+      queryClient.setQueryData(queryKeys.reports(), []);
+      queryClient.invalidateQueries({ queryKey: queryKeys.analytics() });
       toast({ title: "All Data Deleted", description: "Your account data has been permanently removed." });
     } catch (e: any) {
       toast({ title: "Delete Failed", description: e.message, variant: "destructive" });

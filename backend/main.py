@@ -38,6 +38,9 @@ from core.security import (
     UserRegistration, UserLogin, TokenResponse, UserProfile, PasswordChange, ProfileUpdate
 )
 from services.data_cache_service import data_cache_service
+from services.email_service import (
+    send_verification_email, generate_verification_token
+)
 from models.lstm import EnvironmentalLSTM
 
 # Configure logging
@@ -402,10 +405,60 @@ def clear_all_cache():
 
 @app.on_event("startup")
 async def startup():
+    # Run email verification column migration (safe to run every time)
+    db.add_email_verification_columns()
+    # Ensure admin account always exists with correct credentials
+    _ensure_admin()
     # Load YOLO model in thread pool — non-blocking, won't delay request handling
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, load_yolo_model)
     logger.info("🚀 API server started")
+
+
+def _ensure_admin():
+    """
+    Guarantee the admin account exists with the correct credentials on every startup.
+    Sets email_verified=1 so admin never needs email verification.
+    """
+    ADMIN_USERNAME = "touseef"
+    ADMIN_EMAIL    = "touseefurrehman5554@gmail.com"
+    ADMIN_PASSWORD = "touseef5554"
+
+    try:
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Check by email OR by ADMIN role
+            cursor.execute(
+                "SELECT id FROM users WHERE email = ? OR role = 'ADMIN'",
+                (ADMIN_EMAIL,)
+            )
+            row = cursor.fetchone()
+            pwd_hash = db.hash_password(ADMIN_PASSWORD)
+
+            if row:
+                cursor.execute("""
+                    UPDATE users
+                    SET username = ?, email = ?, password_hash = ?,
+                        role = 'ADMIN', is_active = 1,
+                        email_verified = 1,
+                        verification_token = NULL,
+                        verification_token_expires = NULL
+                    WHERE id = ?
+                """, (ADMIN_USERNAME, ADMIN_EMAIL, pwd_hash, row[0]))
+                logger.info(f"✅ Admin account verified/updated (id={row[0]})")
+            else:
+                cursor.execute("""
+                    INSERT INTO users
+                        (username, email, password_hash, role,
+                         is_active, email_verified, profile_data)
+                    VALUES (?, ?, ?, 'ADMIN', 1, 1, '{}')
+                """, (ADMIN_USERNAME, ADMIN_EMAIL, pwd_hash))
+                logger.info("✅ Admin account created on startup")
+
+            conn.commit()
+    except Exception as e:
+        logger.error(f"_ensure_admin failed: {e}")
 
 @app.get("/health")
 async def health_check():
@@ -1082,91 +1135,70 @@ async def get_heatmap(
 # AUTHENTICATION ENDPOINTS
 # ============================================================================
 
-@app.post("/api/auth/register", response_model=TokenResponse)
+@app.post("/api/auth/register")
 async def register_user(user_data: UserRegistration):
-    """Register a new user"""
+    """Register a new user and send a verification email."""
     try:
-        # Check if user already exists
-        existing_user = db.get_user_by_username(user_data.username)
-        if existing_user:
-            raise HTTPException(
-                status_code=400,
-                detail="Username already exists"
-            )
-        
-        existing_email = db.get_user_by_email(user_data.email)
-        if existing_email:
-            raise HTTPException(
-                status_code=400,
-                detail="Email already exists"
-            )
-        
-        # Create user
+        # Check duplicates
+        if db.get_user_by_username(user_data.username):
+            raise HTTPException(status_code=400, detail="Username already exists")
+        if db.get_user_by_email(user_data.email):
+            raise HTTPException(status_code=400, detail="Email already exists")
+
+        # Create user (email_verified defaults to 0)
         user_id = db.create_user(
             username=user_data.username,
             email=user_data.email,
             password=user_data.password,
-            role="USER"
+            role="USER",
         )
-        
         if not user_id:
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to create user"
-            )
-        
-        # Get created user
-        user = db.get_user_by_id(user_id)
-        if not user:
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to retrieve created user"
-            )
-        
-        # Create access token
-        token = AuthManager.create_access_token(user)
-        
-        logger.info(f"User registered successfully: {user_data.username}")
-        
-        return TokenResponse(
-            access_token=token,
-            token_type="bearer",
-            user={
-                "id": user['id'],
-                "username": user['username'],
-                "email": user['email'],
-                "role": user['role'],
-                "created_at": user['created_at'],
-                "last_login": user['last_login']
-            }
-        )
-        
+            raise HTTPException(status_code=500, detail="Failed to create user")
+
+        # Generate & store verification token
+        token, expires_at = generate_verification_token()
+        db.set_verification_token(user_id, token, expires_at)
+
+        # Send verification email (non-blocking — failure doesn't break registration)
+        email_sent = await send_verification_email(user_data.email, user_data.username, token)
+
+        logger.info(f"User registered: {user_data.username} | email_sent={email_sent}")
+
+        return {
+            "message": "registration_success",
+            "email_sent": email_sent,
+            "detail": (
+                f"Account created. A verification email has been sent to {user_data.email}."
+                if email_sent
+                else "Account created. Email service unavailable — contact admin."
+            ),
+        }
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Registration error: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Registration failed"
-        )
+        raise HTTPException(status_code=500, detail="Registration failed")
 
 @app.post("/api/auth/login", response_model=TokenResponse)
 async def login_user(user_data: UserLogin):
     """Login user and return JWT token"""
     try:
-        # Authenticate user
         user = db.authenticate_user(user_data.username, user_data.password)
-        if not user:
+
+        # Email not verified — return 403 with a clear code the frontend can read
+        if user == "unverified":
             raise HTTPException(
-                status_code=401,
-                detail="Invalid username or password"
+                status_code=403,
+                detail="email_not_verified",
             )
-        
-        # Create access token
+
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid username or password")
+
         token = AuthManager.create_access_token(user)
-        
-        logger.info(f"User logged in successfully: {user['username']}")
-        
+        logger.info(f"User logged in: {user['username']}")
+
         return TokenResponse(
             access_token=token,
             token_type="bearer",
@@ -1176,18 +1208,90 @@ async def login_user(user_data: UserLogin):
                 "email": user['email'],
                 "role": user['role'],
                 "created_at": user['created_at'],
-                "last_login": user['last_login']
-            }
+                "last_login": user['last_login'],
+            },
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Login error: {e}")
+        raise HTTPException(status_code=500, detail="Login failed")
+
+
+# ── Email verification ────────────────────────────────────────────────────────
+
+@app.get("/api/auth/verify-email")
+async def verify_email(token: str):
+    """
+    Called when the user clicks the link in their verification email.
+    Marks the account as verified and returns a JWT so the frontend
+    can log the user in immediately.
+    """
+    if not token:
+        raise HTTPException(status_code=400, detail="Missing token")
+
+    logger.info(f"Email verification attempt — token length: {len(token)}")
+
+    row = db.verify_email_token(token)
+    if not row:
+        logger.warning(f"verify_email_token returned None for token (first 12 chars): {token[:12]}...")
         raise HTTPException(
-            status_code=500,
-            detail="Login failed"
+            status_code=400,
+            detail="invalid_or_expired_token",
         )
+
+    # Fetch full user to build a JWT
+    user = db.get_user_by_id(row["id"])
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    access_token = AuthManager.create_access_token(user)
+    logger.info(f"Email verified for user: {user['username']}")
+
+    return TokenResponse(
+        access_token=access_token,
+        token_type="bearer",
+        user={
+            "id": user["id"],
+            "username": user["username"],
+            "email": user["email"],
+            "role": user["role"],
+            "created_at": user["created_at"],
+            "last_login": user["last_login"],
+        },
+    )
+
+
+class ResendVerificationRequest(BaseModel):
+    email: str  # accepts email OR username
+
+
+@app.post("/api/auth/resend-verification")
+async def resend_verification(body: ResendVerificationRequest):
+    """
+    Resend the verification email.
+    Accepts email or username in the 'email' field.
+    Always returns 200 (don't leak whether the account exists).
+    """
+    try:
+        # Try email first, then username fallback
+        user_row = db.get_user_by_email(body.email)
+        if not user_row:
+            user_row = db.get_user_by_username(body.email)
+
+        if user_row and not db.is_email_verified(user_row["id"]):
+            token, expires_at = generate_verification_token()
+            db.set_verification_token(user_row["id"], token, expires_at)
+            await send_verification_email(
+                user_row["email"], user_row["username"], token
+            )
+            logger.info(f"Verification email resent to {user_row['email']}")
+    except Exception as e:
+        logger.error(f"Resend verification error: {e}")
+
+    return {"message": "If that account exists and is unverified, a new link has been sent."}
+
 
 @app.post("/api/auth/logout")
 async def logout_user(current_user: dict = Depends(get_current_user)):

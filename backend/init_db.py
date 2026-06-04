@@ -43,7 +43,10 @@ def init_database():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 last_login TIMESTAMP,
                 is_active BOOLEAN DEFAULT 1,
-                profile_data TEXT -- JSON data for user preferences
+                profile_data TEXT,
+                email_verified BOOLEAN DEFAULT 0,
+                verification_token VARCHAR(128),
+                verification_token_expires TIMESTAMP
             )
         """)
         
@@ -247,22 +250,49 @@ def init_database():
         
         logger.info(f"✅ Created {len(indexes)} database indexes for optimal performance")
         
-        # Create default admin account
-        logger.info("🔧 Creating default admin account...")
-        
-        admin_password = "admin123"  # Change this in production!
-        admin_password_hash = db_manager.hash_password(admin_password)
-        
-        cursor.execute("""
-            INSERT OR IGNORE INTO users (username, email, password_hash, role, profile_data)
-            VALUES (?, ?, ?, ?, ?)
-        """, (
-            "admin",
-            "admin@marinedetection.local",
-            admin_password_hash,
-            "ADMIN",
-            '{"theme": "light", "notifications": true, "language": "en"}'
-        ))
+        # Create default admin account — always upsert with correct credentials
+        logger.info("🔧 Creating admin account...")
+
+        # Migration: add email verification columns if they don't exist yet
+        cursor.execute("PRAGMA table_info(users)")
+        existing_cols = {row[1] for row in cursor.fetchall()}
+        if 'email_verified' not in existing_cols:
+            cursor.execute("ALTER TABLE users ADD COLUMN email_verified BOOLEAN DEFAULT 0")
+        if 'verification_token' not in existing_cols:
+            cursor.execute("ALTER TABLE users ADD COLUMN verification_token VARCHAR(128)")
+        if 'verification_token_expires' not in existing_cols:
+            cursor.execute("ALTER TABLE users ADD COLUMN verification_token_expires TIMESTAMP")
+        conn.commit()
+        logger.info("✅ Email verification columns ready")
+
+        admin_username = "touseef"
+        admin_email    = "touseefurrehman5554@gmail.com"
+        admin_password = "touseef5554"
+        admin_hash     = db_manager.hash_password(admin_password)
+
+        # Check if admin already exists by email
+        cursor.execute("SELECT id FROM users WHERE email = ? OR role = 'ADMIN'", (admin_email,))
+        existing = cursor.fetchone()
+
+        if existing:
+            # Update credentials to make sure they are always correct
+            cursor.execute("""
+                UPDATE users
+                SET username = ?, email = ?, password_hash = ?,
+                    role = 'ADMIN', is_active = 1, email_verified = 1
+                WHERE id = ?
+            """, (admin_username, admin_email, admin_hash, existing[0]))
+            logger.info(f"✅ Admin account updated (id={existing[0]})")
+        else:
+            cursor.execute("""
+                INSERT INTO users
+                    (username, email, password_hash, role, is_active, email_verified, profile_data)
+                VALUES (?, ?, ?, 'ADMIN', 1, 1, ?)
+            """, (
+                admin_username, admin_email, admin_hash,
+                '{"theme": "light", "notifications": true, "language": "en"}'
+            ))
+            logger.info("✅ Admin account created")
         
         # Commit changes
         conn.commit()
@@ -278,9 +308,11 @@ def init_database():
             count = cursor.fetchone()[0]
             logger.info(f"   - {table[0]}: {count} records")
         
-        logger.info("🔑 Default account created:")
-        logger.info(f"   - Admin: username='admin', password='{admin_password}'")
-        logger.info("⚠️  IMPORTANT: Change the admin password before deploying to production!")
+        logger.info("🔑 Admin account:")
+        logger.info(f"   - username: touseef")
+        logger.info(f"   - email:    touseefurrehman5554@gmail.com")
+        logger.info(f"   - password: touseef5554")
+        logger.info(f"   - verified: yes (no email verification required)")
         
         return True
         

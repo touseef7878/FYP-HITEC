@@ -110,3 +110,8 @@ desktop.ini
 *.temp
 .cache/
 .temp/
+
+# ── Thesis / personal scripts (do not push) ───────────────────────────────────
+thesis.py
+thesis_*.py
+*_thesis.py

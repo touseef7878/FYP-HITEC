@@ -20,8 +20,8 @@ interface AuthContextType {
   isLoading: boolean;
   isAuthenticated: boolean;
   isAdmin: boolean;
-  login: (username: string, password: string) => Promise<boolean>;
-  register: (username: string, email: string, password: string) => Promise<boolean>;
+  login: (username: string, password: string) => Promise<boolean | 'unverified'>;
+  register: (username: string, email: string, password: string) => Promise<boolean | 'pending_verification'>;
   logout: () => void;
   updateProfile: (profileData: Record<string, any>) => Promise<boolean>;
   refreshUser: () => Promise<void>;
@@ -85,17 +85,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // intentionally empty — runs once on mount only
 
-  const login = async (username: string, password: string): Promise<boolean> => {
+  const login = async (username: string, password: string): Promise<boolean | 'unverified'> => {
     try {
-      setIsLoading(true);
-      
       const response = await fetch(`${API_URL}/api/auth/login`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
       });
+
+      if (response.status === 403) {
+        const error = await response.json();
+        if (error.detail === 'email_not_verified') return 'unverified';
+      }
 
       if (!response.ok) {
         const error = await response.json();
@@ -103,41 +104,29 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
 
       const data = await response.json();
-      
-      // Store auth data
       setToken(data.access_token);
       setUser(data.user);
       localStorage.setItem('auth_token', data.access_token);
       localStorage.setItem('auth_user', JSON.stringify(data.user));
 
-      toast({
-        title: "Welcome back!",
-        description: `Logged in as ${data.user.username}`,
-      });
-
+      toast({ title: 'Welcome back!', description: `Logged in as ${data.user.username}` });
       return true;
     } catch (error) {
       logger.error('Login failed:', error);
       toast({
-        title: "Login failed",
-        description: error instanceof Error ? error.message : "Please check your credentials",
-        variant: "destructive",
+        title: 'Login failed',
+        description: error instanceof Error ? error.message : 'Please check your credentials',
+        variant: 'destructive',
       });
       return false;
-    } finally {
-      setIsLoading(false);
     }
   };
 
-  const register = async (username: string, email: string, password: string): Promise<boolean> => {
+  const register = async (username: string, email: string, password: string): Promise<boolean | 'pending_verification'> => {
     try {
-      setIsLoading(true);
-      
       const response = await fetch(`${API_URL}/api/auth/register`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, email, password }),
       });
 
@@ -147,29 +136,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
 
       const data = await response.json();
-      
-      // Store auth data
-      setToken(data.access_token);
-      setUser(data.user);
-      localStorage.setItem('auth_token', data.access_token);
-      localStorage.setItem('auth_user', JSON.stringify(data.user));
-
-      toast({
-        title: "Welcome!",
-        description: `Account created successfully for ${data.user.username}`,
-      });
-
+      if (data.message === 'registration_success') return 'pending_verification';
       return true;
     } catch (error) {
       logger.error('Registration failed:', error);
       toast({
-        title: "Registration failed",
-        description: error instanceof Error ? error.message : "Please try again",
-        variant: "destructive",
+        title: 'Registration failed',
+        description: error instanceof Error ? error.message : 'Please try again',
+        variant: 'destructive',
       });
       return false;
-    } finally {
-      setIsLoading(false);
     }
   };
 

@@ -165,13 +165,18 @@ class DatabaseManager:
                 cursor = conn.cursor()
                 cursor.execute("""
                     SELECT id, username, email, password_hash, role, is_active, 
-                           created_at, last_login, profile_data
+                           created_at, last_login, profile_data,
+                           COALESCE(email_verified, 0) as email_verified
                     FROM users WHERE username = ? OR email = ?
                 """, (username, username))
                 
                 user = cursor.fetchone()
                 
                 if user and user['is_active'] and self.verify_password(password, user['password_hash']):
+                    # Block login if email not verified
+                    if not user['email_verified']:
+                        logger.warning(f"Login blocked — email not verified for user: {user['username']}")
+                        return "unverified"
                     # Update last login
                     cursor.execute("""
                         UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?
@@ -943,6 +948,94 @@ class DatabaseManager:
     
     # get_all_users, deactivate_user defined later with correct signatures
     
+    # ==================== EMAIL VERIFICATION ====================
+
+    def add_email_verification_columns(self) -> None:
+        """Migrate: add email verification columns if they don't exist yet."""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                # SQLite doesn't support IF NOT EXISTS on ALTER TABLE — check first
+                cursor.execute("PRAGMA table_info(users)")
+                cols = {row[1] for row in cursor.fetchall()}
+                if 'email_verified' not in cols:
+                    cursor.execute("ALTER TABLE users ADD COLUMN email_verified BOOLEAN DEFAULT 0")
+                if 'verification_token' not in cols:
+                    cursor.execute("ALTER TABLE users ADD COLUMN verification_token VARCHAR(128)")
+                if 'verification_token_expires' not in cols:
+                    cursor.execute("ALTER TABLE users ADD COLUMN verification_token_expires TIMESTAMP")
+                conn.commit()
+                logger.info("✅ Email verification columns ready")
+        except Exception as e:
+            logger.error(f"Email verification migration failed: {e}")
+
+    def set_verification_token(self, user_id: int, token: str, expires_at: datetime) -> bool:
+        """Store a verification token for a user."""
+        try:
+            with self.get_connection() as conn:
+                conn.cursor().execute(
+                    "UPDATE users SET verification_token=?, verification_token_expires=? WHERE id=?",
+                    (token, expires_at, user_id)
+                )
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"set_verification_token failed: {e}")
+            return False
+
+    def verify_email_token(self, token: str) -> Optional[Dict]:
+        """
+        Validate token, mark user as verified, clear the token.
+        Returns the user dict on success, None on failure/expiry.
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT id, username, email, verification_token_expires, email_verified "
+                    "FROM users WHERE verification_token=?",
+                    (token,)
+                )
+                row = cursor.fetchone()
+                if not row:
+                    return None
+
+                row_dict = dict(row)
+
+                if row_dict['email_verified']:
+                    # Already verified — return user so frontend can still log them in
+                    return row_dict
+
+                expires = row_dict['verification_token_expires']
+                if expires and datetime.fromisoformat(str(expires)) < datetime.utcnow():
+                    return None  # expired
+
+                # Mark as verified and clear the token
+                cursor.execute(
+                    "UPDATE users SET email_verified=1, verification_token=NULL, "
+                    "verification_token_expires=NULL WHERE id=?",
+                    (row_dict['id'],)
+                )
+                # Explicit commit inside the with block (pool also commits on exit — harmless)
+                conn.commit()
+                logger.info(f"Email verified for user id={row_dict['id']}")
+                return row_dict
+        except Exception as e:
+            logger.error(f"verify_email_token failed: {e}")
+            return None
+
+    def is_email_verified(self, user_id: int) -> bool:
+        """Return True if the user's email is verified."""
+        try:
+            with self.get_connection() as conn:
+                row = conn.cursor().execute(
+                    "SELECT email_verified FROM users WHERE id=?", (user_id,)
+                ).fetchone()
+                return bool(row['email_verified']) if row else False
+        except Exception as e:
+            logger.error(f"is_email_verified failed: {e}")
+            return False
+
     def get_user_by_username(self, username: str) -> Optional[Dict]:
         """Get user by username"""
         try:

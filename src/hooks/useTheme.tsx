@@ -11,31 +11,27 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
+  // Only stores the user's preference — does NOT apply it to <html>.
+  // The actual class application is handled by ThemeApplier in App.tsx,
+  // which gates dark mode behind authentication.
   const [theme, setThemeState] = useState<Theme>(() => {
     if (typeof window !== "undefined") {
       const stored = localStorage.getItem("theme") as Theme;
-      if (stored) return stored;
-      return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      if (stored === "dark" || stored === "light") return stored;
     }
     return "light";
   });
 
-  useEffect(() => {
-    const root = window.document.documentElement;
-    // Add transition class before switching, remove after
-    root.classList.add("theme-transition");
-    root.classList.remove("light", "dark");
-    root.classList.add(theme);
-    localStorage.setItem("theme", theme);
-    const t = setTimeout(() => root.classList.remove("theme-transition"), 300);
-    return () => clearTimeout(t);
-  }, [theme]);
-
   const toggleTheme = () => {
-    setThemeState((prev) => (prev === "light" ? "dark" : "light"));
+    setThemeState((prev) => {
+      const next = prev === "light" ? "dark" : "light";
+      localStorage.setItem("theme", next);
+      return next;
+    });
   };
 
   const setTheme = (newTheme: Theme) => {
+    localStorage.setItem("theme", newTheme);
     setThemeState(newTheme);
   };
 

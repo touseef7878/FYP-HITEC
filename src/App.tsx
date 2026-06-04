@@ -4,11 +4,11 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { ThemeProvider } from "@/hooks/useTheme";
+import { ThemeProvider, useTheme } from "@/hooks/useTheme";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { OceanAssistant } from "@/components/features/assistant/OceanAssistant";
-import { Suspense, lazy, useRef, memo } from "react";
+import { Suspense, lazy, useRef, memo, useEffect } from "react";
 
 // Lazy load pages
 const HomePage        = lazy(() => import("@/pages/Home"));
@@ -26,6 +26,7 @@ const AdminUsers      = lazy(() => import("@/pages/admin/Users"));
 const AdminSettings   = lazy(() => import("@/pages/admin/Settings"));
 const PrivacyPolicy   = lazy(() => import("@/pages/PrivacyPolicy"));
 const AuthPage        = lazy(() => import("@/pages/Auth"));
+const VerifyEmailPage = lazy(() => import("@/pages/VerifyEmail"));
 const NotFound        = lazy(() => import("@/pages/NotFound"));
 
 const queryClient = new QueryClient({
@@ -127,7 +128,33 @@ const PageTransitionWrapper = memo(({
 });
 PageTransitionWrapper.displayName = 'PageTransitionWrapper';
 
-// ── Routes ────────────────────────────────────────────────────────────────
+// ── Theme applier ─────────────────────────────────────────────────────────
+/**
+ * Applies the dark/light class to <html> ONLY when the user is authenticated.
+ * Public pages (login, register, home, privacy) always render in light mode.
+ * Must live inside both ThemeProvider and AuthProvider.
+ */
+const ThemeApplier = () => {
+  const { theme } = useTheme();
+  const { isAuthenticated } = useAuth();
+
+  useEffect(() => {
+    const root = window.document.documentElement;
+    root.classList.add("theme-transition");
+    root.classList.remove("light", "dark");
+
+    // Only honour the user's dark preference when they are logged in
+    const effectiveTheme = isAuthenticated ? theme : "light";
+    root.classList.add(effectiveTheme);
+
+    const t = setTimeout(() => root.classList.remove("theme-transition"), 300);
+    return () => clearTimeout(t);
+  }, [theme, isAuthenticated]);
+
+  return null;
+};
+
+
 const AppRoutes = () => {
   const { isAuthenticated, isAdmin } = useAuth();
   const location = useLocation();
@@ -161,6 +188,7 @@ const AppRoutes = () => {
         <Route path="/admin/settings" element={<ProtectedRoute requireAdmin><PageTransitionWrapper routeKey={key}><AdminSettings /></PageTransitionWrapper></ProtectedRoute>} />
 
         <Route path="/privacy" element={<PageTransitionWrapper routeKey={key}><PrivacyPolicy /></PageTransitionWrapper>} />
+        <Route path="/verify-email" element={<PageTransitionWrapper routeKey={key}><VerifyEmailPage /></PageTransitionWrapper>} />
         <Route path="*"        element={<PageTransitionWrapper routeKey={key}><NotFound /></PageTransitionWrapper>} />
 
       </Routes>
@@ -184,6 +212,7 @@ const App = () => (
         <Sonner />
         <BrowserRouter>
           <AuthProvider>
+            <ThemeApplier />
             <AppRoutes />
             <AssistantGate />
           </AuthProvider>

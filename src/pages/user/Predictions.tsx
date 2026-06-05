@@ -70,26 +70,64 @@ function formatCountdown(s: number) {
   return `${m}m ${(s % 60).toString().padStart(2, '0')}s`;
 }
 
+// ── Persistence helpers ───────────────────────────────────────────────────────
+// Prediction results survive navigation via sessionStorage.
+// Cleared only when the user explicitly clicks "Predict X Days".
+
+const CACHE_KEY = 'predictions_cache';
+
+interface PredCache {
+  region:      string;
+  daysAhead:   string;
+  predictions: Prediction[];
+  predSummary: any;
+  savedCount:  number | null;
+  savedAt:     number;          // Date.now() — for optional TTL in future
+}
+
+function saveCache(data: PredCache) {
+  try { sessionStorage.setItem(CACHE_KEY, JSON.stringify(data)); } catch {}
+}
+
+function loadCache(): PredCache | null {
+  try {
+    const raw = sessionStorage.getItem(CACHE_KEY);
+    return raw ? (JSON.parse(raw) as PredCache) : null;
+  } catch { return null; }
+}
+
+function clearCache() {
+  try { sessionStorage.removeItem(CACHE_KEY); } catch {}
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function PredictionsPage() {
   const { toast } = useToast();
   const { token } = useAuth();
 
-  const [selectedRegion, setSelectedRegion] = useState('pacific');
+  const [selectedRegion, setSelectedRegion] = useState(() => loadCache()?.region      ?? 'pacific');
   const [epochs,         setEpochs]         = useState([50]);
-  const [daysAhead,      setDaysAhead]       = useState('7');
+  const [daysAhead,      setDaysAhead]       = useState(() => loadCache()?.daysAhead   ?? '7');
 
   const [statuses,    setStatuses]    = useState<Record<string, RegionStatus>>({});
-  const [predictions, setPredictions] = useState<Prediction[] | null>(null);
-  const [predSummary, setPredSummary] = useState<any>(null);
+  const [predictions, setPredictions] = useState<Prediction[] | null>(() => loadCache()?.predictions ?? null);
+  const [predSummary, setPredSummary] = useState<any>(()         => loadCache()?.predSummary ?? null);
   const [apiHealth,   setApiHealth]   = useState<ApiHealth | null>(null);
 
   const [fetching,    setFetching]    = useState(false);
   const [training,    setTraining]    = useState(false);
   const [predicting,  setPredicting]  = useState(false);
   const [saving,      setSaving]      = useState(false);
-  const [savedCount,  setSavedCount]  = useState<number | null>(null);
+  const [savedCount,  setSavedCount]  = useState<number | null>(() => loadCache()?.savedCount ?? null);
   const [loadingHealth, setLoadingHealth] = useState(false);
+
+  // Persist predictions to sessionStorage whenever they change
+  useEffect(() => {
+    if (predictions && predictions.length > 0) {
+      saveCache({ region: selectedRegion, daysAhead, predictions, predSummary, savedCount, savedAt: Date.now() });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [predictions, predSummary, savedCount]);
 
   // Countdown timer
   const [countdown, setCountdown] = useState(0);
@@ -211,6 +249,7 @@ export default function PredictionsPage() {
   // ── Step 3: Predict ───────────────────────────────────────────────────────
   const handlePredict = async () => {
     setPredicting(true);
+    clearCache();                  // clear old cache — new prediction starting
     setPredictions(null);
     setSavedCount(null);
     try {
@@ -386,7 +425,24 @@ export default function PredictionsPage() {
                 <Card
                   key={r.id}
                   className={`glass-card cursor-pointer transition-all hover-lift ${active ? 'ring-2 ring-primary shadow-glow' : ''}`}
-                  onClick={() => { setSelectedRegion(r.id); setPredictions(null); }}
+                  onClick={() => {
+                    if (r.id !== selectedRegion) {
+                      setSelectedRegion(r.id);
+                      // Only clear predictions if switching to a region with no cached data
+                      const cached = loadCache();
+                      if (!cached || cached.region !== r.id) {
+                        setPredictions(null);
+                        setPredSummary(null);
+                        setSavedCount(null);
+                      } else {
+                        // Restore cached predictions for this region
+                        setPredictions(cached.predictions);
+                        setPredSummary(cached.predSummary);
+                        setSavedCount(cached.savedCount);
+                        setDaysAhead(cached.daysAhead);
+                      }
+                    }
+                  }}
                 >
                   <CardContent className="p-3 sm:p-4">
                     <div className="flex items-start justify-between mb-2">

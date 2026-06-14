@@ -41,7 +41,7 @@ from services.data_cache_service import data_cache_service
 from services.email_service import (
     send_verification_email, generate_verification_token
 )
-from models.lstm import EnvironmentalLSTM
+from models.lstm import EnvironmentalLSTM, EnvironmentalGRU
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -179,13 +179,16 @@ class DataFetchRequest(BaseModel):
 class TrainingRequest(BaseModel):
     region: str
     epochs: int = 50
+    model_type: str = "lstm"   # "lstm" | "gru" | "both"
 
 class PredictionRequest(BaseModel):
     region: str
     days_ahead: int = 7
+    model_type: str = "lstm"   # "lstm" | "gru" | "both"
 
-# Initialize LSTM model
+# Initialize models
 lstm_model = EnvironmentalLSTM()
+gru_model  = EnvironmentalGRU()
 
 # Thread pool for CPU-bound tasks (video processing, LSTM training)
 # Use more workers so multiple uploads can be processed concurrently
@@ -652,138 +655,127 @@ async def get_data_status(region: str):
 # TRAINING ENDPOINTS (USES CACHED DATA ONLY)
 # ============================================================================
 
+async def _collect_training_data(region: str) -> tuple:
+    """Shared helper — collect + combine data for all regions."""
+    all_training_data = []
+    data_sources      = {}
+
+    for r in data_cache_service.regions:
+        if data_cache_service.dataset_exists(r):
+            region_df       = data_cache_service.load_cached_dataset(r)
+            data_sources[r] = "real_cached_data"
+        else:
+            region_df = await generate_synthetic_training_data(r, days=730)
+            if not region_df.empty:
+                region_df.to_csv(data_cache_service.get_dataset_path(r), index=False)
+            data_sources[r] = "synthetic_data"
+
+        if not region_df.empty:
+            region_df["region"] = r
+            all_training_data.append(region_df)
+
+    combined_df = pd.concat(all_training_data, ignore_index=True) if all_training_data else pd.DataFrame()
+    return combined_df, data_sources
+
+
 @app.post("/api/train")
-async def train_lstm_model(request: TrainingRequest):
+async def train_model(request: TrainingRequest):
     """
-    Train LSTM model using cached real data + synthetic data for empty regions
-    Uses real data where available, synthetic data for regions without cached data
+    Train LSTM, GRU, or both models using cached/synthetic data.
+    model_type: "lstm" | "gru" | "both"
     """
     try:
-        logger.info(f"🎯 Training request for {request.region} with {request.epochs} epochs")
-        
-        # Validate region
         if request.region not in data_cache_service.regions:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid region: {request.region}. Valid regions: {data_cache_service.regions}"
-            )
-        
-        # Validate epochs
+            raise HTTPException(status_code=400, detail=f"Invalid region: {request.region}")
         if not 10 <= request.epochs <= 200:
-            raise HTTPException(
-                status_code=400,
-                detail="Epochs must be between 10 and 200"
-            )
-        
-        # Collect training data from ALL regions
-        logger.info("🌍 Collecting training data from all regions...")
-        all_training_data = []
-        data_sources = {}
-        
-        for region in data_cache_service.regions:
-            logger.info(f"Processing region: {region}")
-            
-            if data_cache_service.dataset_exists(region):
-                # Use cached real data
-                logger.info(f"✅ Using cached real data for {region}")
-                region_df = data_cache_service.load_cached_dataset(region)
-                data_sources[region] = "real_cached_data"
-            else:
-                # Generate synthetic data
-                logger.info(f"🔄 Generating synthetic data for {region}")
-                region_df = await generate_synthetic_training_data(region, days=730)
-                
-                if not region_df.empty:
-                    # Save synthetic data to cache for future use
-                    dataset_path = data_cache_service.get_dataset_path(region)
-                    region_df.to_csv(dataset_path, index=False)
-                    logger.info(f"💾 Saved synthetic data to cache for {region}")
-                
-                data_sources[region] = "synthetic_data"
-            
-            if not region_df.empty:
-                region_df['region'] = region
-                all_training_data.append(region_df)
-                logger.info(f"📊 Added {len(region_df)} records from {region}")
-        
-        if not all_training_data:
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to collect training data from any region"
-            )
-        
-        # Combine all regional data
-        import pandas as pd
-        combined_df = pd.concat(all_training_data, ignore_index=True)
-        logger.info(f"🔗 Combined training data: {len(combined_df)} total records from {len(all_training_data)} regions")
-        
-        # Train model in thread pool — non-blocking, won't freeze the API
-        logger.info(f"🧠 Training LSTM model using combined multi-region data (non-blocking)...")
+            raise HTTPException(status_code=400, detail="Epochs must be between 10 and 200")
+        if request.model_type not in ("lstm", "gru", "both"):
+            raise HTTPException(status_code=400, detail="model_type must be 'lstm', 'gru', or 'both'")
+
+        logger.info(f"🎯 Train {request.model_type.upper()} | {request.region} | {request.epochs} epochs")
+
+        combined_df, data_sources = await _collect_training_data(request.region)
+        if combined_df.empty:
+            raise HTTPException(status_code=500, detail="Failed to collect training data")
+
         loop = asyncio.get_event_loop()
-        training_result = await loop.run_in_executor(
-            None,
-            lambda: lstm_model.train_from_cached_data(
-                region=request.region,
-                cached_df=combined_df,
-                epochs=request.epochs
+        real_regions      = [r for r, s in data_sources.items() if s == "real_cached_data"]
+        synthetic_regions = [r for r, s in data_sources.items() if s == "synthetic_data"]
+        data_source_meta  = {
+            "data_source": "mixed_multi_region",
+            "regions_used": {"real_data": real_regions, "synthetic_data": synthetic_regions},
+        }
+
+        results = {}
+
+        if request.model_type in ("lstm", "both"):
+            r = await loop.run_in_executor(
+                None,
+                lambda: lstm_model.train_from_cached_data(
+                    region=request.region, cached_df=combined_df, epochs=request.epochs
+                ),
             )
-        )
-        
-        if training_result['success']:
-            # Determine overall data source
-            real_regions = [r for r, source in data_sources.items() if source == "real_cached_data"]
-            synthetic_regions = [r for r, source in data_sources.items() if source == "synthetic_data"]
-            
-            data_source_summary = f"{len(real_regions)} real + {len(synthetic_regions)} synthetic regions"
-            
-            return {
-                "success": True,
-                "message": "training_completed",
-                "region": request.region,
-                "training_result": {
-                    **training_result,
-                    "data_source": "mixed_multi_region",
-                    "data_type": f"Multi-region training: {data_source_summary}",
-                    "regions_used": {
-                        "real_data": real_regions,
-                        "synthetic_data": synthetic_regions
-                    }
-                },
-                "model_path": data_cache_service.get_model_path(request.region)
-            }
-        else:
-            raise HTTPException(status_code=500, detail="Training failed")
-            
+            results["lstm"] = {**r, **data_source_meta}
+
+        if request.model_type in ("gru", "both"):
+            r = await loop.run_in_executor(
+                None,
+                lambda: gru_model.train_from_cached_data(
+                    region=request.region, cached_df=combined_df, epochs=request.epochs
+                ),
+            )
+            results["gru"] = {**r, **data_source_meta}
+
+        primary_result = results.get(request.model_type) or list(results.values())[0]
+
+        return {
+            "success":         True,
+            "message":         "training_completed",
+            "region":          request.region,
+            "model_type":      request.model_type,
+            "training_result": primary_result,
+            "results":         results,
+            "model_path":      data_cache_service.get_model_path(request.region),
+        }
+
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in training endpoint: {e}")
+        logger.error(f"Train endpoint error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/api/train/status/{region}")
 async def get_training_status(region: str):
-    """Get training status for a specific region"""
+    """Training status for both LSTM and GRU for a region."""
     try:
         if region not in data_cache_service.regions:
             raise HTTPException(status_code=400, detail=f"Invalid region: {region}")
-        
-        model_info = lstm_model.get_model_info(region)
+
+        lstm_info    = lstm_model.get_model_info(region)
+        gru_info     = gru_model.get_model_info(region)
         dataset_info = data_cache_service.get_dataset_info(region)
-        
+
+        lstm_ready = lstm_info["status"] == "loaded" or lstm_info.get("model_exists", False)
+        gru_ready  = gru_info["status"]  == "loaded" or gru_info.get("model_exists",  False)
+
         return {
-            "success": True,
-            "region": region,
-            "model_info": model_info,
-            "dataset_available": dataset_info is not None,
-            "ready_for_training": dataset_info is not None,
-            "ready_for_prediction": model_info['status'] == 'loaded'
+            "success":              True,
+            "region":               region,
+            "dataset_available":    dataset_info is not None,
+            "ready_for_training":   dataset_info is not None,
+            "ready_for_prediction": lstm_ready or gru_ready,
+            "lstm": {"model_info": lstm_info, "ready": lstm_ready},
+            "gru":  {"model_info": gru_info,  "ready": gru_ready},
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting training status: {e}")
+        logger.error(f"Training status error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
 
 # ============================================================================
 # PREDICTION ENDPOINTS (USES CACHED DATA ONLY)
@@ -795,136 +787,150 @@ async def predict_pollution_trends(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Generate pollution predictions using ONLY cached data
-    NEVER calls external APIs
+    Generate predictions with LSTM, GRU, or both.
+    model_type: "lstm" | "gru" | "both"
+    Returns predictions + comparison metrics when model_type="both".
     """
     try:
         user_id = current_user['user_id']
-        logger.info(f"🔮 Prediction request for {request.region}, {request.days_ahead} days ahead by user {user_id}")
-        
-        # Validate region
-        if request.region not in data_cache_service.regions:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid region: {request.region}. Valid regions: {data_cache_service.regions}"
-            )
-        
-        # Validate prediction horizon
-        if not 1 <= request.days_ahead <= 90:
-            raise HTTPException(
-                status_code=400,
-                detail="Days ahead must be between 1 and 90"
-            )
-        
-        # Check if model exists for region
-        if not lstm_model.load_model(request.region):
-            raise HTTPException(
-                status_code=400,
-                detail=f"No trained model found for {request.region}. Please train model first using /api/train"
-            )
-        
-        # Load recent cached data for prediction context
-        if not data_cache_service.dataset_exists(request.region):
-            raise HTTPException(
-                status_code=400,
-                detail=f"No cached dataset found for {request.region}. Cannot generate predictions."
-            )
-        
-        cached_df = data_cache_service.load_cached_dataset(request.region)
-        recent_df = cached_df.tail(60)  # Use last 60 days as context
-        
-        # Generate predictions using cached data only
-        prediction_result = lstm_model.predict_from_cached_data(
-            region=request.region,
-            recent_df=recent_df,
-            days_ahead=request.days_ahead
-        )
-        
-        if prediction_result['success']:
-            # Add additional analysis
-            predictions = prediction_result['predictions']
-            current_level = cached_df['pollution_level'].iloc[-1] if 'pollution_level' in cached_df.columns else 50
-            predicted_level = predictions[-1]['pollution_level'] if predictions else current_level
-            
-            # Calculate trend
-            trend_change = ((predicted_level - current_level) / current_level) * 100
-            
-            # Determine risk level
-            avg_predicted = np.mean([p['pollution_level'] for p in predictions])
-            if avg_predicted < 30:
-                risk_level = "Low"
-            elif avg_predicted < 60:
-                risk_level = "Moderate"
-            elif avg_predicted < 80:
-                risk_level = "High"
-            else:
-                risk_level = "Critical"
-            
-            # Save predictions to database for report generation + heatmap
-            saved_count = 0
-            # Snapshot of the most recent environmental context
-            input_features = {
-                'temperature': float(recent_df['temperature'].iloc[-1]) if 'temperature' in recent_df.columns else 0,
-                'humidity':    float(recent_df['humidity'].iloc[-1])    if 'humidity'    in recent_df.columns else 0,
-                'aqi':         float(recent_df['aqi'].iloc[-1])         if 'aqi'         in recent_df.columns else 0,
-                'wind_speed':  float(recent_df['wind_speed'].iloc[-1])  if 'wind_speed'  in recent_df.columns else 0,
-                'ocean_temp':  float(recent_df['ocean_temp'].iloc[-1])  if 'ocean_temp'  in recent_df.columns else 0,
-                'days_ahead':  request.days_ahead,
-                'region':      request.region,
-            }
-            # Model version from config
-            model_cfg     = prediction_result.get('model_info', {}).get('config', {})
-            model_version = model_cfg.get('last_trained', datetime.now().strftime('%Y-%m-%d'))[:10]
 
+        if request.region not in data_cache_service.regions:
+            raise HTTPException(status_code=400, detail=f"Invalid region: {request.region}")
+        if not 1 <= request.days_ahead <= 90:
+            raise HTTPException(status_code=400, detail="Days ahead must be between 1 and 90")
+        if request.model_type not in ("lstm", "gru", "both"):
+            raise HTTPException(status_code=400, detail="model_type must be 'lstm', 'gru', or 'both'")
+        if not data_cache_service.dataset_exists(request.region):
+            raise HTTPException(status_code=400, detail=f"No cached dataset for {request.region}")
+
+        cached_df = data_cache_service.load_cached_dataset(request.region)
+        recent_df = cached_df.tail(60)
+
+        def _run_prediction(mdl, label: str) -> dict:
+            if not mdl.load_model(request.region):
+                raise ValueError(f"No trained {label} model for {request.region}. Train first.")
+            return mdl.predict_from_cached_data(
+                region=request.region,
+                recent_df=recent_df,
+                days_ahead=request.days_ahead,
+            )
+
+        def _build_summary(predictions: list, cached_df) -> dict:
+            current_level   = float(cached_df['pollution_level'].iloc[-1]) if 'pollution_level' in cached_df.columns else 50.0
+            predicted_level = float(predictions[-1]['pollution_level']) if predictions else current_level
+            # Use exact current_level as denominator — no rounding, no max() guard that could skew small values
+            trend_change    = ((predicted_level - current_level) / current_level * 100) if current_level != 0 else 0.0
+            avg             = float(np.mean([p['pollution_level'] for p in predictions]))
+            risk = "Low" if avg < 30 else "Moderate" if avg < 60 else "High" if avg < 80 else "Critical"
+            return {
+                "current_level":          current_level,
+                "predicted_level":        predicted_level,
+                "trend_change_percent":   trend_change,
+                "risk_level":             risk,
+                "average_confidence":     float(np.mean([p['confidence'] for p in predictions])),
+            }
+
+        def _save_predictions(predictions: list, model_info: dict) -> int:
+            saved = 0
+            model_version = (model_info.get('config') or {}).get('last_trained', datetime.now().strftime('%Y-%m-%d'))[:10]
+            input_features = {
+                col: float(recent_df[col].iloc[-1]) if col in recent_df.columns else 0
+                for col in ('temperature', 'humidity', 'aqi', 'wind_speed', 'ocean_temp')
+            }
+            input_features.update({'days_ahead': request.days_ahead, 'region': request.region})
             for pred in predictions:
                 try:
-                    conf  = pred.get('confidence', 0.85)
-                    margin = pred['pollution_level'] * (1 - conf) * 0.5   # tighter interval for high confidence
-                    confidence_lower = max(0,   pred['pollution_level'] - margin)
-                    confidence_upper = min(100, pred['pollution_level'] + margin)
-
-                    prediction_id = db.save_prediction(
+                    conf   = pred.get('confidence', 0.85)
+                    margin = pred['pollution_level'] * (1 - conf) * 0.5
+                    pid    = db.save_prediction(
                         user_id=user_id,
                         region=request.region,
                         prediction_date=pred['date'],
                         predicted_pollution_level=pred['pollution_level'],
-                        confidence_interval=(confidence_lower, confidence_upper),
+                        confidence_interval=(
+                            max(0,   pred['pollution_level'] - margin),
+                            min(100, pred['pollution_level'] + margin),
+                        ),
                         model_version=model_version,
                         input_features=input_features,
                     )
-
-                    if prediction_id:
-                        saved_count += 1
-                    else:
-                        logger.error(f"Failed to save prediction for date {pred['date']}")
-
+                    if pid:
+                        saved += 1
                 except Exception as e:
-                    logger.error(f"Exception saving prediction: {e}", exc_info=True)
+                    logger.error(f"Save prediction error: {e}")
+            return saved
 
-            logger.info(f"✅ Saved {saved_count}/{len(predictions)} predictions for {request.region} (user {user_id})")
-            
-            return {
-                "success": True,
-                "region": request.region,
-                "predictions": predictions,
-                "summary": {
-                    "current_level": float(current_level),
-                    "predicted_level": float(predicted_level),
-                    "trend_change_percent": float(trend_change),
-                    "risk_level": risk_level,
-                    "average_confidence": float(np.mean([p['confidence'] for p in predictions]))
+        # ── Run model(s) ──────────────────────────────────────────────────────
+        results      = {}
+        saved_counts = {}
+
+        if request.model_type in ("lstm", "both"):
+            res              = _run_prediction(lstm_model, "LSTM")
+            results["lstm"]  = res
+            saved_counts["lstm"] = _save_predictions(res['predictions'], res.get('model_info', {}))
+
+        if request.model_type in ("gru", "both"):
+            res             = _run_prediction(gru_model, "GRU")
+            results["gru"]  = res
+            saved_counts["gru"] = _save_predictions(res['predictions'], res.get('model_info', {}))
+
+        # Primary result for backwards-compatible single-model callers
+        primary_key    = request.model_type if request.model_type != "both" else "lstm"
+        primary_result = results[primary_key]
+        predictions    = primary_result['predictions']
+        summary        = _build_summary(predictions, cached_df)
+
+        response = {
+            "success":     True,
+            "region":      request.region,
+            "model_type":  request.model_type,
+            "predictions": predictions,
+            "summary":     summary,
+            "model_info":  primary_result.get('model_info'),
+            "data_source": "cached_only",
+            "saved_to_db": sum(saved_counts.values()),
+        }
+
+        # Comparison block — only when both models ran
+        if request.model_type == "both" and "lstm" in results and "gru" in results:
+            lstm_preds = results["lstm"]["predictions"]
+            gru_preds  = results["gru"]["predictions"]
+            lstm_cfg   = (results["lstm"].get("model_info") or {}).get("config") or {}
+            gru_cfg    = (results["gru"].get("model_info")  or {}).get("config") or {}
+
+            response["comparison"] = {
+                "lstm": {
+                    "predictions":          lstm_preds,
+                    "summary":              _build_summary(lstm_preds, cached_df),
+                    "mae":                  lstm_cfg.get("validation_mae"),
+                    "rmse":                 lstm_cfg.get("validation_rmse"),
+                    "r2":                   lstm_cfg.get("validation_r2"),
+                    "directional_accuracy": lstm_cfg.get("directional_accuracy"),
+                    "training_samples":     lstm_cfg.get("training_samples"),
+                    "saved_to_db":          saved_counts.get("lstm", 0),
                 },
-                "model_info": prediction_result['model_info'],
-                "data_source": "cached_only",
-                "saved_to_db": saved_count,
+                "gru": {
+                    "predictions":          gru_preds,
+                    "summary":              _build_summary(gru_preds, cached_df),
+                    "mae":                  gru_cfg.get("validation_mae"),
+                    "rmse":                 gru_cfg.get("validation_rmse"),
+                    "r2":                   gru_cfg.get("validation_r2"),
+                    "directional_accuracy": gru_cfg.get("directional_accuracy"),
+                    "training_samples":     gru_cfg.get("training_samples"),
+                    "saved_to_db":          saved_counts.get("gru", 0),
+                },
             }
-        else:
-            raise HTTPException(status_code=500, detail="Prediction failed")
-            
+
+        logger.info(
+            f"✅ Predicted {request.days_ahead}d | {request.region} | "
+            f"{request.model_type} | saved={sum(saved_counts.values())}"
+        )
+        return response
+
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in prediction endpoint: {e}")
+        logger.error(f"Predict endpoint error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/analyze")
@@ -3484,12 +3490,13 @@ async def generate_report(
                 
                 prediction_analytics = {
                     "summary": {
-                        "total_predictions": len(predictions),
-                        "regions_analyzed": len(region_analysis),
-                        "overall_avg_pollution": round(overall_avg, 2),
-                        "date_range": f"{request.date_range_days} days",
-                        "model_version": predictions[0].get('model_version', 'Unknown') if predictions else 'Unknown',
-                        "prediction_reliability": "High" if len(predictions) > 20 else "Medium" if len(predictions) > 5 else "Low"
+                        "total_predictions":      len(predictions),
+                        "regions_analyzed":       len(region_analysis),
+                        "overall_avg_pollution":  round(overall_avg, 2),
+                        "date_range":             f"{request.date_range_days} days",
+                        "model_version":          predictions[0].get('model_version', 'Unknown') if predictions else 'Unknown',
+                        "prediction_reliability": "High" if len(predictions) > 20 else "Medium" if len(predictions) > 5 else "Low",
+                        "models_available":       "LSTM & GRU (select model_type=both to compare)",
                     },
                     "regional_analysis": regional_stats,
                     "risk_assessment": {
@@ -3527,13 +3534,19 @@ async def generate_report(
         report_data['report_metadata'] = {
             "generated_by": current_user.get('username', 'Unknown'),
             "generation_timestamp": datetime.now().isoformat(),
-            "report_version": "2.0",
+            "report_version": "2.1",
             "data_sources": [],
             "methodology": {
-                "detection_model": "YOLOv26s Marine Debris Detection (71% mAP50, 8 classes)",
-                "prediction_model": "LSTM Time Series Forecasting",
+                "detection_model":    "YOLOv26s Marine Debris Detection (71% mAP50, 8 classes)",
+                "prediction_models":  "LSTM & GRU Time-Series Forecasting (selectable per region)",
                 "confidence_threshold": "25%",
-                "analysis_period": f"{request.date_range_days} days"
+                "analysis_period":    f"{request.date_range_days} days",
+                "lstm_architecture":  "2-layer stacked LSTM · 64→32 units · 30-day window · 13 features · Huber loss",
+                "gru_architecture":   "2-layer stacked GRU  · 64→32 units · 30-day window · 13 features · Huber loss",
+                "model_comparison":   "Train with model_type='both' to compare LSTM vs GRU metrics side-by-side",
+                "email_verification": "All user accounts require email verification before login",
+                "dark_mode_scope":    "Dark mode applied only to authenticated pages",
+                "prediction_cache":   "Prediction results persist across navigation via sessionStorage",
             }
         }
         

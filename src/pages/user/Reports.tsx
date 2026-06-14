@@ -241,11 +241,11 @@ export default function ReportsPage() {
 
   const getReportTypeLabel = (type: string) => {
     switch (type) {
-      case 'detection': return 'YOLO Detection';
-      case 'prediction': return 'LSTM Prediction';
+      case 'detection':  return 'YOLO Detection';
+      case 'prediction': return 'LSTM / GRU Prediction';
       case 'both':
-      case 'custom': return 'Comprehensive';
-      default: return type;
+      case 'custom':     return 'Comprehensive';
+      default:           return type;
     }
   };
 
@@ -318,7 +318,7 @@ export default function ReportsPage() {
                       Create a PDF report with detection statistics, charts, and analysis.
                     </p>
                     <div className="flex flex-wrap gap-1.5">
-                      {["Detection Summary", "Class Distribution", "Trend Analysis", "LSTM Predictions"].map(b => (
+                      {["Detection Summary", "Class Distribution", "Trend Analysis", "LSTM Predictions", "GRU Comparison", "Email Verification"].map(b => (
                         <Badge key={b} variant="secondary" className="text-[11px] font-semibold">{b}</Badge>
                       ))}
                     </div>
@@ -335,7 +335,7 @@ export default function ReportsPage() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="detection">YOLO Detection Only</SelectItem>
-                        <SelectItem value="prediction">LSTM Prediction Only</SelectItem>
+                        <SelectItem value="prediction">LSTM / GRU Prediction Only</SelectItem>
                         <SelectItem value="both">Comprehensive (Both)</SelectItem>
                       </SelectContent>
                     </Select>

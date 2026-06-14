@@ -102,15 +102,15 @@ The platform provides a complete workflow: upload media → detect debris → fe
 | Module | Capabilities |
 |---|---|
 | **Detection** | YOLOv26s · 8 debris classes · 71% mAP50 · image + video · drag-drop UI · confidence threshold slider · before/after comparison · async video polling |
-| **Forecasting** | 3-step LSTM pipeline · 4 ocean regions · 7–90 day forecasts · confidence intervals · lag features · data augmentation · R² up to 0.93 |
+| **Forecasting** | 3-step LSTM/GRU pipeline · model_type selector (LSTM / GRU / Both) · 4 ocean regions · 7–90 day forecasts · confidence intervals · lag features · data augmentation · R² up to 0.93 · side-by-side comparison chart + metrics table · session-persistent results |
 | **Heatmap** | Leaflet interactive map · current + predicted modes · time range selector (1d/7d/30d/90d) · 1-hour fetch cooldown · fallback static hotspots |
-| **Reports** | PDF generation (jsPDF) · YOLO / LSTM / Comprehensive types · configurable date range · custom title · view + download + delete |
+| **Reports** | PDF generation (jsPDF) · YOLO / LSTM+GRU / Comprehensive types · configurable date range · custom title · view + download + delete · v2.1 methodology metadata |
 | **Dashboard** | Real-time analytics · detection trend (area chart) · class distribution (pie) · object counts (bar) · auto-refresh on detection |
 | **History** | Paginated detection log · date filter · thumbnail preview · bulk delete · CSV export |
 | **Admin** | System stats · user management (deactivate/delete) · system logs · DB backup/optimize · feature toggles · maintenance mode |
 | **AI Assistant** | Floating chat widget · Gemini 2.0 Flash · platform Q&A + marine science knowledge |
-| **Auth** | JWT HS256 · bcrypt passwords · session management · role-based access (USER / ADMIN) |
-| **UI/UX** | Fully responsive · dark/light theme · Framer Motion page transitions · mobile-first · lazy-loaded routes |
+| **Auth** | JWT HS256 · bcrypt passwords · session management · role-based access (USER / ADMIN) · **email verification** (Gmail SMTP) · admin auto-seeded on startup (no verification required) |
+| **UI/UX** | Fully responsive · dark/light theme (**dark mode scoped to authenticated pages only**) · Framer Motion page transitions · mobile-first · lazy-loaded routes · **prediction results persist across navigation** |
 
 ---
 
@@ -182,7 +182,7 @@ Training: 100 epochs · batch=16 · Kaggle T4 GPU · patience=20 · augment=True
 
 ### LSTM — Pollution Level Forecasting
 
-2-layer stacked LSTM with lag features and data augmentation:
+Two RNN architectures available: LSTM and GRU, selectable per training/prediction run.
 
 | Region | R² Score | MAE | RMSE | ±10 Units |
 |---|---|---|---|---|
@@ -190,9 +190,13 @@ Training: 100 epochs · batch=16 · Kaggle T4 GPU · patience=20 · augment=True
 | Atlantic | 0.785 | 2.54 | 3.16 | 100% |
 | Mediterranean | 0.881 | 2.04 | 2.52 | 100% |
 
-Architecture: 64 → 32 LSTM units · 30-day sequences · 13 features (10 env + 3 lag) · Huber loss · RobustScaler · EarlyStopping (patience=12)
+**LSTM Architecture:** 64 → 32 LSTM units · ~12,481 parameters · 30-day sequences · 13 features (10 env + 3 lag) · Huber loss · RobustScaler · EarlyStopping (patience=12)
 
-> See [LSTM_TECHNICAL.md](LSTM_TECHNICAL.md) for full architecture, training pipeline, and accuracy analysis.
+**GRU Architecture:** 64 → 32 GRU units · ~9,361 parameters (~25% fewer) · identical topology — faster training, comparable accuracy
+
+**model_type parameter:** `"lstm"` · `"gru"` · `"both"` (trains/predicts with both, returns side-by-side comparison)
+
+> See [LSTM_TECHNICAL.md](LSTM_TECHNICAL.md) for full architecture, GRU vs LSTM comparison, training pipeline, and accuracy analysis.
 
 ---
 
@@ -230,13 +234,24 @@ Initialise the database:
 python backend/init_db.py
 ```
 
-This creates `backend/marine_detection.db` with 10 tables, 23 indexes, and a default admin account:
+This creates `backend/marine_detection.db` with 10 tables, 23 indexes, and the admin account:
 
-| Username | Password | Role |
-|---|---|---|
-| `admin` | `admin123` | ADMIN |
+| Username | Email | Password | Role |
+|---|---|---|---|
+| `touseef` | `touseefurrehman5554@gmail.com` | `touseef5554` | ADMIN |
 
-> **Change the admin password immediately before any deployment.**
+The admin account is **automatically re-seeded on every backend startup** (`_ensure_admin()` in `startup`). Email verification is **not required** for admin.
+
+Also create `backend/.env` with email verification settings:
+```env
+# Email Verification (Gmail SMTP — required for user registration)
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_HOST_USER=your.gmail@gmail.com
+EMAIL_HOST_PASSWORD=xxxx xxxx xxxx xxxx   # Gmail App Password
+EMAIL_FROM_NAME=OceanGuard AI
+FRONTEND_URL=http://localhost:8080
+```
 
 Place YOLOv26s weights at `backend/weights/best.pt`.
 
@@ -290,13 +305,16 @@ oceanscan-ai-main/
 │   │   └── security.py            # JWT HS256, bcrypt, session management, RBAC
 │   │
 │   ├── models/
-│   │   ├── lstm.py                # EnvironmentalLSTM — architecture, train, predict, save/load
-│   │   ├── {region}_lstm.keras    # Per-region trained weights (4 regions)
-│   │   ├── {region}_config.json   # Per-region config + accuracy metrics
-│   │   └── {region}_*_scaler.pkl  # Feature + target RobustScalers
+│   │   ├── lstm.py                # EnvironmentalLSTM + EnvironmentalGRU — shared preprocessing, separate architectures
+│   │   ├── {region}_lstm.keras    # Per-region LSTM weights (4 regions)
+│   │   ├── {region}_gru.keras     # Per-region GRU weights (4 regions)
+│   │   ├── {region}_config.json   # LSTM config + accuracy metrics
+│   │   ├── {region}_gru_config.json  # GRU config + accuracy metrics
+│   │   └── {region}_*_scaler.pkl  # Shared feature + target RobustScalers
 │   │
 │   ├── services/
 │   │   ├── data_cache_service.py  # Per-region fetch pipeline (Open-Meteo + WAQI + NOAA)
+│   │   ├── email_service.py       # Gmail SMTP email verification (aiosmtplib)
 │   │   └── data_cache/
 │   │       ├── {region}_dataset.csv       # 730-row cached datasets
 │   │       └── {region}_last_fetch.json   # Cooldown timestamps
@@ -442,10 +460,12 @@ Interactive Swagger docs: **http://localhost:8000/docs**
 
 ### Authentication
 ```
-POST /api/auth/register     Register new user
-POST /api/auth/login        Login → returns JWT token
-GET  /api/auth/me           Get current user profile
-POST /api/auth/logout       Revoke session token
+POST /api/auth/register           Register new user (sends verification email)
+POST /api/auth/login              Login → returns JWT token (blocked if email unverified)
+GET  /api/auth/me                 Get current user profile
+POST /api/auth/logout             Revoke session token
+GET  /api/auth/verify-email       Verify email address via token link
+POST /api/auth/resend-verification Resend verification email (accepts email or username)
 ```
 
 ### Detection
@@ -459,16 +479,18 @@ DELETE /api/user/detections/{id}    Delete single detection
 DELETE /api/user/history/clear      Clear all user history
 ```
 
-### LSTM Pipeline
+### LSTM / GRU Pipeline
 ```
 GET  /api/data/regions              Available regions list
 GET  /api/data/fetch-status         Cooldown status per region
 GET  /api/data/api-health           External API health check
 POST /api/data/fetch                Fetch + cache environmental data
 GET  /api/data/status/{region}      Dataset + model status
-POST /api/train                     Train LSTM model (body: {region, epochs})
-GET  /api/train/status/{region}     Training status + metrics
-POST /api/predict                   Generate forecast (body: {region, days_ahead})
+POST /api/train                     Train model (body: {region, epochs, model_type})
+                                    model_type: "lstm" | "gru" | "both"
+GET  /api/train/status/{region}     Training status + metrics for both LSTM & GRU
+POST /api/predict                   Generate forecast (body: {region, days_ahead, model_type})
+                                    Returns comparison block when model_type="both"
 POST /api/analyze                   Historical analysis
 ```
 

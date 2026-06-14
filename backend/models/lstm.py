@@ -1,14 +1,14 @@
-"""
+﻿"""
 Enhanced LSTM Model for Environmental & Marine Time-Series Prediction
 Uses ONLY cached data - NEVER calls external APIs during training
 
-v2 — High-accuracy rewrite:
-  • Lag features (t-1, t-7, t-14) added to input so model sees its own history
-  • Deeper architecture: 128 → 64 → 32 with BatchNorm
-  • Huber loss (robust to outliers) instead of MSE
-  • Longer sequence (60 days) for better seasonal context
-  • Data augmentation via Gaussian jitter on training set
-  • R² / directional accuracy tracked in config
+v2 â€” High-accuracy rewrite:
+  â€¢ Lag features (t-1, t-7, t-14) added to input so model sees its own history
+  â€¢ Deeper architecture: 128 â†’ 64 â†’ 32 with BatchNorm
+  â€¢ Huber loss (robust to outliers) instead of MSE
+  â€¢ Longer sequence (60 days) for better seasonal context
+  â€¢ Data augmentation via Gaussian jitter on training set
+  â€¢ RÂ² / directional accuracy tracked in config
 """
 
 import numpy as np
@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 class EnvironmentalLSTM:
     """
     High-accuracy LSTM for environmental time-series forecasting.
-    Uses ONLY cached datasets — never calls external APIs during training.
+    Uses ONLY cached datasets â€” never calls external APIs during training.
     """
 
     def __init__(self, model_dir: str = "models"):
@@ -42,8 +42,10 @@ class EnvironmentalLSTM:
         os.makedirs(model_dir, exist_ok=True)
 
         self.model = None
-        self.feature_scaler = RobustScaler()   # robust to outliers
+        self.feature_scaler = RobustScaler()
         self.target_scaler  = RobustScaler()
+        # Each subclass gets its own named logger so logs show the right prefix
+        self._logger = logging.getLogger(__name__)
 
         self.config = {
             'sequence_length': 30,          # 30-day context window (faster)
@@ -70,7 +72,7 @@ class EnvironmentalLSTM:
             'directional_accuracy': None,
         }
 
-    # ── Paths ──────────────────────────────────────────────────────────────────
+    # â”€â”€ Paths â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     def get_model_path(self, region: str) -> str:
         return os.path.join(self.model_dir, f"{region}_lstm.h5")
@@ -81,12 +83,12 @@ class EnvironmentalLSTM:
     def get_config_path(self, region: str) -> str:
         return os.path.join(self.model_dir, f"{region}_config.json")
 
-    # ── Feature engineering ────────────────────────────────────────────────────
+    # â”€â”€ Feature engineering â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     def _add_lag_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Add lagged pollution_level columns.
-        These are the single most powerful predictors — yesterday's pollution
+        These are the single most powerful predictors â€” yesterday's pollution
         strongly predicts today's.
         """
         df = df.copy()
@@ -99,11 +101,11 @@ class EnvironmentalLSTM:
         df = df.reset_index(drop=True)
         return df
 
-    # ── Preprocessing ──────────────────────────────────────────────────────────
+    # â”€â”€ Preprocessing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     def preprocess_cached_data(self, df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
-        """Preprocess cached dataset — adds lag features, scales, creates sequences."""
-        logger.info("Preprocessing cached dataset...")
+        """Preprocess cached dataset â€” adds lag features, scales, creates sequences."""
+        self._logger.info("Preprocessing cached dataset...")
 
         target_col = self.config['target_name']
         if target_col not in df.columns:
@@ -148,7 +150,7 @@ class EnvironmentalLSTM:
         X, y = self._create_sequences(features_scaled, target_scaled,
                                       self.config['sequence_length'])
 
-        logger.info(f"✅ Preprocessed: {len(X)} sequences × {X.shape[1]} steps × {X.shape[2]} features")
+        self._logger.info(f"âœ… Preprocessed: {len(X)} sequences Ã— {X.shape[1]} steps Ã— {X.shape[2]} features")
         return X, y
 
     def _create_sequences(self, data: np.ndarray, target: np.ndarray,
@@ -159,60 +161,58 @@ class EnvironmentalLSTM:
             y.append(target[i])
         return np.array(X), np.array(y)
 
-    # ── Data augmentation ──────────────────────────────────────────────────────
+    # â”€â”€ Data augmentation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     def _augment(self, X: np.ndarray, y: np.ndarray,
                  factor: int = 2, noise_std: float = 0.01) -> Tuple[np.ndarray, np.ndarray]:
         """
         Multiply training data by adding small Gaussian jitter.
-        factor=2 doubles the dataset — fast but still improves generalization.
+        factor=2 doubles the dataset â€” fast but still improves generalization.
         """
         rng = np.random.default_rng(42)
         noise = rng.normal(0, noise_std, X.shape)
         return np.concatenate([X, X + noise]), np.concatenate([y, y])
 
-    # ── Model architecture ─────────────────────────────────────────────────────
+    # â”€â”€ Model architecture â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     def build_model(self) -> tf.keras.Model:
         """
-        2-layer stacked LSTM — fast on CPU, strong accuracy with lag features.
+        2-layer stacked LSTM â€” fast on CPU, strong accuracy with lag features.
         Huber loss is robust to outliers.
         """
         seq_len    = self.config['sequence_length']
         n_features = self.config['n_features']
-        units      = self.config['lstm_units']   # [64, 32]
+        units      = self.config['lstm_units']
         drop       = self.config['dropout_rate']
 
         model = Sequential([
             Input(shape=(seq_len, n_features)),
-
             LSTM(units[0], return_sequences=True),
             Dropout(drop),
-
             LSTM(units[1], return_sequences=False),
             Dropout(drop),
-
             Dense(16, activation='relu'),
             Dense(1,  activation='linear'),
         ])
 
         model.compile(
-            optimizer=Adam(learning_rate=self.config['learning_rate'],
-                           clipnorm=1.0),
+            optimizer=Adam(learning_rate=self.config['learning_rate'], clipnorm=1.0),
             loss=tf.keras.losses.Huber(delta=1.0),
             metrics=['mean_absolute_error'],
         )
+        total_params = model.count_params()
+        self._logger.info(f"ðŸ—ï¸  Built LSTM model â€” {total_params:,} parameters")
         return model
 
-    # ── Training ───────────────────────────────────────────────────────────────
+    # â”€â”€ Training â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     def train_from_cached_data(self, region: str, cached_df: pd.DataFrame,
                                epochs: int = None) -> Dict:
         """
         Train LSTM using ONLY cached dataset.
-        Returns comprehensive metrics including R² and directional accuracy.
+        Returns comprehensive metrics including RÂ² and directional accuracy.
         """
-        logger.info(f"🚀 Training LSTM for {region}...")
+        self._logger.info(f"ðŸš€ Training {self.config.get('model_type', 'LSTM')} for {region}...")
 
         if cached_df.empty:
             raise ValueError(f"Empty dataset for {region}")
@@ -226,7 +226,7 @@ class EnvironmentalLSTM:
         if len(X) < self.config['sequence_length'] * 2:
             raise ValueError(f"Not enough data: {len(X)} sequences")
 
-        # Train / val split (chronological — no shuffle)
+        # Train / val split (chronological â€” no shuffle)
         val_size  = int(len(X) * self.config['validation_split'])
         train_end = len(X) - val_size
 
@@ -236,7 +236,7 @@ class EnvironmentalLSTM:
         # Augment training set only
         X_train_aug, y_train_aug = self._augment(X_train, y_train, factor=3)
 
-        logger.info(f"Train: {len(X_train_aug)} (aug from {len(X_train)}) | Val: {len(X_val)}")
+        self._logger.info(f"Train: {len(X_train_aug)} (aug from {len(X_train)}) | Val: {len(X_val)}")
 
         # Build model
         self.model = self.build_model()
@@ -267,7 +267,7 @@ class EnvironmentalLSTM:
             verbose=1,   # show epoch progress
         )
 
-        # ── Metrics ────────────────────────────────────────────────────────────
+        # â”€â”€ Metrics â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         y_pred_scaled = self.model.predict(X_val, verbose=0).flatten()
 
         y_true = self.target_scaler.inverse_transform(y_val.reshape(-1, 1)).flatten()
@@ -301,10 +301,10 @@ class EnvironmentalLSTM:
 
         self.save_model(region)
 
-        logger.info(
-            f"✅ {region} — MAE: {mae:.3f} | RMSE: {rmse:.3f} | "
-            f"R²: {r2:.4f} | DirAcc: {dir_acc:.1f}% | "
-            f"±5: {within5:.1f}% | ±10: {within10:.1f}%"
+        self._logger.info(
+            f"âœ… {region} â€” MAE: {mae:.3f} | RMSE: {rmse:.3f} | "
+            f"RÂ²: {r2:.4f} | DirAcc: {dir_acc:.1f}% | "
+            f"Â±5: {within5:.1f}% | Â±10: {within10:.1f}%"
         )
 
         return {
@@ -323,15 +323,15 @@ class EnvironmentalLSTM:
             'data_source':          'cached_only',
         }
 
-    # ── Prediction ─────────────────────────────────────────────────────────────
+    # â”€â”€ Prediction â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     def predict_from_cached_data(self, region: str, recent_df: pd.DataFrame,
                                  days_ahead: int = 7) -> Dict:
-        """Generate predictions using cached data — never calls external APIs."""
+        """Generate predictions using cached data â€” never calls external APIs."""
         if not self.load_model(region):
             raise ValueError(f"No trained model for {region}. Train first.")
 
-        logger.info(f"🔮 Predicting {days_ahead} days for {region}...")
+        self._logger.info(f"ðŸ”® Predicting {days_ahead} days for {region} using {self.config.get('model_type', 'LSTM')}...")
 
         # Add lag features to recent data
         recent_df = self._add_lag_features(recent_df)
@@ -375,7 +375,7 @@ class EnvironmentalLSTM:
             predictions.append(pred_orig)
             pred_history.append(pred_scaled)
 
-            # Build next feature row — update lag features with predicted values
+            # Build next feature row â€” update lag features with predicted values
             next_row = current_sequence[-1].copy()
             next_row[lag1_idx]  = pred_scaled
             next_row[lag7_idx]  = pred_history[-7]  if len(pred_history) >= 7  else pred_scaled
@@ -408,7 +408,7 @@ class EnvironmentalLSTM:
             'data_source':        'cached_only',
         }
 
-    # ── Persistence ────────────────────────────────────────────────────────────
+    # â”€â”€ Persistence â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     def save_model(self, region: str):
         try:
@@ -424,9 +424,9 @@ class EnvironmentalLSTM:
             with open(self.get_config_path(region), 'w') as f:
                 json.dump(self.config, f, indent=2)
 
-            logger.info(f"✅ Model saved for {region}")
+            self._logger.info(f"âœ… Model saved for {region}")
         except Exception as e:
-            logger.error(f"Error saving model for {region}: {e}")
+            self._logger.error(f"Error saving model for {region}: {e}")
 
     def load_model(self, region: str) -> bool:
         try:
@@ -456,12 +456,12 @@ class EnvironmentalLSTM:
                     self.config.update(json.load(f))
 
             if self.model:
-                logger.info(f"✅ LSTM model loaded for {region}")
+                self._logger.info(f"âœ… LSTM model loaded for {region}")
                 return True
-            logger.info(f"No saved model for {region}")
+            self._logger.info(f"No saved model for {region}")
             return False
         except Exception as e:
-            logger.error(f"Error loading model for {region}: {e}")
+            self._logger.error(f"Error loading model for {region}: {e}")
             return False
 
     def get_model_info(self, region: str = None) -> Dict:
@@ -485,3 +485,153 @@ class EnvironmentalLSTM:
 
 # Global instance
 lstm_model = EnvironmentalLSTM()
+
+
+# =============================================================================
+# GRU Model â€” Gated Recurrent Unit
+# Same interface as EnvironmentalLSTM, swaps LSTM layers for GRU.
+# Trains faster (~30% fewer parameters), comparable accuracy on short sequences.
+# Used for LSTM vs GRU comparison in thesis Chapter 5.
+# =============================================================================
+
+class EnvironmentalGRU(EnvironmentalLSTM):
+    """
+    GRU-based environmental forecaster.
+    Inherits all preprocessing, training logic, and persistence from
+    EnvironmentalLSTM â€” only the Keras architecture differs.
+
+    Key differences vs LSTM:
+      â€¢ GRU has 2 gates (reset + update) vs LSTM's 3 (input, forget, output)
+      â€¢ ~25-33% fewer trainable parameters â†’ faster training
+      â€¢ No separate cell state â†’ simpler gradient flow
+      â€¢ Often matches LSTM on datasets < ~10k rows
+    """
+
+    def __init__(self, model_dir: str = "models"):
+        super().__init__(model_dir)
+        self.config['model_type'] = 'GRU'
+        # Own logger so logs show  INFO:models.gru  instead of  INFO:models.lstm
+        self._logger = logging.getLogger("models.gru")
+
+    # â”€â”€ File paths (separate from LSTM weights) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    def get_model_path(self, region: str) -> str:
+        return os.path.join(self.model_dir, f"{region}_gru.h5")
+
+    def get_scaler_path(self, region: str, scaler_type: str) -> str:
+        # Scalers are shared with LSTM â€” same data, same scaling
+        return os.path.join(self.model_dir, f"{region}_{scaler_type}_scaler.pkl")
+
+    def get_config_path(self, region: str) -> str:
+        return os.path.join(self.model_dir, f"{region}_gru_config.json")
+
+    # â”€â”€ GRU architecture â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    def build_model(self) -> tf.keras.Model:
+        """
+        2-layer stacked GRU â€” mirrors LSTM topology for apples-to-apples comparison.
+        ~25% fewer parameters than equivalent LSTM.
+        """
+        from tensorflow.keras.layers import GRU
+
+        seq_len    = self.config['sequence_length']
+        n_features = self.config['n_features']
+        units      = self.config['lstm_units']
+        drop       = self.config['dropout_rate']
+
+        model = Sequential([
+            Input(shape=(seq_len, n_features)),
+            GRU(units[0], return_sequences=True),
+            Dropout(drop),
+            GRU(units[1], return_sequences=False),
+            Dropout(drop),
+            Dense(16, activation='relu'),
+            Dense(1,  activation='linear'),
+        ])
+
+        model.compile(
+            optimizer=Adam(
+                learning_rate=self.config['learning_rate'],
+                clipnorm=1.0,
+            ),
+            loss=tf.keras.losses.Huber(delta=1.0),
+            metrics=['mean_absolute_error'],
+        )
+        total_params = model.count_params()
+        self._logger.info(f"ðŸ—ï¸  Built GRU model â€” {total_params:,} parameters")
+        return model
+
+    # â”€â”€ Persistence (load GRU weights, fall back gracefully) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    def load_model(self, region: str) -> bool:
+        try:
+            keras_path = os.path.join(self.model_dir, f"{region}_gru.keras")
+            h5_path    = self.get_model_path(region)
+
+            if os.path.exists(keras_path):
+                self.model = load_model(keras_path)
+            elif os.path.exists(h5_path):
+                self.model = load_model(h5_path, compile=False)
+                self.model.compile(
+                    optimizer=Adam(learning_rate=self.config['learning_rate']),
+                    loss=tf.keras.losses.Huber(delta=1.0),
+                    metrics=['mean_absolute_error'],
+                )
+
+            feat_path = self.get_scaler_path(region, 'feature')
+            tgt_path  = self.get_scaler_path(region, 'target')
+            cfg_path  = self.get_config_path(region)
+
+            if os.path.exists(feat_path):
+                self.feature_scaler = joblib.load(feat_path)
+            if os.path.exists(tgt_path):
+                self.target_scaler  = joblib.load(tgt_path)
+            if os.path.exists(cfg_path):
+                with open(cfg_path) as f:
+                    self.config.update(json.load(f))
+
+            if self.model:
+                self._logger.info(f"âœ… GRU model loaded for {region}")
+                return True
+            self._logger.info(f"No saved GRU model for {region}")
+            return False
+        except Exception as e:
+            self._logger.error(f"Error loading GRU model for {region}: {e}")
+            return False
+
+    def save_model(self, region: str):
+        try:
+            if self.model:
+                keras_path = os.path.join(self.model_dir, f"{region}_gru.keras")
+                h5_path    = self.get_model_path(region)
+                self.model.save(keras_path)
+                self.model.save(h5_path)
+
+            joblib.dump(self.feature_scaler, self.get_scaler_path(region, 'feature'))
+            joblib.dump(self.target_scaler,  self.get_scaler_path(region, 'target'))
+
+            with open(self.get_config_path(region), 'w') as f:
+                json.dump(self.config, f, indent=2)
+
+            self._logger.info(f"âœ… GRU model saved for {region}")
+        except Exception as e:
+            self._logger.error(f"Error saving GRU model for {region}: {e}")
+
+    def get_model_info(self, region: str = None) -> Dict:
+        info = super().get_model_info(region)
+        info['model_type'] = 'GRU'
+
+        if region:
+            # Check GRU-specific file
+            h5 = self.get_model_path(region)
+            info['model_exists'] = os.path.exists(h5)
+            info['model_size_mb'] = (
+                round(os.path.getsize(h5) / 1024 / 1024, 2)
+                if info['model_exists'] else 0
+            )
+        return info
+
+
+# Global GRU instance (mirrors lstm_model pattern)
+gru_model = EnvironmentalGRU()
+

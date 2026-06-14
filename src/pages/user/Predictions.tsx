@@ -28,6 +28,8 @@ interface RegionStatus {
   region: string;
   dataset_cached: boolean;
   model_trained: boolean;
+  lstm_ready?: boolean;
+  gru_ready?: boolean;
   dataset_info?: { total_records: number; date_range: { start: string; end: string } };
   fetch_status?: { can_fetch: boolean; seconds_remaining: number; last_fetched_at: string | null };
 }
@@ -38,11 +40,27 @@ interface Prediction {
   confidence: number;
 }
 
+interface ModelMetrics {
+  mae: number | null;
+  rmse: number | null;
+  r2: number | null;
+  directional_accuracy: number | null;
+  training_samples: number | null;
+}
+
+interface ComparisonResult {
+  predictions: Prediction[];
+  summary: any;
+  metrics: ModelMetrics;
+}
+
 interface ApiHealth {
   open_meteo: { status: string; key_required: boolean };
   waqi:       { status: string; key_required: boolean; sample_aqi?: number };
   noaa:       { status: string; key_required: boolean; datasets_available?: number };
 }
+
+type ModelType = 'lstm' | 'gru' | 'both';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const REGIONS = [
@@ -79,10 +97,12 @@ const CACHE_KEY = 'predictions_cache';
 interface PredCache {
   region:      string;
   daysAhead:   string;
+  modelType:   ModelType;
   predictions: Prediction[];
   predSummary: any;
   savedCount:  number | null;
-  savedAt:     number;          // Date.now() — for optional TTL in future
+  comparison:  { lstm: ComparisonResult; gru: ComparisonResult } | null;
+  savedAt:     number;
 }
 
 function saveCache(data: PredCache) {
@@ -108,10 +128,14 @@ export default function PredictionsPage() {
   const [selectedRegion, setSelectedRegion] = useState(() => loadCache()?.region      ?? 'pacific');
   const [epochs,         setEpochs]         = useState([50]);
   const [daysAhead,      setDaysAhead]       = useState(() => loadCache()?.daysAhead   ?? '7');
+  const [modelType,      setModelType]       = useState<ModelType>(() => (loadCache()?.modelType as ModelType) ?? 'lstm');
 
   const [statuses,    setStatuses]    = useState<Record<string, RegionStatus>>({});
   const [predictions, setPredictions] = useState<Prediction[] | null>(() => loadCache()?.predictions ?? null);
   const [predSummary, setPredSummary] = useState<any>(()         => loadCache()?.predSummary ?? null);
+  const [comparison,  setComparison]  = useState<{ lstm: ComparisonResult; gru: ComparisonResult } | null>(
+    () => loadCache()?.comparison ?? null
+  );
   const [apiHealth,   setApiHealth]   = useState<ApiHealth | null>(null);
 
   const [fetching,    setFetching]    = useState(false);
@@ -124,10 +148,13 @@ export default function PredictionsPage() {
   // Persist predictions to sessionStorage whenever they change
   useEffect(() => {
     if (predictions && predictions.length > 0) {
-      saveCache({ region: selectedRegion, daysAhead, predictions, predSummary, savedCount, savedAt: Date.now() });
+      saveCache({
+        region: selectedRegion, daysAhead, modelType,
+        predictions, predSummary, savedCount, comparison, savedAt: Date.now(),
+      });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [predictions, predSummary, savedCount]);
+  }, [predictions, predSummary, savedCount, comparison]);
 
   // Countdown timer
   const [countdown, setCountdown] = useState(0);
@@ -157,9 +184,11 @@ export default function PredictionsPage() {
         const trainRes = await fetch(`${API}/api/train/status/${r.id}`);
         const trainData = trainRes.ok ? await trainRes.json() : {};
         map[r.id] = {
-          region:        r.id,
+          region:         r.id,
           dataset_cached: r.dataset_cached,
           model_trained:  trainData.ready_for_prediction ?? false,
+          lstm_ready:     trainData.lstm?.ready           ?? false,
+          gru_ready:      trainData.gru?.ready            ?? false,
           dataset_info:   r.dataset_info,
           fetch_status:   fetchData.regions?.[r.id],
         };
@@ -227,14 +256,15 @@ export default function PredictionsPage() {
     try {
       const res  = await fetch(`${API}/api/train`, {
         method: 'POST', headers: authH(),
-        body: JSON.stringify({ region: selectedRegion, epochs: epochs[0] }),
+        body: JSON.stringify({ region: selectedRegion, epochs: epochs[0], model_type: modelType }),
       });
       const data = await res.json();
 
       if (data.success) {
         const r = data.training_result;
+        const modelLabel = modelType === 'both' ? 'LSTM + GRU' : modelType.toUpperCase();
         toast({
-          title: '🧠 Training complete',
+          title: `🧠 ${modelLabel} training complete`,
           description: `MAE: ${r.validation_mae?.toFixed(3) ?? '?'} | ${r.epochs_trained} epochs | ${r.training_samples} samples`,
         });
         await loadStatuses();
@@ -249,24 +279,54 @@ export default function PredictionsPage() {
   // ── Step 3: Predict ───────────────────────────────────────────────────────
   const handlePredict = async () => {
     setPredicting(true);
-    clearCache();                  // clear old cache — new prediction starting
+    clearCache();
     setPredictions(null);
+    setComparison(null);
     setSavedCount(null);
     try {
       const res  = await fetch(`${API}/api/predict`, {
         method: 'POST', headers: authH(),
-        body: JSON.stringify({ region: selectedRegion, days_ahead: parseInt(daysAhead) }),
+        body: JSON.stringify({ region: selectedRegion, days_ahead: parseInt(daysAhead), model_type: modelType }),
       });
       const data = await res.json();
 
       if (data.success) {
         setPredictions(data.predictions);
         setPredSummary(data.summary);
-        const saved = data.saved_to_db ?? 0;
-        setSavedCount(saved);
+        setSavedCount(data.saved_to_db ?? 0);
+
+        // Store comparison block when both models ran
+        if (data.comparison) {
+          setComparison({
+            lstm: {
+              predictions: data.comparison.lstm.predictions,
+              summary:     data.comparison.lstm.summary,
+              metrics: {
+                mae:                  data.comparison.lstm.mae,
+                rmse:                 data.comparison.lstm.rmse,
+                r2:                   data.comparison.lstm.r2,
+                directional_accuracy: data.comparison.lstm.directional_accuracy,
+                training_samples:     data.comparison.lstm.training_samples,
+              },
+            },
+            gru: {
+              predictions: data.comparison.gru.predictions,
+              summary:     data.comparison.gru.summary,
+              metrics: {
+                mae:                  data.comparison.gru.mae,
+                rmse:                 data.comparison.gru.rmse,
+                r2:                   data.comparison.gru.r2,
+                directional_accuracy: data.comparison.gru.directional_accuracy,
+                training_samples:     data.comparison.gru.training_samples,
+              },
+            },
+          });
+        }
+
+        const modelLabel = modelType === 'both' ? 'LSTM + GRU' : modelType.toUpperCase();
         toast({
-          title: '🔮 Predictions ready',
-          description: `${data.predictions.length}-day forecast generated · ${saved} rows saved to DB (heatmap & reports updated)`,
+          title: `🔮 ${modelLabel} forecast ready`,
+          description: `${data.predictions.length}-day forecast · ${data.saved_to_db ?? 0} rows saved`,
         });
       } else {
         throw new Error(data.detail || 'Prediction failed');
@@ -353,9 +413,14 @@ export default function PredictionsPage() {
   };
 
   // ── Derived ───────────────────────────────────────────────────────────────
-  const current = statuses[selectedRegion];
-  const canFetch = current?.fetch_status?.can_fetch !== false;
-  const hasCooldown = !canFetch && (current?.fetch_status?.seconds_remaining ?? 0) > 0;
+  const current      = statuses[selectedRegion];
+  const canFetch     = current?.fetch_status?.can_fetch !== false;
+  const hasCooldown  = !canFetch && (current?.fetch_status?.seconds_remaining ?? 0) > 0;
+
+  // Model is "ready to predict" based on what model_type is selected
+  const modelReady = modelType === 'lstm' ? (current?.lstm_ready ?? current?.model_trained ?? false)
+                   : modelType === 'gru'  ? (current?.gru_ready  ?? false)
+                   :                        ((current?.lstm_ready ?? false) && (current?.gru_ready ?? false));
 
   const chartData = predictions?.map(p => ({
     date:      p.date.slice(5),   // MM-DD
@@ -428,18 +493,19 @@ export default function PredictionsPage() {
                   onClick={() => {
                     if (r.id !== selectedRegion) {
                       setSelectedRegion(r.id);
-                      // Only clear predictions if switching to a region with no cached data
                       const cached = loadCache();
                       if (!cached || cached.region !== r.id) {
                         setPredictions(null);
                         setPredSummary(null);
                         setSavedCount(null);
+                        setComparison(null);
                       } else {
-                        // Restore cached predictions for this region
                         setPredictions(cached.predictions);
                         setPredSummary(cached.predSummary);
                         setSavedCount(cached.savedCount);
                         setDaysAhead(cached.daysAhead);
+                        setModelType(cached.modelType as ModelType);
+                        setComparison(cached.comparison);
                       }
                     }
                   }}
@@ -506,37 +572,61 @@ export default function PredictionsPage() {
                   </Button>
                 </div>
 
-                {/* Step 2 */}
+                {/* Step 2 — Train */}
                 <div className="p-3.5 sm:p-4 border border-border/60 rounded-2xl space-y-3 bg-muted/20">
                   <div className="flex items-center gap-2.5">
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white ${current?.model_trained ? 'bg-success' : 'bg-primary'}`}>
-                      {current?.model_trained ? '✓' : '2'}
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white
+                      ${(current?.lstm_ready || current?.gru_ready) ? 'bg-success' : 'bg-primary'}`}>
+                      {(current?.lstm_ready || current?.gru_ready) ? '✓' : '2'}
                     </div>
                     <div>
                       <p className="text-[13px] sm:text-[13.5px] font-bold tracking-tight">Train Model</p>
-                      <p className="text-[11px] text-muted-foreground font-medium">LSTM neural network</p>
+                      <p className="text-[11px] text-muted-foreground font-medium">
+                        {modelType === 'both' ? 'LSTM + GRU' : modelType.toUpperCase()} neural network
+                      </p>
                     </div>
                   </div>
+
+                  {/* Model type selector */}
+                  <div className="space-y-1">
+                    <p className="text-[11px] text-muted-foreground font-semibold">Model</p>
+                    <div className="flex rounded-lg border border-border overflow-hidden text-[11px] font-bold">
+                      {(['lstm', 'gru', 'both'] as ModelType[]).map(m => (
+                        <button key={m}
+                          onClick={() => setModelType(m)}
+                          className={`flex-1 py-1.5 transition-colors ${
+                            modelType === m
+                              ? 'bg-primary text-primary-foreground'
+                              : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                          }`}>
+                          {m === 'both' ? 'Both' : m.toUpperCase()}
+                        </button>
+                      ))}
+                    </div>
+                    {/* Readiness indicators */}
+                    <div className="flex gap-2 pt-0.5">
+                      <span className={`text-[10px] font-bold ${current?.lstm_ready ? 'text-success' : 'text-muted-foreground'}`}>
+                        LSTM {current?.lstm_ready ? '✓' : '○'}
+                      </span>
+                      <span className={`text-[10px] font-bold ${current?.gru_ready ? 'text-success' : 'text-muted-foreground'}`}>
+                        GRU {current?.gru_ready ? '✓' : '○'}
+                      </span>
+                    </div>
+                  </div>
+
                   <div className="space-y-1.5">
                     <p className="text-[11px] text-muted-foreground font-semibold">Epochs: {epochs[0]}</p>
-                    <Slider
-                      value={epochs}
-                      onValueChange={setEpochs}
-                      min={10} max={100} step={10}
-                      disabled={training}
-                      className="w-full"
-                    />
+                    <Slider value={epochs} onValueChange={setEpochs}
+                      min={10} max={100} step={10} disabled={training} className="w-full" />
                   </div>
-                  <Button
-                    size="sm"
-                    className="w-full text-[12px] gap-1.5 font-bold"
-                    onClick={handleTrain}
-                    disabled={training || !current?.dataset_cached}
-                    variant={current?.model_trained ? 'outline' : 'default'}
-                  >
+                  <Button size="sm" className="w-full text-[12px] gap-1.5 font-bold"
+                    onClick={handleTrain} disabled={training || !current?.dataset_cached}
+                    variant={(current?.lstm_ready || current?.gru_ready) ? 'outline' : 'default'}>
                     {training
                       ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Training…</>
-                      : <><Brain className="h-3.5 w-3.5" />{current?.model_trained ? 'Retrain' : 'Train Model'}</>}
+                      : <><Brain className="h-3.5 w-3.5" />
+                          {(current?.lstm_ready || current?.gru_ready) ? 'Retrain' : 'Train Model'}
+                        </>}
                   </Button>
                   {!current?.dataset_cached && (
                     <p className="text-[11px] text-muted-foreground text-center font-medium">Fetch data first</p>
@@ -571,14 +661,16 @@ export default function PredictionsPage() {
                     size="sm"
                     className="w-full text-[12px] gap-1.5 font-bold"
                     onClick={handlePredict}
-                    disabled={predicting || !current?.model_trained}
+                    disabled={predicting || !modelReady}
                   >
                     {predicting
                       ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Predicting…</>
                       : <><Play className="h-3.5 w-3.5" />Predict {daysAhead} Days</>}
                   </Button>
-                  {!current?.model_trained && (
-                    <p className="text-[11px] text-muted-foreground text-center font-medium">Train model first</p>
+                  {!modelReady && (
+                    <p className="text-[11px] text-muted-foreground text-center font-medium">
+                      {modelType === 'both' ? 'Train LSTM + GRU first' : `Train ${modelType.toUpperCase()} first`}
+                    </p>
                   )}
                 </div>
               </div>
@@ -742,6 +834,160 @@ export default function PredictionsPage() {
             </>
           )}
 
+          {/* ── LSTM vs GRU Comparison ─────────────────────────────────────── */}
+          {comparison && modelType === 'both' && (
+            <>
+              {/* Metrics comparison card */}
+              <Card className="glass-card">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm sm:text-base flex items-center gap-2">
+                    <Activity className="h-4 w-4 text-primary" />
+                    LSTM vs GRU — Model Comparison
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs sm:text-sm">
+                      <thead>
+                        <tr className="border-b">
+                          <th className="text-left py-2 pr-4 text-muted-foreground font-medium">Metric</th>
+                          <th className="text-right py-2 pr-4 font-bold text-blue-500">LSTM</th>
+                          <th className="text-right py-2 font-bold text-emerald-500">GRU</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[
+                          {
+                            label: 'MAE (↓ better)',
+                            lstm:  comparison.lstm.metrics.mae,
+                            gru:   comparison.gru.metrics.mae,
+                            fmt:   (v: number | null) => v?.toFixed(3) ?? '—',
+                            lowerIsBetter: true,
+                          },
+                          {
+                            label: 'RMSE (↓ better)',
+                            lstm:  comparison.lstm.metrics.rmse,
+                            gru:   comparison.gru.metrics.rmse,
+                            fmt:   (v: number | null) => v?.toFixed(3) ?? '—',
+                            lowerIsBetter: true,
+                          },
+                          {
+                            label: 'R² Score (↑ better)',
+                            lstm:  comparison.lstm.metrics.r2,
+                            gru:   comparison.gru.metrics.r2,
+                            fmt:   (v: number | null) => v?.toFixed(4) ?? '—',
+                            lowerIsBetter: false,
+                          },
+                          {
+                            label: 'Directional Accuracy (↑ better)',
+                            lstm:  comparison.lstm.metrics.directional_accuracy,
+                            gru:   comparison.gru.metrics.directional_accuracy,
+                            fmt:   (v: number | null) => v != null ? `${v.toFixed(1)}%` : '—',
+                            lowerIsBetter: false,
+                          },
+                          {
+                            label: 'Avg Predicted Level',
+                            lstm:  comparison.lstm.summary?.predicted_level,
+                            gru:   comparison.gru.summary?.predicted_level,
+                            fmt:   (v: number | null) => v?.toFixed(1) ?? '—',
+                            lowerIsBetter: true,
+                          },
+                          {
+                            label: 'Risk Level',
+                            lstm:  null,
+                            gru:   null,
+                            lstmStr: comparison.lstm.summary?.risk_level ?? '—',
+                            gruStr:  comparison.gru.summary?.risk_level  ?? '—',
+                            fmt:   (v: number | null) => '—',
+                            lowerIsBetter: false,
+                          },
+                        ].map(row => {
+                          const lstmVal  = row.lstm as number | null;
+                          const gruVal   = row.gru  as number | null;
+                          const lstmBetter = lstmVal != null && gruVal != null && (
+                            row.lowerIsBetter ? lstmVal < gruVal : lstmVal > gruVal
+                          );
+                          const gruBetter = lstmVal != null && gruVal != null && (
+                            row.lowerIsBetter ? gruVal < lstmVal : gruVal > lstmVal
+                          );
+                          return (
+                            <tr key={row.label} className="border-b border-border/40 hover:bg-muted/20">
+                              <td className="py-2 pr-4 text-muted-foreground">{row.label}</td>
+                              <td className={`py-2 pr-4 text-right font-semibold ${lstmBetter ? 'text-blue-500' : ''}`}>
+                                {(row as any).lstmStr ?? row.fmt(lstmVal)}
+                                {lstmBetter && <span className="ml-1 text-[10px]">★</span>}
+                              </td>
+                              <td className={`py-2 text-right font-semibold ${gruBetter ? 'text-emerald-500' : ''}`}>
+                                {(row as any).gruStr ?? row.fmt(gruVal)}
+                                {gruBetter && <span className="ml-1 text-[10px]">★</span>}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-3 font-medium">
+                    ★ = better value for this metric
+                  </p>
+                </CardContent>
+              </Card>
+
+              {/* Side-by-side forecast chart */}
+              <Card className="glass-card">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm sm:text-base flex items-center gap-2">
+                    <BarChart3 className="h-4 w-4 text-primary" />
+                    LSTM vs GRU — {daysAhead}-Day Forecast Overlay
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-[240px] sm:h-[300px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart
+                        data={comparison.lstm.predictions.map((p, i) => ({
+                          date:      p.date.slice(5),
+                          lstm:      Math.round(p.pollution_level * 10) / 10,
+                          gru:       Math.round((comparison.gru.predictions[i]?.pollution_level ?? 0) * 10) / 10,
+                        }))}
+                        margin={{ top: 5, right: 10, left: -10, bottom: 0 }}
+                      >
+                        <defs>
+                          <linearGradient id="lstmGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%"  stopColor="#3b82f6" stopOpacity={0.3} />
+                            <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}   />
+                          </linearGradient>
+                          <linearGradient id="gruGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%"  stopColor="#10b981" stopOpacity={0.3} />
+                            <stop offset="95%" stopColor="#10b981" stopOpacity={0}   />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                        <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+                        <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} />
+                        <Tooltip contentStyle={CHART_STYLE} />
+                        <ReferenceLine y={60} stroke="hsl(38,92%,50%)"  strokeDasharray="4 2" />
+                        <ReferenceLine y={80} stroke="hsl(0,72%,51%)"   strokeDasharray="4 2" />
+                        <Area type="monotone" dataKey="lstm" name="LSTM"
+                          stroke="#3b82f6" strokeWidth={2} fill="url(#lstmGrad)" dot={{ r: 2 }} />
+                        <Area type="monotone" dataKey="gru"  name="GRU"
+                          stroke="#10b981" strokeWidth={2} fill="url(#gruGrad)"  dot={{ r: 2 }} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="flex gap-4 mt-3 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-3 h-0.5 bg-blue-500 inline-block" />LSTM
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-3 h-0.5 bg-emerald-500 inline-block" />GRU
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+            </>
+          )}
+
           {/* Empty state */}
           {!predictions && (
             <Card className="glass-card">
@@ -749,7 +995,7 @@ export default function PredictionsPage() {
                 <Brain className="h-10 w-10 sm:h-12 sm:w-12 text-muted-foreground mx-auto mb-3" />
                 <h3 className="font-semibold text-sm sm:text-base mb-1">No Predictions Yet</h3>
                 <p className="text-xs sm:text-sm text-muted-foreground max-w-sm mx-auto">
-                  Select a region, fetch its data, train the LSTM model, then generate a forecast.
+                  Select a region, fetch its data, train the model, then generate a forecast.
                 </p>
               </CardContent>
             </Card>

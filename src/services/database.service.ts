@@ -182,19 +182,6 @@ class DatabaseService {
     }
   }
 
-  /**
-   * Check if backend database is available
-   */
-  async checkDatabaseHealth(): Promise<boolean> {
-    try {
-      const response = await fetch(`${API_URL}/health`);
-      return response.ok;
-    } catch (error) {
-      console.error('Database health check failed:', error);
-      return false;
-    }
-  }
-}
   formatDetectionResult(dbResult: DatabaseDetectionResult): any {
     return {
       success: true,
@@ -214,7 +201,7 @@ class DatabaseService {
       videoId: dbResult.video_id,
       processingStats: dbResult.processing_stats,
       detections: dbResult.detections_data || dbResult.detections || [],
-      summary: dbResult.summary_data || dbResult.classes?.map(c => ({
+      summary: dbResult.summary_data || dbResult.classes?.map((c: any) => ({
         class: c.class_name,
         count: c.count,
         avgConfidence: c.avg_confidence,

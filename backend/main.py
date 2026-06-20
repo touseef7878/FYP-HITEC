@@ -32,7 +32,7 @@ import time
 load_dotenv()
 
 # Import enhanced components
-from core.database import db
+from core.database import db, _USE_SQLITE
 from core.security import (
     AuthManager, get_current_user, get_current_active_user, get_admin_user,
     UserRegistration, UserLogin, TokenResponse, UserProfile, PasswordChange, ProfileUpdate
@@ -420,46 +420,67 @@ async def startup():
 
 def _ensure_admin():
     """
-    Guarantee the admin account exists with the correct credentials on every startup.
-    Sets email_verified=1 so admin never needs email verification.
+    Guarantee the permanent Admin account exists on every startup.
+    Uses db methods directly — works on both SQLite and Supabase REST.
+    The Supabase trigger protects this account from being demoted/deleted.
     """
-    ADMIN_USERNAME = "touseef"
-    ADMIN_EMAIL    = "touseefurrehman5554@gmail.com"
-    ADMIN_PASSWORD = "touseef5554"
+    ADMIN_USERNAME = "Admin"
+    ADMIN_EMAIL    = "admin@oceanscan.ai"
+    ADMIN_PASSWORD = "@admin787898"
 
     try:
-        with db.get_connection() as conn:
-            cursor = conn.cursor()
+        # Check if admin already exists
+        existing = db.get_user_by_email(ADMIN_EMAIL)
+        if not existing:
+            # Also check by ADMIN role
+            all_users = db.get_all_users()
+            existing = next((u for u in all_users if u.get("role") == "ADMIN"), None)
 
-            # Check by email OR by ADMIN role
-            cursor.execute(
-                "SELECT id FROM users WHERE email = ? OR role = 'ADMIN'",
-                (ADMIN_EMAIL,)
-            )
-            row = cursor.fetchone()
-            pwd_hash = db.hash_password(ADMIN_PASSWORD)
+        pwd_hash = db.hash_password(ADMIN_PASSWORD)
 
-            if row:
-                cursor.execute("""
-                    UPDATE users
-                    SET username = ?, email = ?, password_hash = ?,
-                        role = 'ADMIN', is_active = 1,
-                        email_verified = 1,
-                        verification_token = NULL,
-                        verification_token_expires = NULL
-                    WHERE id = ?
-                """, (ADMIN_USERNAME, ADMIN_EMAIL, pwd_hash, row[0]))
-                logger.info(f"✅ Admin account verified/updated (id={row[0]})")
+        if existing:
+            # Update to ensure correct credentials
+            db.update_user_profile(existing["id"], email=ADMIN_EMAIL)
+            db.update_user_password(existing["id"], ADMIN_PASSWORD)
+            # Ensure verified + active
+            if not _USE_SQLITE:
+                from core.database import _sb_update
+                _sb_update("users", {
+                    "username": ADMIN_USERNAME,
+                    "role": "ADMIN",
+                    "is_active": True,
+                    "email_verified": True,
+                    "verification_token": None,
+                    "verification_token_expires": None,
+                }, f"id=eq.{existing['id']}")
             else:
-                cursor.execute("""
-                    INSERT INTO users
-                        (username, email, password_hash, role,
-                         is_active, email_verified, profile_data)
-                    VALUES (?, ?, ?, 'ADMIN', 1, 1, '{}')
-                """, (ADMIN_USERNAME, ADMIN_EMAIL, pwd_hash))
-                logger.info("✅ Admin account created on startup")
-
-            conn.commit()
+                with db.get_connection() as conn:
+                    conn.cursor().execute(
+                        "UPDATE users SET username=?,role='ADMIN',is_active=1,"
+                        "email_verified=1,verification_token=NULL,"
+                        "verification_token_expires=NULL WHERE id=?",
+                        (ADMIN_USERNAME, existing["id"])
+                    )
+                    conn.commit()
+            logger.info(f"✅ Admin account verified/updated (id={existing['id']})")
+        else:
+            # Create fresh admin
+            uid = db.create_user(ADMIN_USERNAME, ADMIN_EMAIL, ADMIN_PASSWORD, role="ADMIN")
+            if uid and not _USE_SQLITE:
+                from core.database import _sb_update
+                _sb_update("users", {
+                    "email_verified": True,
+                    "is_active": True,
+                    "verification_token": None,
+                    "verification_token_expires": None,
+                }, f"id=eq.{uid}")
+            elif uid and _USE_SQLITE:
+                with db.get_connection() as conn:
+                    conn.cursor().execute(
+                        "UPDATE users SET email_verified=1,is_active=1 WHERE id=?", (uid,)
+                    )
+                    conn.commit()
+            logger.info("✅ Admin account created on startup")
     except Exception as e:
         logger.error(f"_ensure_admin failed: {e}")
 
@@ -2909,16 +2930,18 @@ def _process_video_sync(
             }
         )
         
-        # Save individual detection results
-        for det in all_detections:
-            db.add_detection_result(
-                detection_id=detection_id,
-                class_name=det['class'],
-                confidence=det['confidence'] / 100.0,
-                bbox_x1=det['bbox']['x1'], bbox_y1=det['bbox']['y1'],
-                bbox_x2=det['bbox']['x2'], bbox_y2=det['bbox']['y2'],
-                frame_number=det.get('frame', 0)
-            )
+        # Save detection results — use BATCH insert (500 rows per HTTP call)
+        # This is critical for videos: 1 batch call instead of N individual calls
+        batch_results = [
+            {
+                "class": det['class'],
+                "confidence": det['confidence'] / 100.0,
+                "bbox": det['bbox'],
+                "frame_number": det.get('frame', 0),
+            }
+            for det in all_detections
+        ]
+        db.add_detection_results(detection_id, batch_results)
         
         db.save_video_metadata(
             detection_id=detection_id,

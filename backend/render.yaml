@@ -4,26 +4,43 @@ services:
     runtime: python
     rootDir: backend
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1
     envVars:
+      # ── Auth ──────────────────────────────────────────────────────────────
       - key: JWT_SECRET_KEY
-        generateValue: true
+        generateValue: true        # Render auto-generates a secure secret
+
+      # ── CORS / Frontend ───────────────────────────────────────────────────
       - key: ALLOWED_ORIGINS
         value: https://oceanscan-ai.vercel.app
       - key: FRONTEND_URL
         value: https://oceanscan-ai.vercel.app
+
+      # ── Database: Supabase PostgreSQL ─────────────────────────────────────
+      - key: USE_SQLITE
+        value: "false"
+      - key: DATABASE_URL
+        sync: false    # Set in Render dashboard: postgresql://postgres.zuophfoyuxlxumwcdvuz:touseef787898@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres?sslmode=require
+
+      # ── Email (Gmail SMTP) ────────────────────────────────────────────────
       - key: EMAIL_HOST
         value: smtp.gmail.com
       - key: EMAIL_PORT
         value: "587"
       - key: EMAIL_HOST_USER
-        sync: false
+        sync: false    # your Gmail address
       - key: EMAIL_HOST_PASSWORD
-        sync: false
+        sync: false    # your Gmail App Password
       - key: EMAIL_FROM_NAME
         value: OceanGuard AI
-      - key: LOG_LEVEL
-        value: INFO
+
+      # ── External Data APIs (optional) ─────────────────────────────────────
+      - key: NOAA_CDO_TOKEN
+        sync: false
+      - key: WAQI_TOKEN
+        sync: false
+
+      # ── Model / Upload ────────────────────────────────────────────────────
       - key: YOLO_CONFIDENCE_THRESHOLD
         value: "0.25"
       - key: YOLO_IOU_THRESHOLD
@@ -32,10 +49,11 @@ services:
         value: "104857600"
       - key: MAX_VIDEO_DURATION
         value: "300"
-      - key: NOAA_CDO_TOKEN
-        sync: false
-      - key: WAQI_TOKEN
-        sync: false
+
+      # ── Logging ───────────────────────────────────────────────────────────
+      - key: LOG_LEVEL
+        value: INFO
+
     disk:
       name: oceanscan-data
       mountPath: /app/data

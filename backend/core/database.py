@@ -1,2095 +1,1797 @@
 """
-Database Module
-Handles all database operations for the marine detection system
-OPTIMIZED: Added connection pooling for better performance
+Database Module — Supabase REST API backend (HTTPS port 443, works everywhere)
+
+HOW IT WORKS:
+  - Uses Supabase PostgREST API for simple CRUD (fast, no SQL needed)
+  - Uses Supabase /rpc/run_sql for complex queries (JOINs, aggregates, etc.)
+  - Service-role key bypasses RLS — full server-side access
+  - Synchronous httpx client — drop-in replacement, zero changes to main.py
+
+FALLBACK:
+  - USE_SQLITE=true  → local SQLite for offline dev (no internet needed)
+  - USE_SQLITE=false → Supabase REST API (default, works on any machine/server)
 """
 
-import sqlite3
-import os
-import json
-import hashlib
-import secrets
+import os, json, hashlib, secrets, logging, shutil, re
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple, Any
-import logging
-from contextlib import contextmanager
 from queue import Queue
-import threading
+
+from dotenv import load_dotenv
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-class ConnectionPool:
-    """OPTIMIZED: Database connection pool for better performance"""
-    
-    def __init__(self, database: str, max_connections: int = 10):
-        self.database = database
-        self.max_connections = max_connections
-        self.pool = Queue(maxsize=max_connections)
-        self.lock = threading.Lock()
-        
-        # Pre-create connections
-        for _ in range(max_connections):
-            conn = sqlite3.connect(database, check_same_thread=False)
-            conn.row_factory = sqlite3.Row
-            # Enable WAL mode for better concurrency
-            conn.execute("PRAGMA journal_mode=WAL")
-            self.pool.put(conn)
-        
-        logger.info(f"✅ Connection pool initialized with {max_connections} connections")
-    
+# ── Backend flag ──────────────────────────────────────────────────────────────
+_USE_SQLITE = os.getenv("USE_SQLITE", "false").lower() in ("1", "true", "yes")
+logger.info(f"🗄️  DB backend: {'SQLite' if _USE_SQLITE else 'Supabase REST API (HTTPS)'}")
+
+# ── SQLite import ─────────────────────────────────────────────────────────────
+if _USE_SQLITE:
+    import sqlite3
+
+# ── Supabase REST client ──────────────────────────────────────────────────────
+SUPABASE_URL        = "https://zuophfoyuxlxumwcdvuz.supabase.co"
+SUPABASE_SERVICE_KEY = os.getenv(
+    "SUPABASE_SERVICE_KEY",
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp1b3BoZm95dXhseHVtd2NkdnV6Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MTQwNjYwNSwiZXhwIjoyMDk2OTgyNjA1fQ.HAfd-uYfqG40fEJr63Ww1mwXpEs7BGg_9YBoo_xl8DE"
+)
+
+if not _USE_SQLITE:
+    try:
+        import httpx
+        _http = httpx.Client(
+            base_url=SUPABASE_URL,
+            headers={
+                "apikey": SUPABASE_SERVICE_KEY,
+                "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+                "Content-Type": "application/json",
+                "Prefer": "return=representation",
+            },
+            timeout=30.0,
+        )
+        logger.info("✅ Supabase REST client ready")
+    except ImportError:
+        raise ImportError("httpx required: pip install httpx")
+
+
+# =============================================================================
+# Supabase REST helpers
+# =============================================================================
+
+def _rest(method: str, path: str, **kwargs) -> httpx.Response:
+    """Execute a REST call and raise on HTTP errors."""
+    r = _http.request(method, path, **kwargs)
+    if r.status_code >= 400:
+        raise RuntimeError(f"Supabase REST {method} {path} → {r.status_code}: {r.text[:300]}")
+    return r
+
+def _rpc_sql(sql: str, params: dict = None) -> List[Dict]:
+    """
+    Execute arbitrary SQL via Supabase /rpc/run_sql.
+    Returns list of dicts (rows).
+    """
+    payload = {"query": sql}
+    if params:
+        payload["params"] = params
+    r = _rest("POST", "/rest/v1/rpc/run_sql", json=payload)
+    result = r.json()
+    if isinstance(result, list):
+        return result
+    if isinstance(result, dict) and "rows" in result:
+        return result["rows"]
+    return []
+
+def _sb_select(table: str, query: str = "*", filters: str = "",
+               order: str = "", limit: int = None, single: bool = False) -> Any:
+    """GET from a Supabase table via PostgREST."""
+    import urllib.parse
+    path = f"/rest/v1/{table}"
+    params = {"select": query}
+    if order:
+        params["order"] = order
+    if limit:
+        params["limit"] = str(limit)
+    if filters:
+        # Parse filter string and add as params (handles special chars like @)
+        for part in filters.split("&"):
+            if "=" in part:
+                k, v = part.split("=", 1)
+                params[k] = v
+    r = _rest("GET", path, params=params)
+    data = r.json()
+    if single:
+        return data[0] if isinstance(data, list) and data else (data if isinstance(data, dict) else None)
+    return data if isinstance(data, list) else []
+
+def _sb_insert(table: str, data: dict) -> Optional[Dict]:
+    """INSERT a row and return it."""
+    r = _rest("POST", f"/rest/v1/{table}", json=data,
+              headers={"Prefer": "return=representation"})
+    result = r.json()
+    return result[0] if isinstance(result, list) and result else result
+
+def _sb_update(table: str, data: dict, filters: str) -> List[Dict]:
+    """UPDATE rows matching filters."""
+    r = _rest("PATCH", f"/rest/v1/{table}?{filters}", json=data,
+              headers={"Prefer": "return=representation"})
+    result = r.json()
+    return result if isinstance(result, list) else []
+
+def _sb_delete(table: str, filters: str) -> int:
+    """DELETE rows matching filters. Returns rowcount."""
+    r = _rest("DELETE", f"/rest/v1/{table}?{filters}",
+              headers={"Prefer": "return=representation"})
+    result = r.json()
+    return len(result) if isinstance(result, list) else 0
+
+
+# =============================================================================
+# SQLite pool (for USE_SQLITE=true local dev)
+# =============================================================================
+
+class _SQLitePool:
+    def __init__(self, path: str, size: int = 10):
+        self._pool = Queue(maxsize=size)
+        for _ in range(size):
+            c = sqlite3.connect(path, check_same_thread=False)
+            c.row_factory = sqlite3.Row
+            c.execute("PRAGMA journal_mode=WAL")
+            self._pool.put(c)
+        logger.info(f"✅ SQLite pool ready ({size}): {path}")
+
     @contextmanager
     def get_connection(self):
-        """Get connection from pool"""
-        conn = self.pool.get()
+        conn = self._pool.get()
         try:
             yield conn
             conn.commit()
-        except Exception as e:
+        except Exception:
             conn.rollback()
-            raise e
+            raise
         finally:
-            self.pool.put(conn)
-    
-    def close_all(self):
-        """Close all connections in pool"""
-        while not self.pool.empty():
-            conn = self.pool.get()
-            conn.close()
+            self._pool.put(conn)
+
+
+def _row_to_dict(cursor, row) -> Optional[Dict]:
+    if row is None:
+        return None
+    return dict(row)
+
+def _rows_to_dicts(cursor, rows) -> List[Dict]:
+    return [dict(r) for r in rows] if rows else []
+
+def _sql_sqlite(query: str) -> str:
+    return query
+
+
+# =============================================================================
+# DatabaseManager — identical public API for both backends
+# =============================================================================
 
 class DatabaseManager:
-    """Centralized database manager for all operations"""
-    
+
     def __init__(self, db_path: str = None):
-        if db_path is None:
-            # Database should be in backend/ folder, not backend/core/
-            db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "marine_detection.db")
-        self.db_path = db_path
-        
-        # OPTIMIZED: Initialize connection pool
-        self.pool = None
-        if os.path.exists(db_path):
-            self.pool = ConnectionPool(db_path, max_connections=10)
+        if _USE_SQLITE:
+            if db_path is None:
+                db_path = os.path.join(
+                    os.path.dirname(os.path.dirname(__file__)), "marine_detection.db"
+                )
+            self.db_path = db_path
+            self.pool = (
+                _SQLitePool(db_path, size=10) if os.path.exists(db_path) else None
+            )
+            if not self.pool:
+                logger.warning(f"SQLite DB not found: {db_path}. Run init_db.py first!")
         else:
-            logger.warning(f"Database not found at {db_path}. Run init_db.py first!")
-    
+            self.db_path = None
+            self.pool = None  # REST API — no pool needed
+
+    # ── SQLite context manager (used only when USE_SQLITE=true) ───────────────
     @contextmanager
     def get_connection(self):
-        """Context manager for database connections - uses pool if available"""
+        if not _USE_SQLITE:
+            # Yield a dummy object so code that uses get_connection still works
+            yield _FakeConn(self)
+            return
         if self.pool:
             with self.pool.get_connection() as conn:
                 yield conn
         else:
-            # Fallback to direct connection
-            conn = None
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
             try:
-                conn = sqlite3.connect(self.db_path)
-                conn.row_factory = sqlite3.Row
                 yield conn
                 conn.commit()
-            except Exception as e:
-                if conn:
-                    conn.rollback()
-                logger.error(f"Database error: {e}")
+            except Exception:
+                conn.rollback()
                 raise
             finally:
-                if conn:
-                    conn.close()
-    
+                conn.close()
+
+    # ── SQLite exec helper ────────────────────────────────────────────────────
+    def _exec(self, conn, query: str, params: tuple = ()):
+        """SQLite-only helper kept for security.py injected methods."""
+        if _USE_SQLITE:
+            cur = conn.cursor()
+            cur.execute(query, params)
+            return cur
+        else:
+            # REST backend: _exec is only called by security.py session methods
+            # which are re-routed via _FakeConn below
+            return _FakeConn(self)._exec(query, params)
+
+    def _insert_returning_id(self, conn, query: str, params: tuple) -> Optional[int]:
+        """SQLite INSERT returning last row id."""
+        if _USE_SQLITE:
+            cur = conn.cursor()
+            cur.execute(query, params)
+            return cur.lastrowid
+        return None  # REST path uses _sb_insert directly
+
+    # =========================================================================
+    # Password helpers
+    # =========================================================================
+
     def hash_password(self, password: str) -> str:
-        """Hash password using bcrypt (secure, slow by design)"""
         try:
             import bcrypt
-            return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+            return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
         except ImportError:
-            # Fallback: pbkdf2 if bcrypt not installed (still better than sha256)
-            import hashlib, secrets
             salt = secrets.token_hex(16)
-            dk = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 260000)
+            dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 260000)
             return f"pbkdf2:{salt}:{dk.hex()}"
 
     def verify_password(self, password: str, password_hash: str) -> bool:
-        """Verify password against bcrypt or pbkdf2 hash"""
         try:
-            if password_hash.startswith('$2b$') or password_hash.startswith('$2a$'):
+            if password_hash.startswith(("$2b$", "$2a$")):
                 import bcrypt
-                return bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8'))
-            elif password_hash.startswith('pbkdf2:'):
-                import hashlib
-                _, salt, stored_hash = password_hash.split(':', 2)
-                dk = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 260000)
-                return dk.hex() == stored_hash
+                return bcrypt.checkpw(password.encode(), password_hash.encode())
+            elif password_hash.startswith("pbkdf2:"):
+                _, salt, stored = password_hash.split(":", 2)
+                dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 260000)
+                return dk.hex() == stored
             else:
-                # Legacy sha256 format — accept but log warning
-                logger.warning("Legacy SHA-256 password hash detected. User should reset password.")
-                parts = password_hash.split(':')
+                parts = password_hash.split(":")
                 if len(parts) == 2:
-                    salt, hash_value = parts
-                    import hashlib
-                    return hashlib.sha256((password + salt).encode()).hexdigest() == hash_value
+                    salt, hv = parts
+                    return hashlib.sha256((password + salt).encode()).hexdigest() == hv
                 return False
         except Exception as e:
-            logger.error(f"Password verification error: {e}")
+            logger.error(f"verify_password error: {e}")
             return False
-    
-    # ==================== USER MANAGEMENT ====================
-    
-    def create_user(self, username: str, email: str, password: str, role: str = "USER") -> Optional[int]:
-        """Create a new user"""
-        try:
-            password_hash = self.hash_password(password)
-            
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    INSERT INTO users (username, email, password_hash, role, profile_data)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (username, email, password_hash, role, '{}'))
-                
-                user_id = cursor.lastrowid
-                conn.commit()
-                
-                logger.info(f"Created user: {username} (ID: {user_id})")
-                return user_id
-                
-        except sqlite3.IntegrityError as e:
-            logger.error(f"User creation failed - duplicate: {e}")
-            return None
-        except Exception as e:
-            logger.error(f"User creation failed: {e}")
-            return None
-    
-    def authenticate_user(self, username: str, password: str) -> Optional[Dict]:
-        """Authenticate user and return user data"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT id, username, email, password_hash, role, is_active, 
-                           created_at, last_login, profile_data,
-                           COALESCE(email_verified, 0) as email_verified
-                    FROM users WHERE username = ? OR email = ?
-                """, (username, username))
-                
-                user = cursor.fetchone()
-                
-                if user and user['is_active'] and self.verify_password(password, user['password_hash']):
-                    # Block login if email not verified
-                    if not user['email_verified']:
-                        logger.warning(f"Login blocked — email not verified for user: {user['username']}")
-                        return "unverified"
-                    # Update last login
-                    cursor.execute("""
-                        UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?
-                    """, (user['id'],))
-                    conn.commit()
-                    
-                    # Get updated user data with new last_login
-                    cursor.execute("""
-                        SELECT id, username, email, role, created_at, last_login, profile_data
-                        FROM users WHERE id = ?
-                    """, (user['id'],))
-                    
-                    updated_user = cursor.fetchone()
-                    
-                    return {
-                        'id': updated_user['id'],
-                        'username': updated_user['username'],
-                        'email': updated_user['email'],
-                        'role': updated_user['role'],
-                        'created_at': updated_user['created_at'],
-                        'last_login': updated_user['last_login'],
-                        'profile_data': json.loads(updated_user['profile_data'] or '{}')
-                    }
-                
-                return None
-                
-        except Exception as e:
-            logger.error(f"Authentication failed: {e}")
-            return None
-    
-    def get_user_by_id(self, user_id: int) -> Optional[Dict]:
-        """Get user by ID"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT id, username, email, role, created_at, last_login, is_active, profile_data
-                    FROM users WHERE id = ?
-                """, (user_id,))
-                
-                user = cursor.fetchone()
-                if user:
-                    return {
-                        'id': user['id'],
-                        'username': user['username'],
-                        'email': user['email'],
-                        'role': user['role'],
-                        'created_at': user['created_at'],
-                        'last_login': user['last_login'],
-                        'is_active': bool(user['is_active']),
-                        'profile_data': json.loads(user['profile_data'] or '{}')
-                    }
-                return None
-                
-        except Exception as e:
-            logger.error(f"Get user failed: {e}")
-            return None
-    
-    # NOTE: get_all_users, update_user_profile, deactivate_user defined later in file with correct signatures
-            return False
-    
-    # ==================== DETECTION MANAGEMENT ====================
-    
-    def create_detection(self, user_id: int, filename: str, file_type: str, 
-                        file_path: str = None, file_size: int = None,
-                        total_detections: int = 0, confidence_threshold: float = 0.25,
-                        processing_time: float = None, metadata: Dict = None) -> Optional[int]:
-        """Create a new detection record"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    INSERT INTO detections (user_id, filename, file_type, file_path, file_size, 
-                                          total_detections, confidence_threshold, processing_time, 
-                                          status, metadata)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?)
-                """, (user_id, filename, file_type, file_path, file_size, total_detections,
-                     confidence_threshold, processing_time, json.dumps(metadata or {})))
-                
-                detection_id = cursor.lastrowid
-                conn.commit()
-                
-                logger.info(f"Created detection: {filename} (ID: {detection_id})")
-                return detection_id
-                
-        except Exception as e:
-            logger.error(f"Create detection failed: {e}")
-            return None
-    
-    def add_detection_result(self, detection_id: int, class_name: str, confidence: float,
-                            bbox_x1: float, bbox_y1: float, bbox_x2: float, bbox_y2: float,
-                            frame_number: int = 0) -> bool:
-        """Add a single detection result"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    INSERT INTO detection_results 
-                    (detection_id, class_name, confidence, bbox_x1, bbox_y1, bbox_x2, bbox_y2, frame_number)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (detection_id, class_name, confidence, bbox_x1, bbox_y1, bbox_x2, bbox_y2, frame_number))
-                
-                conn.commit()
-                return True
-                
-        except Exception as e:
-            logger.error(f"Add detection result failed: {e}")
-            return False
-    
-    def save_image_metadata(self, detection_id: int, width: int, height: int,
-                           original_path: str = None, annotated_path: str = None,
-                           original_base64: str = None, annotated_base64: str = None) -> bool:
-        """Save image metadata with optional base64 data"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    INSERT INTO images (detection_id, width, height, original_path, annotated_path, 
-                                      original_base64, annotated_base64)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (detection_id, width, height, original_path, annotated_path, 
-                     original_base64, annotated_base64))
-                
-                conn.commit()
-                return True
-                
-        except Exception as e:
-            logger.error(f"Save image metadata failed: {e}")
-            return False
-    
-    def save_video_metadata(self, detection_id: int, total_frames: int, processed_frames: int,
-                           fps: float, duration: float, resolution: str,
-                           original_path: str = None, annotated_path: str = None) -> bool:
-        """Save video metadata"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    INSERT INTO videos (detection_id, total_frames, processed_frames, fps, 
-                                      duration, resolution, original_path, annotated_path)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (detection_id, total_frames, processed_frames, fps, duration, resolution,
-                     original_path, annotated_path))
-                
-                conn.commit()
-                return True
-                
-        except Exception as e:
-            logger.error(f"Save video metadata failed: {e}")
-            return False
-    
-    def get_video_metadata(self, detection_id: int) -> Optional[Dict]:
-        """Get video metadata by detection ID"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT * FROM videos WHERE detection_id = ?
-                """, (detection_id,))
-                
-                row = cursor.fetchone()
-                if row:
-                    return dict(row)
-                return None
-                
-        except Exception as e:
-            logger.error(f"Get video metadata failed: {e}")
-            return None
-    
-    def update_detection_status(self, detection_id: int, status: str, 
-                               total_detections: int = None, processing_time: float = None,
-                               error_message: str = None, metadata: Dict = None) -> bool:
-        """Update detection status and results"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                update_fields = ["status = ?"]
-                params = [status]
-                
-                if total_detections is not None:
-                    update_fields.append("total_detections = ?")
-                    params.append(total_detections)
-                
-                if processing_time is not None:
-                    update_fields.append("processing_time = ?")
-                    params.append(processing_time)
-                
-                if error_message is not None:
-                    update_fields.append("error_message = ?")
-                    params.append(error_message)
-                
-                if metadata is not None:
-                    update_fields.append("metadata = ?")
-                    params.append(json.dumps(metadata))
-                
-                params.append(detection_id)
-                
-                cursor.execute(f"""
-                    UPDATE detections SET {', '.join(update_fields)} WHERE id = ?
-                """, params)
-                
-                conn.commit()
-                return cursor.rowcount > 0
-                
-        except Exception as e:
-            logger.error(f"Update detection status failed: {e}")
-            return False
-    
-    def add_detection_results(self, detection_id: int, results: List[Dict]) -> bool:
-        """Add individual detection results"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                for result in results:
-                    cursor.execute("""
-                        INSERT INTO detection_results 
-                        (detection_id, class_name, confidence, bbox_x1, bbox_y1, bbox_x2, bbox_y2, frame_number)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        detection_id,
-                        result['class'],
-                        result['confidence'],
-                        result['bbox']['x1'],
-                        result['bbox']['y1'],
-                        result['bbox']['x2'],
-                        result['bbox']['y2'],
-                        result.get('frame_number', 0)
-                    ))
-                
-                conn.commit()
-                return True
-                
-        except Exception as e:
-            logger.error(f"Add detection results failed: {e}")
-            return False
-    
-    def get_user_detections(self, user_id: int, limit: int = 50, offset: int = 0, days: int = None) -> List[Dict]:
-        """Get user's detection history with optional date filtering"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                # Build query with optional date filter
-                query = """
-                    SELECT d.*, 
-                           COUNT(dr.id) as result_count,
-                           v.total_frames, v.fps, v.duration,
-                           i.width, i.height
-                    FROM detections d
-                    LEFT JOIN detection_results dr ON d.id = dr.detection_id
-                    LEFT JOIN videos v ON d.id = v.detection_id
-                    LEFT JOIN images i ON d.id = i.detection_id
-                    WHERE d.user_id = ?
-                """
-                
-                params = [user_id]
-                
-                # Add date filter if specified
-                if days is not None:
-                    from datetime import datetime, timedelta
-                    cutoff_date = datetime.now() - timedelta(days=days)
-                    query += " AND d.created_at >= ?"
-                    params.append(cutoff_date.isoformat())
-                
-                query += """
-                    GROUP BY d.id
-                    ORDER BY d.created_at DESC
-                    LIMIT ? OFFSET ?
-                """
-                params.extend([limit, offset])
-                
-                cursor.execute(query, params)
-                
-                detections = []
-                for row in cursor.fetchall():
-                    detection = dict(row)
-                    detection['metadata'] = json.loads(detection['metadata'] or '{}')
-                    detections.append(detection)
-                
-                return detections
-                
-        except Exception as e:
-            logger.error(f"Get user detections failed: {e}")
-            return []
-    
-    def get_detection_by_id(self, detection_id: int, user_id: int = None) -> Optional[Dict]:
-        """Get detection by ID with results and image data"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                # Get detection info
-                query = "SELECT * FROM detections WHERE id = ?"
-                params = [detection_id]
-                
-                if user_id is not None:
-                    query += " AND user_id = ?"
-                    params.append(user_id)
-                
-                cursor.execute(query, params)
-                detection = cursor.fetchone()
-                
-                if not detection:
-                    return None
-                
-                detection = dict(detection)
-                detection['metadata'] = json.loads(detection['metadata'] or '{}')
-                
-                # Get detection results
-                cursor.execute("""
-                    SELECT * FROM detection_results WHERE detection_id = ?
-                """, (detection_id,))
-                
-                results = []
-                for row in cursor.fetchall():
-                    results.append({
-                        'class': row['class_name'],
-                        'confidence': row['confidence'],
-                        'bbox': {
-                            'x1': row['bbox_x1'],
-                            'y1': row['bbox_y1'],
-                            'x2': row['bbox_x2'],
-                            'y2': row['bbox_y2']
-                        },
-                        'frame_number': row['frame_number']
-                    })
-                
-                detection['results'] = results
-                
-                # Get image base64 data if it's an image
-                if detection.get('file_type') == 'image':
-                    cursor.execute("""
-                        SELECT original_base64, annotated_base64 
-                        FROM images WHERE detection_id = ?
-                    """, (detection_id,))
-                    image_data = cursor.fetchone()
-                    if image_data:
-                        detection['original_image_base64'] = image_data['original_base64']
-                        detection['annotated_image_base64'] = image_data['annotated_base64']
-                
-                return detection
-                
-        except Exception as e:
-            logger.error(f"Get detection by ID failed: {e}")
-            return None
-    
-    # ==================== PREDICTION MANAGEMENT ====================
-    
-    def save_prediction(self, user_id: int, region: str, prediction_date: str,
-                       predicted_pollution_level: float, confidence_interval: Tuple[float, float] = None,
-                       model_version: str = None, input_features: Dict = None) -> Optional[int]:
-        """Save LSTM prediction"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    INSERT INTO predictions 
-                    (user_id, region, prediction_date, predicted_pollution_level, 
-                     confidence_interval_lower, confidence_interval_upper, model_version, input_features)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    user_id, region, prediction_date, predicted_pollution_level,
-                    confidence_interval[0] if confidence_interval else None,
-                    confidence_interval[1] if confidence_interval else None,
-                    model_version,
-                    json.dumps(input_features or {})
-                ))
-                
-                prediction_id = cursor.lastrowid
-                conn.commit()
-                
-                return prediction_id
-                
-        except Exception as e:
-            logger.error(f"Save prediction failed: {e}")
-            return None
-    
-    def get_user_predictions(self, user_id: int, region: str = None, limit: int = 100, days: int = None) -> List[Dict]:
-        """Get user's predictions with optional date filtering"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                query = """
-                    SELECT id, region, prediction_date, predicted_pollution_level,
-                           confidence_interval_lower, confidence_interval_upper,
-                           model_version, input_features, created_at
-                    FROM predictions 
-                    WHERE user_id = ?
-                """
-                params = [user_id]
-                
-                if region:
-                    query += " AND region = ?"
-                    params.append(region)
-                
-                # Add date filter if specified
-                if days is not None:
-                    from datetime import datetime, timedelta
-                    cutoff_date = datetime.now() - timedelta(days=days)
-                    query += " AND created_at >= ?"
-                    params.append(cutoff_date.isoformat())
-                
-                query += " ORDER BY created_at DESC LIMIT ?"
-                params.append(limit)
-                
-                cursor.execute(query, params)
-                
-                predictions = []
-                for row in cursor.fetchall():
-                    import json
-                    input_features = json.loads(row['input_features']) if row['input_features'] else {}
-                    
-                    predictions.append({
-                        'id': row['id'],
-                        'region': row['region'],
-                        'prediction_date': row['prediction_date'],
-                        'predicted_pollution_level': row['predicted_pollution_level'],
-                        'confidence_interval_lower': row['confidence_interval_lower'],
-                        'confidence_interval_upper': row['confidence_interval_upper'],
-                        'model_version': row['model_version'],
-                        'input_features': input_features,
-                        'created_at': row['created_at']
-                    })
-                
-                return predictions
-                
-        except Exception as e:
-            logger.error(f"Get user predictions failed: {e}")
-            return []
-    
-    # ==================== ANALYTICS & REPORTS ====================
-    
-    def save_analytics_point(self, user_id: int, data_type: str, region: str,
-                           date_recorded: str, value: float, metadata: Dict = None) -> bool:
-        """Save a single analytics data point"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    INSERT INTO analytics_data (user_id, data_type, region, date_recorded, value, metadata)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, (user_id, data_type, region, date_recorded, value, json.dumps(metadata or {})))
-                conn.commit()
-                return True
-        except Exception as e:
-            logger.error(f"Save analytics point failed: {e}")
-            return False
-    
-    def get_analytics_data(self, user_id: int, data_type: str = None, region: str = None,
-                          start_date: str = None, end_date: str = None) -> List[Dict]:
-        """Get analytics data"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                query = "SELECT * FROM analytics_data WHERE user_id = ?"
-                params = [user_id]
-                
-                if data_type:
-                    query += " AND data_type = ?"
-                    params.append(data_type)
-                
-                if region:
-                    query += " AND region = ?"
-                    params.append(region)
-                
-                if start_date:
-                    query += " AND date_recorded >= ?"
-                    params.append(start_date)
-                
-                if end_date:
-                    query += " AND date_recorded <= ?"
-                    params.append(end_date)
-                
-                query += " ORDER BY date_recorded ASC"
-                
-                cursor.execute(query, params)
-                
-                data = []
-                for row in cursor.fetchall():
-                    item = dict(row)
-                    item['metadata'] = json.loads(item['metadata'] or '{}')
-                    data.append(item)
-                
-                return data
-                
-        except Exception as e:
-            logger.error(f"Get analytics data failed: {e}")
-            return []
-    
-    # ==================== LOGGING ====================
-    
-    def get_system_logs(self, admin_user_id: int, level: str = None, 
-                       limit: int = 1000, offset: int = 0) -> List[Dict]:
-        """Get system logs (admin only)"""
-        try:
-            # Verify admin role
-            admin = self.get_user_by_id(admin_user_id)
-            if not admin or admin['role'] != 'ADMIN':
-                return []
-            
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                query = """
-                    SELECT l.*, u.username 
-                    FROM logs l 
-                    LEFT JOIN users u ON l.user_id = u.id
-                    WHERE 1=1
-                """
-                params = []
-                
-                if level:
-                    query += " AND l.level = ?"
-                    params.append(level)
-                
-                query += " ORDER BY l.timestamp DESC LIMIT ? OFFSET ?"
-                params.extend([limit, offset])
-                
-                cursor.execute(query, params)
-                
-                logs = []
-                for row in cursor.fetchall():
-                    log = dict(row)
-                    log['metadata'] = json.loads(log['metadata'] or '{}')
-                    logs.append(log)
-                
-                return logs
-                
-        except Exception as e:
-            logger.error(f"Get system logs failed: {e}")
-            return []
-    
-    # ==================== STATISTICS ====================
-    
-    def get_user_statistics(self, user_id: int) -> Dict:
-        """Get user statistics"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                stats = {}
-                
-                # Detection count
-                cursor.execute("SELECT COUNT(*) FROM detections WHERE user_id = ?", (user_id,))
-                stats['total_detections'] = cursor.fetchone()[0]
-                
-                # Successful detections
-                cursor.execute("SELECT COUNT(*) FROM detections WHERE user_id = ? AND status = 'completed'", (user_id,))
-                stats['successful_detections'] = cursor.fetchone()[0]
-                
-                # Total objects detected
-                cursor.execute("""
-                    SELECT COALESCE(SUM(total_detections), 0) 
-                    FROM detections WHERE user_id = ? AND status = 'completed'
-                """, (user_id,))
-                stats['total_objects_detected'] = cursor.fetchone()[0]
-                
-                # Prediction count
-                cursor.execute("SELECT COUNT(*) FROM predictions WHERE user_id = ?", (user_id,))
-                stats['total_predictions'] = cursor.fetchone()[0]
-                
-                # Report count
-                cursor.execute("SELECT COUNT(*) FROM reports WHERE user_id = ?", (user_id,))
-                stats['total_reports'] = cursor.fetchone()[0]
-                
-                # Recent activity (last 30 days)
-                cursor.execute("""
-                    SELECT COUNT(*) FROM detections 
-                    WHERE user_id = ? AND created_at >= datetime('now', '-30 days')
-                """, (user_id,))
-                stats['recent_detections'] = cursor.fetchone()[0]
-                
-                return stats
-                
-        except Exception as e:
-            logger.error(f"Get user statistics failed: {e}")
-            return {}
-    
-    def get_system_statistics(self, admin_user_id: int) -> Dict:
-        """Get system-wide statistics (admin only)"""
-        try:
-            # Verify admin role
-            admin = self.get_user_by_id(admin_user_id)
-            if not admin or admin['role'] != 'ADMIN':
-                return {}
-            
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                stats = {}
-                
-                # User counts
-                cursor.execute("SELECT COUNT(*) FROM users WHERE is_active = 1")
-                stats['active_users'] = cursor.fetchone()[0]
-                
-                cursor.execute("SELECT COUNT(*) FROM users")
-                stats['total_users'] = cursor.fetchone()[0]
-                
-                # Detection counts
-                cursor.execute("SELECT COUNT(*) FROM detections")
-                stats['total_detections'] = cursor.fetchone()[0]
-                
-                cursor.execute("SELECT COUNT(*) FROM detections WHERE status = 'completed'")
-                stats['successful_detections'] = cursor.fetchone()[0]
-                
-                # Storage usage (approximate)
-                cursor.execute("SELECT COALESCE(SUM(file_size), 0) FROM detections WHERE file_size IS NOT NULL")
-                stats['total_storage_bytes'] = cursor.fetchone()[0]
-                
-                # Recent activity
-                cursor.execute("""
-                    SELECT COUNT(*) FROM detections 
-                    WHERE created_at >= datetime('now', '-7 days')
-                """)
-                stats['detections_last_7_days'] = cursor.fetchone()[0]
-                
-                cursor.execute("""
-                    SELECT COUNT(*) FROM users 
-                    WHERE last_login >= datetime('now', '-7 days')
-                """)
-                stats['active_users_last_7_days'] = cursor.fetchone()[0]
-                
-                return stats
-                
-        except Exception as e:
-            logger.error(f"Get system statistics failed: {e}")
-            return {}
-    
-    # ==================== ADMIN METHODS ====================
-    
-    def backup_database(self) -> str:
-        """Create database backup"""
-        try:
-            import shutil
-            from datetime import datetime
-            
-            backup_dir = os.path.join(os.path.dirname(self.db_path), "backups")
-            os.makedirs(backup_dir, exist_ok=True)
-            
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup_filename = f"marine_detection_backup_{timestamp}.db"
-            backup_path = os.path.join(backup_dir, backup_filename)
-            
-            shutil.copy2(self.db_path, backup_path)
-            
-            logger.info(f"Database backup created: {backup_path}")
-            return backup_path
-            
-        except Exception as e:
-            logger.error(f"Database backup failed: {e}")
-            raise
-    
-    def optimize_database(self) -> bool:
-        """Optimize database performance"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                # Run VACUUM to reclaim space and defragment
-                cursor.execute("VACUUM")
-                
-                # Analyze tables for query optimization
-                cursor.execute("ANALYZE")
-                
-                conn.commit()
-                
-            logger.info("Database optimization completed")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Database optimization failed: {e}")
-            return False
-    
-    def export_system_data(self) -> str:
-        """Export system data to JSON"""
-        try:
-            import json
-            from datetime import datetime
-            
-            export_dir = os.path.join(os.path.dirname(self.db_path), "exports")
-            os.makedirs(export_dir, exist_ok=True)
-            
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            export_filename = f"system_data_export_{timestamp}.json"
-            export_path = os.path.join(export_dir, export_filename)
-            
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                export_data = {}
-                
-                # Export users (without passwords)
-                cursor.execute("""
-                    SELECT id, username, email, role, created_at, last_login, is_active 
-                    FROM users
-                """)
-                export_data['users'] = [dict(row) for row in cursor.fetchall()]
-                
-                # Export detections
-                cursor.execute("SELECT * FROM detections")
-                export_data['detections'] = [dict(row) for row in cursor.fetchall()]
-                
-                # Export predictions
-                cursor.execute("SELECT * FROM predictions")
-                export_data['predictions'] = [dict(row) for row in cursor.fetchall()]
-                
-                # Export reports
-                cursor.execute("SELECT * FROM reports")
-                export_data['reports'] = [dict(row) for row in cursor.fetchall()]
-                
-                # Export analytics
-                cursor.execute("SELECT * FROM analytics_data")
-                export_data['analytics'] = [dict(row) for row in cursor.fetchall()]
-            
-            # Write to JSON file
-            with open(export_path, 'w') as f:
-                json.dump(export_data, f, indent=2, default=str)
-            
-            logger.info(f"System data exported: {export_path}")
-            return export_path
-            
-        except Exception as e:
-            logger.error(f"System data export failed: {e}")
-            raise
-    
-    def cleanup_old_sessions(self, days: int = 7) -> int:
-        """Clean up old inactive sessions"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    "DELETE FROM sessions "
-                    "WHERE (expires_at <= datetime('now') OR is_active = 0) "
-                    "AND created_at <= datetime('now', ? || ' days')",
-                    (f"-{days}",)
-                )
-                deleted_count = cursor.rowcount
-                conn.commit()
-                if deleted_count > 0:
-                    logger.info(f"Cleaned up {deleted_count} old sessions")
-                return deleted_count
-        except Exception as e:
-            logger.error(f"Cleanup old sessions failed: {e}")
-            return 0
 
-    def cleanup_old_logs(self, days: int = 30) -> int:
-        """Clean up old log entries"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    "DELETE FROM logs "
-                    "WHERE timestamp <= datetime('now', ? || ' days') "
-                    "AND level NOT IN ('ERROR', 'CRITICAL')",
-                    (f"-{days}",)
-                )
-                deleted_count = cursor.rowcount
-                conn.commit()
-                if deleted_count > 0:
-                    logger.info(f"Cleaned up {deleted_count} old log entries")
-                return deleted_count
-        except Exception as e:
-            logger.error(f"Cleanup old logs failed: {e}")
-            return 0
-    
-    # get_all_users, deactivate_user defined later with correct signatures
-    
-    # ==================== EMAIL VERIFICATION ====================
+    # =========================================================================
+    # Email verification migration (SQLite only — PG columns already exist)
+    # =========================================================================
 
     def add_email_verification_columns(self) -> None:
-        """Migrate: add email verification columns if they don't exist yet."""
+        if not _USE_SQLITE:
+            logger.info("✅ Email verification columns ready (Supabase)")
+            return
         try:
             with self.get_connection() as conn:
-                cursor = conn.cursor()
-                # SQLite doesn't support IF NOT EXISTS on ALTER TABLE — check first
-                cursor.execute("PRAGMA table_info(users)")
-                cols = {row[1] for row in cursor.fetchall()}
-                if 'email_verified' not in cols:
-                    cursor.execute("ALTER TABLE users ADD COLUMN email_verified BOOLEAN DEFAULT 0")
-                if 'verification_token' not in cols:
-                    cursor.execute("ALTER TABLE users ADD COLUMN verification_token VARCHAR(128)")
-                if 'verification_token_expires' not in cols:
-                    cursor.execute("ALTER TABLE users ADD COLUMN verification_token_expires TIMESTAMP")
+                cur = conn.cursor()
+                cur.execute("PRAGMA table_info(users)")
+                cols = {row[1] for row in cur.fetchall()}
+                if "email_verified" not in cols:
+                    cur.execute("ALTER TABLE users ADD COLUMN email_verified BOOLEAN DEFAULT 0")
+                if "verification_token" not in cols:
+                    cur.execute("ALTER TABLE users ADD COLUMN verification_token VARCHAR(128)")
+                if "verification_token_expires" not in cols:
+                    cur.execute("ALTER TABLE users ADD COLUMN verification_token_expires TIMESTAMP")
                 conn.commit()
-                logger.info("✅ Email verification columns ready")
         except Exception as e:
-            logger.error(f"Email verification migration failed: {e}")
+            logger.error(f"add_email_verification_columns: {e}")
 
-    def set_verification_token(self, user_id: int, token: str, expires_at: datetime) -> bool:
-        """Store a verification token for a user."""
+    # =========================================================================
+    # USER MANAGEMENT
+    # =========================================================================
+
+    def create_user(self, username: str, email: str, password: str,
+                    role: str = "USER") -> Optional[int]:
         try:
-            with self.get_connection() as conn:
-                conn.cursor().execute(
-                    "UPDATE users SET verification_token=?, verification_token_expires=? WHERE id=?",
-                    (token, expires_at, user_id)
+            pw_hash = self.hash_password(password)
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    return self._insert_returning_id(
+                        conn,
+                        "INSERT INTO users (username,email,password_hash,role,profile_data) VALUES (?,?,?,?,?)",
+                        (username, email, pw_hash, role, "{}")
+                    )
+            else:
+                row = _sb_insert("users", {
+                    "username": username, "email": email,
+                    "password_hash": pw_hash, "role": role,
+                    "profile_data": "{}", "is_active": True,
+                    "email_verified": False,
+                })
+                uid = row.get("id") if row else None
+                logger.info(f"Created user: {username} (ID: {uid})")
+                return uid
+        except Exception as e:
+            logger.error(f"create_user failed: {e}")
+            return None
+
+    def authenticate_user(self, username: str, password: str) -> Optional[Dict]:
+        try:
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    cur = conn.cursor()
+                    cur.execute(
+                        "SELECT id,username,email,password_hash,role,is_active,"
+                        "created_at,last_login,profile_data,"
+                        "COALESCE(email_verified,0) as email_verified "
+                        "FROM users WHERE username=? OR email=?",
+                        (username, username)
+                    )
+                    row = cur.fetchone()
+            else:
+                # Try by username first, then by email
+                rows = _sb_select("users",
+                    "id,username,email,password_hash,role,is_active,"
+                    "created_at,last_login,profile_data,email_verified",
+                    filters=f"username=eq.{username}", limit=1)
+                if not rows:
+                    # Try as email (use direct params to handle @ symbol)
+                    r = _http.get("/rest/v1/users", params={
+                        "select": "id,username,email,password_hash,role,is_active,created_at,last_login,profile_data,email_verified",
+                        "email": f"eq.{username}", "limit": "1"
+                    })
+                    rows = r.json() if r.status_code == 200 else []
+                row = rows[0] if rows else None
+
+            if not row:
+                return None
+            r = dict(row) if hasattr(row, "keys") else row
+            if not r.get("is_active"):
+                return None
+            if not self.verify_password(password, r["password_hash"]):
+                return None
+            if not r.get("email_verified"):
+                logger.warning(f"Login blocked — email not verified: {r['username']}")
+                return "unverified"
+
+            # Update last_login
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    conn.cursor().execute(
+                        "UPDATE users SET last_login=CURRENT_TIMESTAMP WHERE id=?", (r["id"],)
+                    )
+                    conn.commit()
+            else:
+                _sb_update("users",
+                    {"last_login": datetime.utcnow().isoformat()},
+                    f"id=eq.{r['id']}"
                 )
-                conn.commit()
-                return True
+
+            return {
+                "id": r["id"], "username": r["username"],
+                "email": r["email"], "role": r["role"],
+                "created_at": str(r.get("created_at", "")),
+                "last_login": str(r.get("last_login", "")) if r.get("last_login") else None,
+                "profile_data": json.loads(r.get("profile_data") or "{}"),
+            }
+        except Exception as e:
+            logger.error(f"authenticate_user failed: {e}")
+            return None
+
+    def get_user_by_id(self, user_id: int) -> Optional[Dict]:
+        try:
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    cur = conn.cursor()
+                    cur.execute(
+                        "SELECT id,username,email,role,created_at,last_login,is_active,profile_data FROM users WHERE id=?",
+                        (user_id,)
+                    )
+                    row = cur.fetchone()
+                    if not row: return None
+                    r = dict(row)
+            else:
+                rows = _sb_select("users",
+                    "id,username,email,role,created_at,last_login,is_active,profile_data",
+                    filters=f"id=eq.{user_id}", limit=1)
+                if not rows: return None
+                r = rows[0]
+            return {
+                "id": r["id"], "username": r["username"],
+                "email": r["email"], "role": r["role"],
+                "created_at": str(r.get("created_at", "")),
+                "last_login": str(r.get("last_login", "")) if r.get("last_login") else None,
+                "is_active": bool(r.get("is_active", True)),
+                "profile_data": json.loads(r.get("profile_data") or "{}"),
+            }
+        except Exception as e:
+            logger.error(f"get_user_by_id failed: {e}")
+            return None
+
+    def get_user_by_username(self, username: str) -> Optional[Dict]:
+        try:
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    cur = conn.cursor()
+                    cur.execute("SELECT * FROM users WHERE username=?", (username,))
+                    row = cur.fetchone()
+                    return dict(row) if row else None
+            else:
+                rows = _sb_select("users", "*",
+                    filters=f"username=eq.{username}", limit=1)
+                return rows[0] if rows else None
+        except Exception as e:
+            logger.error(f"get_user_by_username failed: {e}")
+            return None
+
+    def get_user_by_email(self, email: str) -> Optional[Dict]:
+        try:
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    cur = conn.cursor()
+                    cur.execute("SELECT * FROM users WHERE email=?", (email,))
+                    row = cur.fetchone()
+                    return dict(row) if row else None
+            else:
+                # Use PostgREST params dict — handles @ and other special chars
+                r = _http.get("/rest/v1/users", params={"select": "*", "email": f"eq.{email}", "limit": "1"})
+                if r.status_code >= 400:
+                    raise RuntimeError(f"get_user_by_email → {r.status_code}: {r.text[:200]}")
+                rows = r.json()
+                return rows[0] if isinstance(rows, list) and rows else None
+        except Exception as e:
+            logger.error(f"get_user_by_email failed: {e}")
+            return None
+
+    def update_user_last_login(self, user_id: int) -> bool:
+        try:
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    conn.cursor().execute(
+                        "UPDATE users SET last_login=CURRENT_TIMESTAMP WHERE id=?", (user_id,)
+                    )
+                    conn.commit()
+            else:
+                _sb_update("users", {"last_login": datetime.utcnow().isoformat()}, f"id=eq.{user_id}")
+            return True
+        except Exception as e:
+            logger.error(f"update_user_last_login failed: {e}")
+            return False
+
+    def update_user_profile(self, user_id: int, email: str = None,
+                            profile_data: Dict = None) -> bool:
+        try:
+            data = {}
+            if email: data["email"] = email
+            if profile_data: data["profile_data"] = json.dumps(profile_data)
+            if not data: return True
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    sets = ", ".join(f"{k}=?" for k in data)
+                    conn.cursor().execute(
+                        f"UPDATE users SET {sets} WHERE id=?",
+                        (*data.values(), user_id)
+                    )
+                    conn.commit()
+            else:
+                _sb_update("users", data, f"id=eq.{user_id}")
+            return True
+        except Exception as e:
+            logger.error(f"update_user_profile failed: {e}")
+            return False
+
+    def update_user_password(self, user_id: int, new_password: str) -> bool:
+        try:
+            pw_hash = self.hash_password(new_password)
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    conn.cursor().execute(
+                        "UPDATE users SET password_hash=? WHERE id=?", (pw_hash, user_id)
+                    )
+                    conn.commit()
+            else:
+                _sb_update("users", {"password_hash": pw_hash}, f"id=eq.{user_id}")
+            return True
+        except Exception as e:
+            logger.error(f"update_user_password failed: {e}")
+            return False
+
+    def deactivate_user(self, user_id: int) -> bool:
+        try:
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    conn.cursor().execute(
+                        "UPDATE users SET is_active=0 WHERE id=?", (user_id,)
+                    )
+                    conn.cursor().execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
+                    conn.commit()
+            else:
+                _sb_update("users", {"is_active": False}, f"id=eq.{user_id}")
+                _sb_delete("sessions", f"user_id=eq.{user_id}")
+            return True
+        except Exception as e:
+            logger.error(f"deactivate_user failed: {e}")
+            return False
+
+    def invalidate_user_sessions(self, user_id: int) -> bool:
+        try:
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    conn.cursor().execute(
+                        "UPDATE sessions SET is_active=0 WHERE user_id=?", (user_id,)
+                    )
+                    conn.commit()
+            else:
+                _sb_update("sessions", {"is_active": False}, f"user_id=eq.{user_id}")
+            return True
+        except Exception as e:
+            logger.error(f"invalidate_user_sessions failed: {e}")
+            return False
+
+    def get_all_users(self) -> List[Dict]:
+        try:
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    cur = conn.cursor()
+                    cur.execute(
+                        "SELECT id,username,email,role,is_active,created_at,last_login FROM users ORDER BY created_at DESC"
+                    )
+                    return [dict(r) for r in cur.fetchall()]
+            else:
+                return _sb_select("users",
+                    "id,username,email,role,is_active,created_at,last_login",
+                    order="created_at.desc")
+        except Exception as e:
+            logger.error(f"get_all_users failed: {e}")
+            return []
+
+    def get_user_stats(self, user_id: int) -> Dict:
+        try:
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    cur = conn.cursor()
+                    cur.execute("SELECT COUNT(*) FROM detections WHERE user_id=?", (user_id,))
+                    det = cur.fetchone()[0]
+                    cur.execute("SELECT COUNT(*) FROM reports WHERE user_id=?", (user_id,))
+                    rep = cur.fetchone()[0]
+            else:
+                det_rows = _sb_select("detections", "id", filters=f"user_id=eq.{user_id}")
+                rep_rows = _sb_select("reports", "id", filters=f"user_id=eq.{user_id}")
+                det, rep = len(det_rows), len(rep_rows)
+            return {"total_detections": det, "total_reports": rep,
+                    "storage_used": round(det * 2.5, 2)}
+        except Exception as e:
+            logger.error(f"get_user_stats failed: {e}")
+            return {"total_detections": 0, "total_reports": 0, "storage_used": 0}
+
+    # =========================================================================
+    # EMAIL VERIFICATION
+    # =========================================================================
+
+    def set_verification_token(self, user_id: int, token: str,
+                                expires_at: datetime) -> bool:
+        try:
+            data = {"verification_token": token,
+                    "verification_token_expires": expires_at.isoformat()}
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    conn.cursor().execute(
+                        "UPDATE users SET verification_token=?,verification_token_expires=? WHERE id=?",
+                        (token, expires_at, user_id)
+                    )
+                    conn.commit()
+            else:
+                _sb_update("users", data, f"id=eq.{user_id}")
+            return True
         except Exception as e:
             logger.error(f"set_verification_token failed: {e}")
             return False
 
     def verify_email_token(self, token: str) -> Optional[Dict]:
-        """
-        Validate token, mark user as verified, clear the token.
-        Returns the user dict on success, None on failure/expiry.
-        """
         try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT id, username, email, verification_token_expires, email_verified "
-                    "FROM users WHERE verification_token=?",
-                    (token,)
-                )
-                row = cursor.fetchone()
-                if not row:
-                    return None
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    cur = conn.cursor()
+                    cur.execute(
+                        "SELECT id,username,email,verification_token_expires,email_verified FROM users WHERE verification_token=?",
+                        (token,)
+                    )
+                    row = cur.fetchone()
+                    r = dict(row) if row else None
+            else:
+                rows = _sb_select("users",
+                    "id,username,email,verification_token_expires,email_verified",
+                    filters=f"verification_token=eq.{token}", limit=1)
+                r = rows[0] if rows else None
 
-                row_dict = dict(row)
+            if not r: return None
+            if r.get("email_verified"): return r
 
-                if row_dict['email_verified']:
-                    # Already verified — return user so frontend can still log them in
-                    return row_dict
+            exp = r.get("verification_token_expires")
+            if exp:
+                exp_dt = exp if isinstance(exp, datetime) else datetime.fromisoformat(str(exp).replace("Z", "").replace("+00:00", ""))
+                # Compare as naive UTC
+                exp_dt = exp_dt.replace(tzinfo=None)
+                if exp_dt < datetime.utcnow(): return None
 
-                expires = row_dict['verification_token_expires']
-                if expires and datetime.fromisoformat(str(expires)) < datetime.utcnow():
-                    return None  # expired
-
-                # Mark as verified and clear the token
-                cursor.execute(
-                    "UPDATE users SET email_verified=1, verification_token=NULL, "
-                    "verification_token_expires=NULL WHERE id=?",
-                    (row_dict['id'],)
-                )
-                # Explicit commit inside the with block (pool also commits on exit — harmless)
-                conn.commit()
-                logger.info(f"Email verified for user id={row_dict['id']}")
-                return row_dict
+            # Mark verified
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    conn.cursor().execute(
+                        "UPDATE users SET email_verified=1,verification_token=NULL,verification_token_expires=NULL WHERE id=?",
+                        (r["id"],)
+                    )
+                    conn.commit()
+            else:
+                _sb_update("users", {
+                    "email_verified": True,
+                    "verification_token": None,
+                    "verification_token_expires": None
+                }, f"id=eq.{r['id']}")
+            logger.info(f"Email verified for user id={r['id']}")
+            return r
         except Exception as e:
             logger.error(f"verify_email_token failed: {e}")
             return None
 
     def is_email_verified(self, user_id: int) -> bool:
-        """Return True if the user's email is verified."""
         try:
-            with self.get_connection() as conn:
-                row = conn.cursor().execute(
-                    "SELECT email_verified FROM users WHERE id=?", (user_id,)
-                ).fetchone()
-                return bool(row['email_verified']) if row else False
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    cur = conn.cursor()
+                    cur.execute("SELECT email_verified FROM users WHERE id=?", (user_id,))
+                    row = cur.fetchone()
+                    return bool(row[0]) if row else False
+            else:
+                rows = _sb_select("users", "email_verified", filters=f"id=eq.{user_id}", limit=1)
+                return bool(rows[0].get("email_verified")) if rows else False
         except Exception as e:
             logger.error(f"is_email_verified failed: {e}")
             return False
 
-    def get_user_by_username(self, username: str) -> Optional[Dict]:
-        """Get user by username"""
+    # =========================================================================
+    # SESSION MANAGEMENT  (methods injected by security.py)
+    # save_session / is_session_active / update_session_last_used /
+    # revoke_session / revoke_all_sessions / cleanup_expired_sessions
+    # =========================================================================
+
+    # =========================================================================
+    # DETECTION MANAGEMENT
+    # =========================================================================
+
+    def create_detection(self, user_id: int, filename: str, file_type: str,
+                         file_path: str = None, file_size: int = None,
+                         total_detections: int = 0, confidence_threshold: float = 0.25,
+                         processing_time: float = None, metadata: Dict = None) -> Optional[int]:
         try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT id, username, email, password_hash, role, is_active, 
-                           created_at, last_login, profile_data
-                    FROM users WHERE username = ?
-                """, (username,))
-                
-                user = cursor.fetchone()
-                return dict(user) if user else None
-                
+            payload = {
+                "user_id": user_id, "filename": filename, "file_type": file_type,
+                "file_path": file_path, "file_size": file_size,
+                "total_detections": total_detections,
+                "confidence_threshold": confidence_threshold,
+                "processing_time": processing_time,
+                "status": "completed",
+                "metadata": json.dumps(metadata or {}),
+            }
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    return self._insert_returning_id(
+                        conn,
+                        "INSERT INTO detections (user_id,filename,file_type,file_path,file_size,"
+                        "total_detections,confidence_threshold,processing_time,status,metadata) "
+                        "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                        (user_id, filename, file_type, file_path, file_size,
+                         total_detections, confidence_threshold, processing_time,
+                         "completed", json.dumps(metadata or {}))
+                    )
+            else:
+                row = _sb_insert("detections", payload)
+                return row.get("id") if row else None
         except Exception as e:
-            logger.error(f"Get user by username failed: {e}")
+            logger.error(f"create_detection failed: {e}")
             return None
-    
-    def get_user_by_email(self, email: str) -> Optional[Dict]:
-        """Get user by email"""
+
+    def add_detection_result(self, detection_id: int, class_name: str,
+                             confidence: float, bbox_x1: float, bbox_y1: float,
+                             bbox_x2: float, bbox_y2: float, frame_number: int = 0) -> bool:
+        """Single row — images. For video use add_detection_results (batch)."""
         try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT id, username, email, password_hash, role, is_active, 
-                           created_at, last_login, profile_data
-                    FROM users WHERE email = ?
-                """, (email,))
-                
-                user = cursor.fetchone()
-                return dict(user) if user else None
-                
+            payload = {
+                "detection_id": detection_id, "class_name": class_name,
+                "confidence": confidence, "bbox_x1": bbox_x1, "bbox_y1": bbox_y1,
+                "bbox_x2": bbox_x2, "bbox_y2": bbox_y2, "frame_number": frame_number,
+            }
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    conn.cursor().execute(
+                        "INSERT INTO detection_results (detection_id,class_name,confidence,"
+                        "bbox_x1,bbox_y1,bbox_x2,bbox_y2,frame_number) VALUES (?,?,?,?,?,?,?,?)",
+                        (detection_id, class_name, confidence,
+                         bbox_x1, bbox_y1, bbox_x2, bbox_y2, frame_number)
+                    )
+                    conn.commit()
+            else:
+                _sb_insert("detection_results", payload)
+            return True
         except Exception as e:
-            logger.error(f"Get user by email failed: {e}")
+            logger.error(f"add_detection_result failed: {e}")
+            return False
+
+    def add_detection_results(self, detection_id: int, results: List[Dict]) -> bool:
+        """
+        Batch insert for video detections.
+        REST mode: sends up to 500 rows per HTTP call instead of 1 per call.
+        This is ~500x faster for videos with many detections.
+        """
+        if not results:
+            return True
+        try:
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    conn.cursor().executemany(
+                        "INSERT INTO detection_results (detection_id,class_name,confidence,"
+                        "bbox_x1,bbox_y1,bbox_x2,bbox_y2,frame_number) VALUES (?,?,?,?,?,?,?,?)",
+                        [(detection_id, r["class"], r["confidence"],
+                          r["bbox"]["x1"], r["bbox"]["y1"],
+                          r["bbox"]["x2"], r["bbox"]["y2"],
+                          r.get("frame_number", 0)) for r in results]
+                    )
+                    conn.commit()
+            else:
+                BATCH_SIZE = 500
+                payload_list = [
+                    {
+                        "detection_id": detection_id,
+                        "class_name": r["class"],
+                        "confidence": r["confidence"],
+                        "bbox_x1": r["bbox"]["x1"], "bbox_y1": r["bbox"]["y1"],
+                        "bbox_x2": r["bbox"]["x2"], "bbox_y2": r["bbox"]["y2"],
+                        "frame_number": r.get("frame_number", 0),
+                    }
+                    for r in results
+                ]
+                batches = range(0, len(payload_list), BATCH_SIZE)
+                for i in batches:
+                    batch = payload_list[i : i + BATCH_SIZE]
+                    _rest("POST", "/rest/v1/detection_results",
+                          json=batch,
+                          headers={"Prefer": "return=minimal"})
+                logger.info(
+                    f"Batch saved {len(results)} detection_results "
+                    f"in {len(list(batches))} request(s) for detection_id={detection_id}"
+                )
+            return True
+        except Exception as e:
+            logger.error(f"add_detection_results (batch) failed: {e}")
+            return False
+
+    def save_image_metadata(self, detection_id: int, width: int, height: int,
+                            original_path: str = None, annotated_path: str = None,
+                            original_base64: str = None, annotated_base64: str = None) -> bool:
+        try:
+            payload = {
+                "detection_id": detection_id, "width": width, "height": height,
+                "original_path": original_path, "annotated_path": annotated_path,
+                "original_base64": original_base64, "annotated_base64": annotated_base64,
+            }
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    conn.cursor().execute(
+                        "INSERT INTO images (detection_id,width,height,original_path,"
+                        "annotated_path,original_base64,annotated_base64) VALUES (?,?,?,?,?,?,?)",
+                        (detection_id, width, height, original_path, annotated_path,
+                         original_base64, annotated_base64)
+                    )
+                    conn.commit()
+            else:
+                _sb_insert("images", payload)
+            return True
+        except Exception as e:
+            logger.error(f"save_image_metadata failed: {e}")
+            return False
+
+    def save_video_metadata(self, detection_id: int, total_frames: int,
+                            processed_frames: int, fps: float, duration: float,
+                            resolution: str, original_path: str = None,
+                            annotated_path: str = None) -> bool:
+        try:
+            payload = {
+                "detection_id": detection_id, "total_frames": total_frames,
+                "processed_frames": processed_frames, "fps": fps,
+                "duration": duration, "resolution": resolution,
+                "original_path": original_path, "annotated_path": annotated_path,
+            }
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    conn.cursor().execute(
+                        "INSERT INTO videos (detection_id,total_frames,processed_frames,"
+                        "fps,duration,resolution,original_path,annotated_path) VALUES (?,?,?,?,?,?,?,?)",
+                        (detection_id, total_frames, processed_frames, fps,
+                         duration, resolution, original_path, annotated_path)
+                    )
+                    conn.commit()
+            else:
+                _sb_insert("videos", payload)
+            return True
+        except Exception as e:
+            logger.error(f"save_video_metadata failed: {e}")
+            return False
+
+    def get_video_metadata(self, detection_id: int) -> Optional[Dict]:
+        try:
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    cur = conn.cursor()
+                    cur.execute("SELECT * FROM videos WHERE detection_id=?", (detection_id,))
+                    row = cur.fetchone()
+                    return dict(row) if row else None
+            else:
+                rows = _sb_select("videos", "*", filters=f"detection_id=eq.{detection_id}", limit=1)
+                return rows[0] if rows else None
+        except Exception as e:
+            logger.error(f"get_video_metadata failed: {e}")
             return None
-    
-    def update_user_last_login(self, user_id: int) -> bool:
-        """Update user's last login timestamp"""
+
+    def update_detection_status(self, detection_id: int, status: str,
+                                total_detections: int = None, processing_time: float = None,
+                                error_message: str = None, metadata: Dict = None) -> bool:
         try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?
-                """, (user_id,))
-                
-                conn.commit()
-                return cursor.rowcount > 0
-                
+            data = {"status": status}
+            if total_detections is not None: data["total_detections"] = total_detections
+            if processing_time is not None:  data["processing_time"] = processing_time
+            if error_message is not None:    data["error_message"] = error_message
+            if metadata is not None:         data["metadata"] = json.dumps(metadata)
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    sets = ", ".join(f"{k}=?" for k in data)
+                    conn.cursor().execute(
+                        f"UPDATE detections SET {sets} WHERE id=?",
+                        (*data.values(), detection_id)
+                    )
+                    conn.commit()
+            else:
+                _sb_update("detections", data, f"id=eq.{detection_id}")
+            return True
         except Exception as e:
-            logger.error(f"Update last login failed: {e}")
+            logger.error(f"update_detection_status failed: {e}")
             return False
-    
-    def invalidate_user_sessions(self, user_id: int) -> bool:
-        """Invalidate all sessions for a user"""
+
+    def get_user_detections(self, user_id: int, limit: int = 50,
+                            offset: int = 0, days: int = None) -> List[Dict]:
         try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    UPDATE sessions SET is_active = 0 WHERE user_id = ?
-                """, (user_id,))
-                
-                conn.commit()
-                return cursor.rowcount > 0
-                
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    cur = conn.cursor()
+                    sql = ("SELECT d.*,v.total_frames,v.fps,v.duration,i.width,i.height "
+                           "FROM detections d "
+                           "LEFT JOIN videos v ON d.id=v.detection_id "
+                           "LEFT JOIN images i ON d.id=i.detection_id "
+                           "WHERE d.user_id=?")
+                    params = [user_id]
+                    if days:
+                        sql += " AND d.created_at>=datetime('now',?)"
+                        params.append(f"-{days} days")
+                    sql += " ORDER BY d.created_at DESC LIMIT ? OFFSET ?"
+                    params += [limit, offset]
+                    cur.execute(sql, params)
+                    rows = [dict(r) for r in cur.fetchall()]
+            else:
+                filters = f"user_id=eq.{user_id}"
+                if days:
+                    cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
+                    filters += f"&created_at=gte.{cutoff}"
+                rows = _sb_select("detections", "*",
+                    filters=filters, order="created_at.desc", limit=limit)
+                # Enrich with video/image metadata
+                for row in rows:
+                    vid = _sb_select("videos", "total_frames,fps,duration",
+                        filters=f"detection_id=eq.{row['id']}", limit=1)
+                    if vid:
+                        row.update(vid[0])
+                    img = _sb_select("images", "width,height",
+                        filters=f"detection_id=eq.{row['id']}", limit=1)
+                    if img:
+                        row.update(img[0])
+
+            for row in rows:
+                if isinstance(row.get("metadata"), str):
+                    row["metadata"] = json.loads(row["metadata"] or "{}")
+            return rows
         except Exception as e:
-            logger.error(f"Invalidate user sessions failed: {e}")
-            return False
-    
-    def update_user_profile(self, user_id: int, email: str = None, profile_data: Dict = None) -> bool:
-        """Update user profile"""
+            logger.error(f"get_user_detections failed: {e}")
+            return []
+
+    def get_detection_by_id(self, detection_id: int,
+                            user_id: int = None) -> Optional[Dict]:
         try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                updates = []
-                params = []
-                
-                if email:
-                    updates.append("email = ?")
-                    params.append(email)
-                
-                if profile_data:
-                    updates.append("profile_data = ?")
-                    params.append(json.dumps(profile_data))
-                
-                if not updates:
-                    return True
-                
-                params.append(user_id)
-                
-                cursor.execute(f"""
-                    UPDATE users SET {', '.join(updates)} WHERE id = ?
-                """, params)
-                
-                conn.commit()
-                return cursor.rowcount > 0
-                
-        except Exception as e:
-            logger.error(f"Update user profile failed: {e}")
-            return False
-    
-    def update_user_password(self, user_id: int, new_password: str) -> bool:
-        """Update user password"""
-        try:
-            password_hash = self.hash_password(new_password)
-            
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    UPDATE users SET password_hash = ? WHERE id = ?
-                """, (password_hash, user_id))
-                
-                conn.commit()
-                return cursor.rowcount > 0
-                
-        except Exception as e:
-            logger.error(f"Update user password failed: {e}")
-            return False
-    
-    def delete_detection(self, detection_id: int, user_id: int = None) -> bool:
-        """Delete a detection and its associated data completely"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                # Get detection info for file cleanup
-                if user_id:
-                    cursor.execute("SELECT * FROM detections WHERE id = ? AND user_id = ?", (detection_id, user_id))
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    cur = conn.cursor()
+                    sql = "SELECT * FROM detections WHERE id=?"
+                    params = [detection_id]
+                    if user_id:
+                        sql += " AND user_id=?"
+                        params.append(user_id)
+                    cur.execute(sql, params)
+                    row = cur.fetchone()
+                    if not row: return None
+                    d = dict(row)
+            else:
+                filters = f"id=eq.{detection_id}"
+                if user_id: filters += f"&user_id=eq.{user_id}"
+                rows = _sb_select("detections", "*", filters=filters, limit=1)
+                if not rows: return None
+                d = rows[0]
+
+            if isinstance(d.get("metadata"), str):
+                d["metadata"] = json.loads(d["metadata"] or "{}")
+
+            # Get detection results
+            results = self.get_detection_results(detection_id, user_id)
+            d["results"] = [
+                {"class": r["class_name"], "confidence": r["confidence"],
+                 "bbox": {"x1": r["bbox_x1"], "y1": r["bbox_y1"],
+                          "x2": r["bbox_x2"], "y2": r["bbox_y2"]},
+                 "frame_number": r.get("frame_number", 0)}
+                for r in results
+            ]
+
+            if d.get("file_type") == "image":
+                if _USE_SQLITE:
+                    with self.get_connection() as conn:
+                        cur = conn.cursor()
+                        cur.execute("SELECT original_base64,annotated_base64 FROM images WHERE detection_id=?",
+                                    (detection_id,))
+                        img = cur.fetchone()
+                        if img:
+                            d["original_image_base64"] = img[0]
+                            d["annotated_image_base64"] = img[1]
                 else:
-                    cursor.execute("SELECT * FROM detections WHERE id = ?", (detection_id,))
-                
-                detection = cursor.fetchone()
-                if not detection:
-                    return False
-                
-                # Delete associated files from disk
-                try:
-                    import os
-                    processed_videos_path = os.path.join(os.path.dirname(__file__), 'processed_videos')
-                    
-                    # Get video/image records to find file paths
-                    cursor.execute("SELECT file_path FROM videos WHERE detection_id = ?", (detection_id,))
-                    video_files = cursor.fetchall()
-                    
-                    cursor.execute("SELECT file_path FROM images WHERE detection_id = ?", (detection_id,))
-                    image_files = cursor.fetchall()
-                    
-                    # Delete video files
-                    for video in video_files:
-                        if video['file_path']:
-                            file_path = os.path.join(processed_videos_path, os.path.basename(video['file_path']))
-                            if os.path.exists(file_path):
-                                os.remove(file_path)
-                                logger.info(f"Deleted video file: {file_path}")
-                    
-                    # Delete image files  
-                    for image in image_files:
-                        if image['file_path']:
-                            file_path = os.path.join(processed_videos_path, os.path.basename(image['file_path']))
-                            if os.path.exists(file_path):
-                                os.remove(file_path)
-                                logger.info(f"Deleted image file: {file_path}")
-                                
-                except Exception as file_error:
-                    logger.warning(f"Failed to delete some files: {file_error}")
-                
-                # Delete database records in correct order
-                cursor.execute("DELETE FROM detection_results WHERE detection_id = ?", (detection_id,))
-                cursor.execute("DELETE FROM videos WHERE detection_id = ?", (detection_id,))
-                cursor.execute("DELETE FROM images WHERE detection_id = ?", (detection_id,))
-                cursor.execute("DELETE FROM detections WHERE id = ?", (detection_id,))
-                
-                success = cursor.rowcount > 0
-                conn.commit()
-                
-                if success:
-                    logger.info(f"Detection {detection_id} completely deleted (including files)")
-                
-                return success
-                
+                    imgs = _sb_select("images", "original_base64,annotated_base64",
+                        filters=f"detection_id=eq.{detection_id}", limit=1)
+                    if imgs:
+                        d["original_image_base64"] = imgs[0].get("original_base64")
+                        d["annotated_image_base64"] = imgs[0].get("annotated_base64")
+            return d
         except Exception as e:
-            logger.error(f"Delete detection failed: {e}")
+            logger.error(f"get_detection_by_id failed: {e}")
+            return None
+
+    def get_detection_results(self, detection_id: int,
+                              user_id: int = None) -> List[Dict]:
+        try:
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    cur = conn.cursor()
+                    cur.execute(
+                        "SELECT class_name,confidence,bbox_x1,bbox_y1,bbox_x2,bbox_y2,frame_number "
+                        "FROM detection_results WHERE detection_id=? ORDER BY confidence DESC",
+                        (detection_id,)
+                    )
+                    return [dict(r) for r in cur.fetchall()]
+            else:
+                return _sb_select("detection_results",
+                    "class_name,confidence,bbox_x1,bbox_y1,bbox_x2,bbox_y2,frame_number",
+                    filters=f"detection_id=eq.{detection_id}",
+                    order="confidence.desc")
+        except Exception as e:
+            logger.error(f"get_detection_results failed: {e}")
+            return []
+
+    def delete_detection(self, detection_id: int, user_id: int = None) -> bool:
+        try:
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    cur = conn.cursor()
+                    sql = "SELECT id FROM detections WHERE id=?"
+                    p = [detection_id]
+                    if user_id: sql += " AND user_id=?"; p.append(user_id)
+                    cur.execute(sql, p)
+                    if not cur.fetchone(): return False
+                    for tbl in ("detection_results", "videos", "images"):
+                        cur.execute(f"DELETE FROM {tbl} WHERE detection_id=?", (detection_id,))
+                    cur.execute("DELETE FROM detections WHERE id=?", (detection_id,))
+                    conn.commit()
+            else:
+                filters = f"id=eq.{detection_id}"
+                if user_id: filters += f"&user_id=eq.{user_id}"
+                rows = _sb_select("detections", "id", filters=filters, limit=1)
+                if not rows: return False
+                _sb_delete("detection_results", f"detection_id=eq.{detection_id}")
+                _sb_delete("videos", f"detection_id=eq.{detection_id}")
+                _sb_delete("images", f"detection_id=eq.{detection_id}")
+                _sb_delete("detections", filters)
+            return True
+        except Exception as e:
+            logger.error(f"delete_detection failed: {e}")
             return False
 
     def delete_all_user_detections(self, user_id: int) -> bool:
-        """Delete all detections for a user - ATOMIC operation"""
         try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                # Start transaction
-                cursor.execute("BEGIN TRANSACTION")
-                
-                try:
-                    # Get all user's detections
-                    cursor.execute("SELECT id FROM detections WHERE user_id = ?", (user_id,))
-                    detection_ids = [row['id'] for row in cursor.fetchall()]
-                    
-                    if not detection_ids:
-                        cursor.execute("COMMIT")
-                        logger.info(f"No detections found for user {user_id}")
-                        return True
-                    
-                    # Delete files for all detections first
-                    files_deleted = 0
-                    for detection_id in detection_ids:
-                        try:
-                            import os
-                            processed_videos_path = os.path.join(os.path.dirname(__file__), 'processed_videos')
-                            
-                            # Get file paths
-                            cursor.execute("SELECT file_path FROM videos WHERE detection_id = ?", (detection_id,))
-                            video_files = cursor.fetchall()
-                            cursor.execute("SELECT file_path FROM images WHERE detection_id = ?", (detection_id,))
-                            image_files = cursor.fetchall()
-                            
-                            # Delete video files
-                            for video in video_files:
-                                if video['file_path']:
-                                    file_path = os.path.join(processed_videos_path, os.path.basename(video['file_path']))
-                                    if os.path.exists(file_path):
-                                        os.remove(file_path)
-                                        files_deleted += 1
-                            
-                            # Delete image files
-                            for image in image_files:
-                                if image['file_path']:
-                                    file_path = os.path.join(processed_videos_path, os.path.basename(image['file_path']))
-                                    if os.path.exists(file_path):
-                                        os.remove(file_path)
-                                        files_deleted += 1
-                                        
-                        except Exception as file_error:
-                            logger.warning(f"Failed to delete files for detection {detection_id}: {file_error}")
-                    
-                    # Delete database records (CASCADE will handle related tables)
-                    cursor.execute("DELETE FROM detections WHERE user_id = ?", (user_id,))
-                    deleted_count = cursor.rowcount
-                    
-                    # Commit transaction
-                    cursor.execute("COMMIT")
-                    
-                    logger.info(f"Successfully deleted {deleted_count} detections and {files_deleted} files for user {user_id}")
-                    return True
-                    
-                except Exception as db_error:
-                    # Rollback on any error
-                    cursor.execute("ROLLBACK")
-                    logger.error(f"Database deletion failed for user {user_id} detections, rolled back: {db_error}")
-                    return False
-                
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    cur = conn.cursor()
+                    cur.execute("SELECT id FROM detections WHERE user_id=?", (user_id,))
+                    ids = [r[0] for r in cur.fetchall()]
+                    for did in ids:
+                        for tbl in ("detection_results", "videos", "images"):
+                            cur.execute(f"DELETE FROM {tbl} WHERE detection_id=?", (did,))
+                    cur.execute("DELETE FROM detections WHERE user_id=?", (user_id,))
+                    conn.commit()
+            else:
+                rows = _sb_select("detections", "id", filters=f"user_id=eq.{user_id}")
+                for row in rows:
+                    did = row["id"]
+                    _sb_delete("detection_results", f"detection_id=eq.{did}")
+                    _sb_delete("videos", f"detection_id=eq.{did}")
+                    _sb_delete("images", f"detection_id=eq.{did}")
+                _sb_delete("detections", f"user_id=eq.{user_id}")
+            return True
         except Exception as e:
-            logger.error(f"Delete all user detections failed: {e}")
+            logger.error(f"delete_all_user_detections failed: {e}")
             return False
 
     def delete_all_user_data(self, user_id: int) -> bool:
-        """Delete ALL data for a user (detections, reports, predictions, analytics) - ATOMIC"""
         try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                # Start transaction
-                cursor.execute("BEGIN TRANSACTION")
-                
-                try:
-                    # Get all detection IDs first for file cleanup
-                    cursor.execute("SELECT id FROM detections WHERE user_id = ?", (user_id,))
-                    detection_ids = [row['id'] for row in cursor.fetchall()]
-                    
-                    # Delete files for all detections
-                    files_deleted = 0
-                    for detection_id in detection_ids:
-                        try:
-                            import os
-                            processed_videos_path = os.path.join(os.path.dirname(__file__), 'processed_videos')
-                            
-                            # Get file paths
-                            cursor.execute("SELECT file_path FROM videos WHERE detection_id = ?", (detection_id,))
-                            video_files = cursor.fetchall()
-                            cursor.execute("SELECT file_path FROM images WHERE detection_id = ?", (detection_id,))
-                            image_files = cursor.fetchall()
-                            
-                            # Delete video files
-                            for video in video_files:
-                                if video['file_path']:
-                                    file_path = os.path.join(processed_videos_path, os.path.basename(video['file_path']))
-                                    if os.path.exists(file_path):
-                                        os.remove(file_path)
-                                        files_deleted += 1
-                            
-                            # Delete image files
-                            for image in image_files:
-                                if image['file_path']:
-                                    file_path = os.path.join(processed_videos_path, os.path.basename(image['file_path']))
-                                    if os.path.exists(file_path):
-                                        os.remove(file_path)
-                                        files_deleted += 1
-                                        
-                        except Exception as file_error:
-                            logger.warning(f"Failed to delete files for detection {detection_id}: {file_error}")
-                    
-                    # Delete database records in correct order (let CASCADE handle relationships)
-                    cursor.execute("DELETE FROM detections WHERE user_id = ?", (user_id,))
-                    detections_deleted = cursor.rowcount
-                    
-                    cursor.execute("DELETE FROM reports WHERE user_id = ?", (user_id,))
-                    reports_deleted = cursor.rowcount
-                    
-                    cursor.execute("DELETE FROM predictions WHERE user_id = ?", (user_id,))
-                    predictions_deleted = cursor.rowcount
-                    
-                    cursor.execute("DELETE FROM analytics_data WHERE user_id = ?", (user_id,))
-                    analytics_deleted = cursor.rowcount
-                    
-                    # Delete sessions (logout user)
-                    cursor.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
-                    sessions_deleted = cursor.rowcount
-                    
-                    # Commit transaction
-                    cursor.execute("COMMIT")
-                    
-                    logger.info(f"ALL data deleted for user {user_id}: {detections_deleted} detections, {reports_deleted} reports, {predictions_deleted} predictions, {analytics_deleted} analytics, {sessions_deleted} sessions, {files_deleted} files")
-                    return True
-                    
-                except Exception as db_error:
-                    # Rollback on any database error
-                    cursor.execute("ROLLBACK")
-                    logger.error(f"Database deletion failed for user {user_id}, rolled back: {db_error}")
-                    return False
-                
+            self.delete_all_user_detections(user_id)
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    cur = conn.cursor()
+                    for tbl in ("reports", "predictions", "analytics_data", "sessions"):
+                        cur.execute(f"DELETE FROM {tbl} WHERE user_id=?", (user_id,))
+                    conn.commit()
+            else:
+                for tbl in ("reports", "predictions", "analytics_data", "sessions"):
+                    _sb_delete(tbl, f"user_id=eq.{user_id}")
+            return True
         except Exception as e:
-            logger.error(f"Delete all user data failed: {e}")
-            return False
-    
-    def update_report_file_path(self, report_id: int, file_path: str) -> bool:
-        """Update report file path"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                # Get file size
-                file_size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
-                
-                cursor.execute("""
-                    UPDATE reports SET file_path = ?, file_size = ? WHERE id = ?
-                """, (file_path, file_size, report_id))
-                
-                conn.commit()
-                return cursor.rowcount > 0
-                
-        except Exception as e:
-            logger.error(f"Update report file path failed: {e}")
-            return False
-    
-    def log_system_event(self, user_id: int, level: str, message: str, module: str, function_name: str = None, line_number: int = None, metadata: Dict = None) -> bool:
-        """Log system event"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    INSERT INTO logs (user_id, level, message, module, function_name, line_number, metadata)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (user_id, level, message, module, function_name, line_number, json.dumps(metadata or {})))
-                conn.commit()
-                return True
-        except Exception as e:
-            logger.error(f"Log system event failed: {e}")
+            logger.error(f"delete_all_user_data failed: {e}")
             return False
 
-    # ==================== ANALYTICS MANAGEMENT ====================
-    def save_analytics_data(self, user_id: int, analytics_data: Dict) -> bool:
-        """Save analytics data for user"""
+    # =========================================================================
+    # PREDICTIONS
+    # =========================================================================
+
+    def save_prediction(self, user_id: int, region: str, prediction_date: str,
+                        predicted_pollution_level: float,
+                        confidence_interval: Tuple[float, float] = None,
+                        model_version: str = None,
+                        input_features: Dict = None) -> Optional[int]:
         try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                # Save different types of analytics data
-                import json
-                from datetime import datetime
-                
-                today = datetime.now().date()
-                
-                # Save summary stats
-                cursor.execute("""
-                    INSERT OR REPLACE INTO analytics_data 
-                    (user_id, data_type, date_recorded, value, metadata)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (
-                    user_id, 'summary', today, 
-                    analytics_data['stats']['totalDetections'],
-                    json.dumps(analytics_data['stats'])
-                ))
-                
-                # Save trend data
-                for trend in analytics_data.get('trendData', []):
-                    cursor.execute("""
-                        INSERT OR REPLACE INTO analytics_data 
-                        (user_id, data_type, date_recorded, value, metadata)
-                        VALUES (?, ?, ?, ?, ?)
-                    """, (
-                        user_id, 'trend', trend['date'], 
-                        trend['detections'],
-                        json.dumps(trend)
-                    ))
-                
-                # Save class distribution
-                for class_data in analytics_data.get('classDistribution', []):
-                    cursor.execute("""
-                        INSERT OR REPLACE INTO analytics_data 
-                        (user_id, data_type, date_recorded, value, metadata)
-                        VALUES (?, ?, ?, ?, ?)
-                    """, (
-                        user_id, 'heatmap', today, 
-                        class_data['value'],
-                        json.dumps(class_data)
-                    ))
-                
-                conn.commit()
-                return True
-                
+            payload = {
+                "user_id": user_id, "region": region,
+                "prediction_date": str(prediction_date),
+                "predicted_pollution_level": predicted_pollution_level,
+                "confidence_interval_lower": confidence_interval[0] if confidence_interval else None,
+                "confidence_interval_upper": confidence_interval[1] if confidence_interval else None,
+                "model_version": model_version,
+                "input_features": json.dumps(input_features or {}),
+            }
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    return self._insert_returning_id(
+                        conn,
+                        "INSERT INTO predictions (user_id,region,prediction_date,"
+                        "predicted_pollution_level,confidence_interval_lower,"
+                        "confidence_interval_upper,model_version,input_features) "
+                        "VALUES (?,?,?,?,?,?,?,?)",
+                        (user_id, region, str(prediction_date), predicted_pollution_level,
+                         payload["confidence_interval_lower"],
+                         payload["confidence_interval_upper"],
+                         model_version, json.dumps(input_features or {}))
+                    )
+            else:
+                row = _sb_insert("predictions", payload)
+                return row.get("id") if row else None
         except Exception as e:
-            logger.error(f"Save analytics data failed: {e}")
-            return False
-    
-    def get_detection_results(self, detection_id: int, user_id: int = None) -> List[Dict]:
-        """Get detection results for a specific detection - with optional user verification"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-
-                # Always query detection_results directly — ownership already verified
-                # by the caller before reaching this point. The JOIN was causing
-                # WAL visibility issues where newly committed rows weren't visible yet.
-                cursor.execute("""
-                    SELECT class_name, confidence, bbox_x1, bbox_y1, bbox_x2, bbox_y2, frame_number
-                    FROM detection_results
-                    WHERE detection_id = ?
-                    ORDER BY confidence DESC
-                """, (detection_id,))
-
-                results = []
-                for row in cursor.fetchall():
-                    results.append({
-                        'class_name': row['class_name'],
-                        'confidence': row['confidence'],
-                        'bbox_x1': row['bbox_x1'],
-                        'bbox_y1': row['bbox_y1'],
-                        'bbox_x2': row['bbox_x2'],
-                        'bbox_y2': row['bbox_y2'],
-                        'frame_number': row['frame_number']
-                    })
-
-                return results
-
-        except Exception as e:
-            logger.error(f"Get detection results failed: {e}")
-            return []
-    
-    # ==================== REPORTS MANAGEMENT ====================
-    
-    def create_report(self, user_id: int, title: str, report_type: str, 
-                     date_range_days: int = 30) -> Optional[int]:
-        """Create a new report"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                from datetime import datetime, timedelta
-                now = datetime.now()
-                start_date = now - timedelta(days=date_range_days)
-                
-                cursor.execute("""
-                    INSERT INTO reports 
-                    (user_id, title, report_type, data_range_start, data_range_end, metadata)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, (
-                    user_id, title, report_type, 
-                    start_date.date(), now.date(),
-                    '{"status": "generating"}'
-                ))
-                
-                conn.commit()
-                return cursor.lastrowid
-                
-        except Exception as e:
-            logger.error(f"Create report failed: {e}")
+            logger.error(f"save_prediction failed: {e}")
             return None
-    
-    def update_report(self, report_id: int, report_data: Dict) -> bool:
-        """Update report with generated data"""
+
+    def get_user_predictions(self, user_id: int, region: str = None,
+                             limit: int = 100, days: int = None) -> List[Dict]:
         try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                import json
-                from datetime import datetime
-                
-                cursor.execute("""
-                    UPDATE reports 
-                    SET metadata = ?
-                    WHERE id = ?
-                """, (
-                    json.dumps({
-                        "status": "completed",
-                        "data": report_data,
-                        "generated_at": datetime.now().isoformat()
-                    }),
-                    report_id
-                ))
-                
-                conn.commit()
-                return cursor.rowcount > 0
-                
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    cur = conn.cursor()
+                    sql = ("SELECT id,region,prediction_date,predicted_pollution_level,"
+                           "confidence_interval_lower,confidence_interval_upper,"
+                           "model_version,input_features,created_at "
+                           "FROM predictions WHERE user_id=?")
+                    params = [user_id]
+                    if region: sql += " AND region=?"; params.append(region)
+                    if days:
+                        sql += " AND created_at>=datetime('now',?)"
+                        params.append(f"-{days} days")
+                    sql += " ORDER BY created_at DESC LIMIT ?"; params.append(limit)
+                    cur.execute(sql, params)
+                    rows = [dict(r) for r in cur.fetchall()]
+            else:
+                filters = f"user_id=eq.{user_id}"
+                if region: filters += f"&region=eq.{region}"
+                if days:
+                    cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
+                    filters += f"&created_at=gte.{cutoff}"
+                rows = _sb_select("predictions",
+                    "id,region,prediction_date,predicted_pollution_level,"
+                    "confidence_interval_lower,confidence_interval_upper,"
+                    "model_version,input_features,created_at",
+                    filters=filters, order="created_at.desc", limit=limit)
+            for row in rows:
+                row["input_features"] = json.loads(row.get("input_features") or "{}")
+            return rows
         except Exception as e:
-            logger.error(f"Update report failed: {e}")
-            return False
-    
-    def get_user_reports(self, user_id: int, limit: int = 50) -> List[Dict]:
-        """Get user's reports"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT id, title, report_type, created_at, data_range_start, 
-                           data_range_end, metadata
-                    FROM reports 
-                    WHERE user_id = ?
-                    ORDER BY created_at DESC
-                    LIMIT ?
-                """, (user_id, limit))
-                
-                reports = []
-                for row in cursor.fetchall():
-                    import json
-                    metadata = json.loads(row['metadata']) if row['metadata'] else {}
-                    
-                    reports.append({
-                        'id': row['id'],
-                        'title': row['title'],
-                        'report_type': row['report_type'],
-                        'created_at': row['created_at'],
-                        'data_range_start': row['data_range_start'],
-                        'data_range_end': row['data_range_end'],
-                        'status': metadata.get('status', 'unknown'),
-                        'size': '1.2 MB',  # Placeholder
-                        'metadata': metadata
-                    })
-                
-                return reports
-                
-        except Exception as e:
-            logger.error(f"Get user reports failed: {e}")
+            logger.error(f"get_user_predictions failed: {e}")
             return []
-    
-    def get_report_by_id(self, report_id: int) -> Optional[Dict]:
-        """Get report by ID"""
+
+    # =========================================================================
+    # HEATMAP DATA
+    # =========================================================================
+
+    _REGION_BASELINE = {
+        "pacific":       {"avg": 65.0, "max": 72.0},
+        "atlantic":      {"avg": 45.0, "max": 52.0},
+        "indian":        {"avg": 55.0, "max": 63.0},
+        "mediterranean": {"avg": 40.0, "max": 48.0},
+    }
+    _REGION_COORDS = {
+        "pacific":       (10.0,  -150.0),
+        "atlantic":      (30.0,   -40.0),
+        "indian":        (-20.0,   75.0),
+        "mediterranean": (36.0,    18.0),
+    }
+
+    @staticmethod
+    def _pollution_score(avg: float, mx: float, n: int) -> float:
+        return round(min((avg/100*0.6) + (mx/100*0.2) + (min(n/30,1)*0.2), 1.0), 4)
+
+    @staticmethod
+    def _intensity(avg: float) -> str:
+        if avg < 30: return "Low"
+        if avg < 60: return "Moderate"
+        if avg < 80: return "High"
+        return "Critical"
+
+    def _heatmap_from_predictions(self, days: int = 7) -> Dict[str, Dict]:
+        """Aggregate predictions by region."""
         try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT id, user_id, title, report_type, created_at, 
-                           data_range_start, data_range_end, metadata
-                    FROM reports 
-                    WHERE id = ?
-                """, (report_id,))
-                
-                row = cursor.fetchone()
-                if row:
-                    import json
-                    metadata = json.loads(row['metadata']) if row['metadata'] else {}
-                    
-                    return {
-                        'id': row['id'],
-                        'user_id': row['user_id'],
-                        'title': row['title'],
-                        'report_type': row['report_type'],
-                        'created_at': row['created_at'],
-                        'data_range_start': row['data_range_start'],
-                        'data_range_end': row['data_range_end'],
-                        'metadata': metadata,
-                        'data': metadata.get('data', {})
+            cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    cur = conn.cursor()
+                    cur.execute(
+                        "SELECT region,AVG(predicted_pollution_level),MAX(predicted_pollution_level),COUNT(*) "
+                        "FROM predictions WHERE created_at>=? GROUP BY region",
+                        (cutoff,)
+                    )
+                    rows = cur.fetchall()
+                    return {r[0]: {"avg_level": r[1], "max_level": r[2], "sample_count": r[3]} for r in rows}
+            else:
+                all_rows = _sb_select("predictions",
+                    "region,predicted_pollution_level",
+                    filters=f"created_at=gte.{cutoff}")
+                agg: Dict[str, Dict] = {}
+                for row in all_rows:
+                    reg = row["region"]
+                    val = float(row["predicted_pollution_level"])
+                    if reg not in agg:
+                        agg[reg] = {"vals": [], "max_level": val}
+                    agg[reg]["vals"].append(val)
+                    agg[reg]["max_level"] = max(agg[reg]["max_level"], val)
+                return {
+                    reg: {
+                        "avg_level": sum(d["vals"]) / len(d["vals"]),
+                        "max_level": d["max_level"],
+                        "sample_count": len(d["vals"]),
                     }
-                
-                return None
-                
+                    for reg, d in agg.items()
+                }
         except Exception as e:
-            logger.error(f"Get report by ID failed: {e}")
-            return None
-    
-    def delete_report(self, report_id: int, user_id: int) -> bool:
-        """Delete a user's report completely including PDF file"""
+            logger.error(f"_heatmap_from_predictions failed: {e}")
+            return {}
+
+    def get_heatmap_data(self, days: int = 7) -> List[Dict]:
+        db_rows = self._heatmap_from_predictions(days)
+        results = []
+        for region, coords in self._REGION_COORDS.items():
+            if region in db_rows:
+                d = db_rows[region]
+                avg, mx, n = float(d["avg_level"]), float(d["max_level"]), int(d["sample_count"])
+                is_est = False
+            else:
+                b = self._REGION_BASELINE[region]; avg, mx, n, is_est = b["avg"], b["max"], 0, True
+            results.append({
+                "region": region, "lat": coords[0], "lng": coords[1],
+                "avg_pollution_level": round(avg, 2), "max_pollution_level": round(mx, 2),
+                "pollution_score": self._pollution_score(avg, mx, n),
+                "intensity": self._intensity(avg), "sample_count": n,
+                "time_range_days": days, "is_estimated": is_est,
+            })
+        return results
+
+    def get_heatmap_predictions(self) -> List[Dict]:
+        db_rows = self._heatmap_from_predictions(days=1)
+        results = []
+        for region, coords in self._REGION_COORDS.items():
+            if region in db_rows:
+                d = db_rows[region]
+                avg, mx, n, is_est = float(d["avg_level"]), float(d["max_level"]), int(d["sample_count"]), False
+            else:
+                b = self._REGION_BASELINE[region]; avg, mx, n, is_est = b["avg"], b["max"], 0, True
+            results.append({
+                "region": region, "lat": coords[0], "lng": coords[1],
+                "avg_pollution_level": round(avg, 2), "max_pollution_level": round(mx, 2),
+                "pollution_score": self._pollution_score(avg, mx, n),
+                "intensity": self._intensity(avg), "sample_count": n,
+                "is_prediction": True, "is_estimated": is_est,
+            })
+        return results
+
+    # =========================================================================
+    # ANALYTICS
+    # =========================================================================
+
+    def save_analytics_point(self, user_id: int, data_type: str, region: str,
+                             date_recorded: str, value: float,
+                             metadata: Dict = None) -> bool:
         try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                # Get report info first for file cleanup
-                cursor.execute("""
-                    SELECT file_path, title FROM reports 
-                    WHERE id = ? AND user_id = ?
-                """, (report_id, user_id))
-                
-                report = cursor.fetchone()
-                if not report:
-                    return False
-                
-                # Delete PDF file if it exists
-                if report['file_path']:
-                    try:
-                        import os
-                        if os.path.exists(report['file_path']):
-                            os.remove(report['file_path'])
-                            logger.info(f"Deleted report PDF file: {report['file_path']}")
-                    except Exception as file_error:
-                        logger.warning(f"Failed to delete report file {report['file_path']}: {file_error}")
-                
-                # Delete database record
-                cursor.execute("""
-                    DELETE FROM reports 
-                    WHERE id = ? AND user_id = ?
-                """, (report_id, user_id))
-                
-                success = cursor.rowcount > 0
-                conn.commit()
-                
-                if success:
-                    logger.info(f"Report {report_id} '{report['title']}' deleted by user {user_id}")
-                
-                return success
-                
+            payload = {"user_id": user_id, "data_type": data_type, "region": region,
+                       "date_recorded": str(date_recorded), "value": value,
+                       "metadata": json.dumps(metadata or {})}
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    conn.cursor().execute(
+                        "INSERT INTO analytics_data (user_id,data_type,region,date_recorded,value,metadata) VALUES (?,?,?,?,?,?)",
+                        (user_id, data_type, region, str(date_recorded), value, json.dumps(metadata or {}))
+                    )
+                    conn.commit()
+            else:
+                _sb_insert("analytics_data", payload)
+            return True
         except Exception as e:
-            logger.error(f"Delete report failed: {e}")
+            logger.error(f"save_analytics_point failed: {e}")
+            return False
+
+    def save_analytics_data(self, user_id: int, analytics_data: Dict) -> bool:
+        try:
+            today = str(datetime.now().date())
+            self.save_analytics_point(user_id, "summary", "", today,
+                                      analytics_data["stats"]["totalDetections"],
+                                      analytics_data["stats"])
+            return True
+        except Exception as e:
+            logger.error(f"save_analytics_data failed: {e}")
+            return False
+
+    def get_analytics_data(self, user_id: int, data_type: str = None, region: str = None,
+                           start_date: str = None, end_date: str = None) -> List[Dict]:
+        try:
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    cur = conn.cursor()
+                    sql = "SELECT * FROM analytics_data WHERE user_id=?"
+                    params = [user_id]
+                    if data_type: sql += " AND data_type=?"; params.append(data_type)
+                    if region:    sql += " AND region=?";    params.append(region)
+                    if start_date: sql += " AND date_recorded>=?"; params.append(start_date)
+                    if end_date:   sql += " AND date_recorded<=?"; params.append(end_date)
+                    sql += " ORDER BY date_recorded ASC"
+                    cur.execute(sql, params)
+                    rows = [dict(r) for r in cur.fetchall()]
+            else:
+                filters = f"user_id=eq.{user_id}"
+                if data_type:   filters += f"&data_type=eq.{data_type}"
+                if region:      filters += f"&region=eq.{region}"
+                if start_date:  filters += f"&date_recorded=gte.{start_date}"
+                if end_date:    filters += f"&date_recorded=lte.{end_date}"
+                rows = _sb_select("analytics_data", "*", filters=filters, order="date_recorded.asc")
+            for row in rows:
+                if isinstance(row.get("metadata"), str):
+                    row["metadata"] = json.loads(row["metadata"] or "{}")
+            return rows
+        except Exception as e:
+            logger.error(f"get_analytics_data failed: {e}")
+            return []
+
+    # =========================================================================
+    # REPORTS
+    # =========================================================================
+
+    def create_report(self, user_id: int, title: str, report_type: str,
+                      date_range_days: int = 30) -> Optional[int]:
+        try:
+            now = datetime.now()
+            payload = {
+                "user_id": user_id, "title": title, "report_type": report_type,
+                "data_range_start": str((now - timedelta(days=date_range_days)).date()),
+                "data_range_end": str(now.date()),
+                "metadata": '{"status":"generating"}',
+            }
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    return self._insert_returning_id(
+                        conn,
+                        "INSERT INTO reports (user_id,title,report_type,data_range_start,data_range_end,metadata) VALUES (?,?,?,?,?,?)",
+                        (user_id, title, report_type, payload["data_range_start"],
+                         payload["data_range_end"], payload["metadata"])
+                    )
+            else:
+                row = _sb_insert("reports", payload)
+                return row.get("id") if row else None
+        except Exception as e:
+            logger.error(f"create_report failed: {e}")
+            return None
+
+    def update_report(self, report_id: int, report_data: Dict) -> bool:
+        try:
+            meta = json.dumps({"status": "completed", "data": report_data,
+                               "generated_at": datetime.now().isoformat()})
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    conn.cursor().execute(
+                        "UPDATE reports SET metadata=? WHERE id=?", (meta, report_id)
+                    )
+                    conn.commit()
+            else:
+                _sb_update("reports", {"metadata": meta}, f"id=eq.{report_id}")
+            return True
+        except Exception as e:
+            logger.error(f"update_report failed: {e}")
+            return False
+
+    def get_user_reports(self, user_id: int, limit: int = 50, days: int = None) -> List[Dict]:
+        try:
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    cur = conn.cursor()
+                    sql = ("SELECT id,title,report_type,created_at,data_range_start,data_range_end,metadata "
+                           "FROM reports WHERE user_id=?")
+                    params = [user_id]
+                    if days:
+                        sql += " AND created_at>=datetime('now',?)"; params.append(f"-{days} days")
+                    sql += " ORDER BY created_at DESC LIMIT ?"; params.append(limit)
+                    cur.execute(sql, params)
+                    rows = [dict(r) for r in cur.fetchall()]
+            else:
+                filters = f"user_id=eq.{user_id}"
+                if days:
+                    cutoff = (datetime.utcnow()-timedelta(days=days)).isoformat()
+                    filters += f"&created_at=gte.{cutoff}"
+                rows = _sb_select("reports",
+                    "id,title,report_type,created_at,data_range_start,data_range_end,metadata",
+                    filters=filters, order="created_at.desc", limit=limit)
+            result = []
+            for row in rows:
+                meta = json.loads(row.get("metadata") or "{}")
+                result.append({
+                    "id": row["id"], "title": row["title"],
+                    "report_type": row["report_type"],
+                    "created_at": str(row.get("created_at", "")),
+                    "data_range_start": str(row.get("data_range_start") or ""),
+                    "data_range_end": str(row.get("data_range_end") or ""),
+                    "status": meta.get("status", "unknown"),
+                    "size": "1.2 MB", "metadata": meta,
+                })
+            return result
+        except Exception as e:
+            logger.error(f"get_user_reports failed: {e}")
+            return []
+
+    def _get_report_raw(self, report_id: int, user_id: int = None) -> Optional[Dict]:
+        try:
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    cur = conn.cursor()
+                    sql = "SELECT * FROM reports WHERE id=?"
+                    params = [report_id]
+                    if user_id: sql += " AND user_id=?"; params.append(user_id)
+                    cur.execute(sql, params)
+                    row = cur.fetchone()
+                    r = dict(row) if row else None
+            else:
+                filters = f"id=eq.{report_id}"
+                if user_id: filters += f"&user_id=eq.{user_id}"
+                rows = _sb_select("reports", "*", filters=filters, limit=1)
+                r = rows[0] if rows else None
+            if r:
+                meta = json.loads(r.get("metadata") or "{}")
+                r["metadata"] = meta
+                r["data"] = meta.get("data", {})
+            return r
+        except Exception as e:
+            logger.error(f"_get_report_raw failed: {e}")
+            return None
+
+    def get_report_by_id(self, report_id: int) -> Optional[Dict]:
+        return self._get_report_raw(report_id)
+
+    def get_user_report_by_id(self, user_id: int, report_id: int) -> Optional[Dict]:
+        return self._get_report_raw(report_id, user_id)
+
+    def delete_report(self, report_id: int, user_id: int) -> bool:
+        try:
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    cur = conn.cursor()
+                    cur.execute("DELETE FROM reports WHERE id=? AND user_id=?", (report_id, user_id))
+                    conn.commit()
+                    return cur.rowcount > 0
+            else:
+                rows = _sb_delete("reports", f"id=eq.{report_id}&user_id=eq.{user_id}")
+                return rows > 0
+        except Exception as e:
+            logger.error(f"delete_report failed: {e}")
             return False
 
     def delete_all_user_reports(self, user_id: int) -> bool:
-        """Delete all reports for a user including PDF files"""
         try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                # Get all report file paths first for cleanup
-                cursor.execute("SELECT id, file_path, title FROM reports WHERE user_id = ?", (user_id,))
-                reports = cursor.fetchall()
-                
-                # Delete PDF files
-                files_deleted = 0
-                for report in reports:
-                    if report['file_path']:
-                        try:
-                            import os
-                            if os.path.exists(report['file_path']):
-                                os.remove(report['file_path'])
-                                files_deleted += 1
-                                logger.info(f"Deleted report PDF: {report['file_path']}")
-                        except Exception as file_error:
-                            logger.warning(f"Failed to delete report file {report['file_path']}: {file_error}")
-                
-                # Delete database records
-                cursor.execute("DELETE FROM reports WHERE user_id = ?", (user_id,))
-                deleted_count = cursor.rowcount
-                conn.commit()
-                
-                logger.info(f"Deleted {deleted_count} reports and {files_deleted} PDF files for user {user_id}")
-                return True
-                
-        except Exception as e:
-            logger.error(f"Delete all user reports failed: {e}")
-            return False
-
-    def get_user_report_by_id(self, user_id: int, report_id: int) -> Optional[Dict]:
-        """Get user's specific report - ensures user can only access their own reports"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT id, user_id, title, report_type, created_at, 
-                           data_range_start, data_range_end, metadata
-                    FROM reports 
-                    WHERE id = ? AND user_id = ?
-                """, (report_id, user_id))
-                
-                row = cursor.fetchone()
-                if row:
-                    import json
-                    metadata = json.loads(row['metadata']) if row['metadata'] else {}
-                    
-                    return {
-                        'id': row['id'],
-                        'user_id': row['user_id'],
-                        'title': row['title'],
-                        'report_type': row['report_type'],
-                        'created_at': row['created_at'],
-                        'data_range_start': row['data_range_start'],
-                        'data_range_end': row['data_range_end'],
-                        'metadata': metadata,
-                        'data': metadata.get('data', {})
-                    }
-                
-                return None
-                
-        except Exception as e:
-            logger.error(f"Get user report by ID failed: {e}")
-            return None
-    def get_all_users(self) -> List[Dict]:
-        """Get all users for admin management"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT id, username, email, role, is_active, created_at, last_login
-                    FROM users 
-                    ORDER BY created_at DESC
-                """)
-                
-                users = []
-                for row in cursor.fetchall():
-                    users.append({
-                        'id': row['id'],
-                        'username': row['username'],
-                        'email': row['email'],
-                        'role': row['role'],
-                        'is_active': row['is_active'],
-                        'created_at': row['created_at'],
-                        'last_login': row['last_login']
-                    })
-                
-                return users
-                
-        except Exception as e:
-            logger.error(f"Get all users failed: {e}")
-            return []
-
-    def get_user_stats(self, user_id: int) -> Dict:
-        """Get statistics for a specific user"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                # Count detections
-                cursor.execute("SELECT COUNT(*) as count FROM detections WHERE user_id = ?", (user_id,))
-                total_detections = cursor.fetchone()['count']
-                
-                # Count reports
-                cursor.execute("SELECT COUNT(*) as count FROM reports WHERE user_id = ?", (user_id,))
-                total_reports = cursor.fetchone()['count']
-                
-                # Calculate storage used (placeholder - would need actual file size calculation)
-                storage_used = total_detections * 2.5  # Estimate 2.5MB per detection
-                
-                return {
-                    'total_detections': total_detections,
-                    'total_reports': total_reports,
-                    'storage_used': round(storage_used, 2)
-                }
-                
-        except Exception as e:
-            logger.error(f"Get user stats failed: {e}")
-            return {'total_detections': 0, 'total_reports': 0, 'storage_used': 0}
-
-    def deactivate_user(self, user_id: int) -> bool:
-        """Deactivate a user account"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                cursor.execute("""
-                    UPDATE users 
-                    SET is_active = 0
-                    WHERE id = ?
-                """, (user_id,))
-                
-                success = cursor.rowcount > 0
-                conn.commit()
-                
-                if success:
-                    # Also revoke all sessions
-                    cursor.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    conn.cursor().execute("DELETE FROM reports WHERE user_id=?", (user_id,))
                     conn.commit()
-                    logger.info(f"User {user_id} deactivated")
-                
-                return success
-                
+            else:
+                _sb_delete("reports", f"user_id=eq.{user_id}")
+            return True
         except Exception as e:
-            logger.error(f"Deactivate user failed: {e}")
+            logger.error(f"delete_all_user_reports failed: {e}")
             return False
 
-    def get_system_stats(self) -> Dict:
-        """Get system statistics for admin dashboard"""
+    def update_report_file_path(self, report_id: int, file_path: str) -> bool:
+        return True  # File-based reports not used in REST mode
+
+    # =========================================================================
+    # LOGGING
+    # =========================================================================
+
+    def log_activity(self, user_id: int, level: str, message: str,
+                     module: str = "system") -> bool:
         try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                # Active users (logged in within last 24 hours)
-                cursor.execute("""
-                    SELECT COUNT(DISTINCT user_id) as count 
-                    FROM sessions 
-                    WHERE last_used > datetime('now', '-1 day')
-                """)
-                active_users = cursor.fetchone()['count']
-                
-                # Total detections
-                cursor.execute("SELECT COUNT(*) as count FROM detections")
-                total_detections = cursor.fetchone()['count']
-                
-                # Database size (approximate)
-                cursor.execute("SELECT page_count * page_size as size FROM pragma_page_count(), pragma_page_size()")
-                db_size = cursor.fetchone()['size'] / (1024 * 1024)  # Convert to MB
-                
-                # Active sessions
-                cursor.execute("SELECT COUNT(*) as count FROM sessions WHERE last_used > datetime('now', '-1 hour')")
-                active_sessions = cursor.fetchone()['count']
-                
-                # API requests today (from logs)
-                cursor.execute("""
-                    SELECT COUNT(*) as count 
-                    FROM logs 
-                    WHERE timestamp > datetime('now', 'start of day')
-                    AND message LIKE '%API%'
-                """)
-                api_requests = cursor.fetchone()['count']
-                
-                return {
-                    'active_users': active_users,
-                    'total_detections': total_detections,
-                    'database_size': round(db_size, 2),
-                    'active_sessions': active_sessions,
-                    'api_requests_today': api_requests,
-                    'storage_used': total_detections * 2.5  # Estimate
-                }
-                
+            payload = {"user_id": user_id, "level": level.upper(),
+                       "message": message, "module": module}
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    conn.cursor().execute(
+                        "INSERT INTO logs (user_id,level,message,module) VALUES (?,?,?,?)",
+                        (user_id, level.upper(), message, module)
+                    )
+                    conn.commit()
+            else:
+                _sb_insert("logs", payload)
+            return True
         except Exception as e:
-            logger.error(f"Get system stats failed: {e}")
-            return {
-                'active_users': 0,
-                'total_detections': 0,
-                'database_size': 0,
-                'active_sessions': 0,
-                'api_requests_today': 0,
-                'storage_used': 0
+            logger.error(f"log_activity failed: {e}")
+            return False
+
+    def log_system_event(self, user_id: int, level: str, message: str, module: str,
+                         function_name: str = None, line_number: int = None,
+                         metadata: Dict = None) -> bool:
+        try:
+            payload = {
+                "user_id": user_id, "level": level, "message": message,
+                "module": module, "function_name": function_name,
+                "line_number": line_number, "metadata": json.dumps(metadata or {}),
             }
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    conn.cursor().execute(
+                        "INSERT INTO logs (user_id,level,message,module,function_name,line_number,metadata) VALUES (?,?,?,?,?,?,?)",
+                        (user_id, level, message, module, function_name, line_number, json.dumps(metadata or {}))
+                    )
+                    conn.commit()
+            else:
+                _sb_insert("logs", payload)
+            return True
+        except Exception as e:
+            logger.error(f"log_system_event failed: {e}")
+            return False
 
     def get_recent_logs(self, limit: int = 50, level: str = None) -> List[Dict]:
-        """Get recent system logs"""
         try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                query = """
-                    SELECT id, user_id, level, message, module, timestamp
-                    FROM logs 
-                """
-                params = []
-                
-                if level:
-                    query += " WHERE level = ?"
-                    params.append(level.upper())
-                
-                query += " ORDER BY timestamp DESC LIMIT ?"
-                params.append(limit)
-                
-                cursor.execute(query, params)
-                
-                logs = []
-                for row in cursor.fetchall():
-                    logs.append({
-                        'id': row['id'],
-                        'user_id': row['user_id'],
-                        'level': row['level'],
-                        'message': row['message'],
-                        'module': row['module'],
-                        'timestamp': row['timestamp']
-                    })
-                
-                return logs
-                
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    cur = conn.cursor()
+                    sql = "SELECT id,user_id,level,message,module,timestamp FROM logs"
+                    params = []
+                    if level: sql += " WHERE level=?"; params.append(level.upper())
+                    sql += " ORDER BY timestamp DESC LIMIT ?"; params.append(limit)
+                    cur.execute(sql, params)
+                    return [dict(r) for r in cur.fetchall()]
+            else:
+                filters = f"level=eq.{level.upper()}" if level else ""
+                return _sb_select("logs", "id,user_id,level,message,module,timestamp",
+                    filters=filters, order="timestamp.desc", limit=limit)
         except Exception as e:
-            logger.error(f"Get recent logs failed: {e}")
+            logger.error(f"get_recent_logs failed: {e}")
             return []
 
-    def log_activity(self, user_id: int, level: str, message: str, module: str = "system") -> bool:
-        """Log an activity/event"""
+    def get_system_logs(self, admin_user_id: int, level: str = None,
+                        limit: int = 1000, offset: int = 0) -> List[Dict]:
+        admin = self.get_user_by_id(admin_user_id)
+        if not admin or admin["role"] != "ADMIN":
+            return []
+        return self.get_recent_logs(limit=limit, level=level)
+
+    # =========================================================================
+    # ADMIN / STATISTICS
+    # =========================================================================
+
+    def get_system_stats(self) -> Dict:
+        try:
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    cur = conn.cursor()
+                    def cnt(sql, p=()):
+                        cur.execute(sql, p); return cur.fetchone()[0]
+                    return {
+                        "active_users": cnt("SELECT COUNT(DISTINCT user_id) FROM sessions WHERE last_used>datetime('now','-1 day')"),
+                        "total_detections": cnt("SELECT COUNT(*) FROM detections"),
+                        "database_size": 0,
+                        "active_sessions": cnt("SELECT COUNT(*) FROM sessions WHERE last_used>datetime('now','-1 hour')"),
+                        "api_requests_today": 0,
+                        "storage_used": cnt("SELECT COUNT(*) FROM detections") * 2.5,
+                    }
+            else:
+                det_rows  = _sb_select("detections", "id")
+                sess_rows = _sb_select("sessions", "user_id,last_used")
+                cutoff_day  = (datetime.utcnow()-timedelta(days=1)).isoformat()
+                cutoff_hour = (datetime.utcnow()-timedelta(hours=1)).isoformat()
+                active_users = len({r["user_id"] for r in sess_rows
+                                    if str(r.get("last_used","")) > cutoff_day})
+                active_sess  = sum(1 for r in sess_rows
+                                   if str(r.get("last_used","")) > cutoff_hour)
+                total_det = len(det_rows)
+                return {
+                    "active_users": active_users,
+                    "total_detections": total_det,
+                    "database_size": 0,
+                    "active_sessions": active_sess,
+                    "api_requests_today": 0,
+                    "storage_used": round(total_det * 2.5, 2),
+                }
+        except Exception as e:
+            logger.error(f"get_system_stats failed: {e}")
+            return {"active_users":0,"total_detections":0,"database_size":0,
+                    "active_sessions":0,"api_requests_today":0,"storage_used":0}
+
+    def get_user_statistics(self, user_id: int) -> Dict:
+        try:
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    cur = conn.cursor()
+                    def cnt(sql, p=()):
+                        cur.execute(sql, p); return cur.fetchone()[0]
+                    return {
+                        "total_detections": cnt("SELECT COUNT(*) FROM detections WHERE user_id=?", (user_id,)),
+                        "successful_detections": cnt("SELECT COUNT(*) FROM detections WHERE user_id=? AND status='completed'", (user_id,)),
+                        "total_objects_detected": cnt("SELECT COALESCE(SUM(total_detections),0) FROM detections WHERE user_id=? AND status='completed'", (user_id,)),
+                        "total_predictions": cnt("SELECT COUNT(*) FROM predictions WHERE user_id=?", (user_id,)),
+                        "total_reports": cnt("SELECT COUNT(*) FROM reports WHERE user_id=?", (user_id,)),
+                        "recent_detections": cnt("SELECT COUNT(*) FROM detections WHERE user_id=? AND created_at>=datetime('now','-30 days')", (user_id,)),
+                    }
+            else:
+                dets = _sb_select("detections", "id,total_detections,status", filters=f"user_id=eq.{user_id}")
+                preds = _sb_select("predictions", "id", filters=f"user_id=eq.{user_id}")
+                reps  = _sb_select("reports", "id", filters=f"user_id=eq.{user_id}")
+                cutoff = (datetime.utcnow()-timedelta(days=30)).isoformat()
+                rec_dets = _sb_select("detections", "id", filters=f"user_id=eq.{user_id}&created_at=gte.{cutoff}")
+                total_obj = sum(d.get("total_detections",0) or 0 for d in dets if d.get("status")=="completed")
+                return {
+                    "total_detections": len(dets),
+                    "successful_detections": sum(1 for d in dets if d.get("status")=="completed"),
+                    "total_objects_detected": total_obj,
+                    "total_predictions": len(preds),
+                    "total_reports": len(reps),
+                    "recent_detections": len(rec_dets),
+                }
+        except Exception as e:
+            logger.error(f"get_user_statistics failed: {e}")
+            return {}
+
+    def get_system_statistics(self, admin_user_id: int) -> Dict:
+        admin = self.get_user_by_id(admin_user_id)
+        if not admin or admin["role"] != "ADMIN":
+            return {}
+        return self.get_system_stats()
+
+    # =========================================================================
+    # DATABASE MAINTENANCE
+    # =========================================================================
+
+    def backup_database(self) -> str:
+        if not _USE_SQLITE:
+            return "supabase_managed_backup"
+        import shutil
+        backup_dir = os.path.join(os.path.dirname(self.db_path), "backups")
+        os.makedirs(backup_dir, exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = os.path.join(backup_dir, f"marine_detection_backup_{ts}.db")
+        shutil.copy2(self.db_path, path)
+        return path
+
+    def optimize_database(self) -> bool:
+        if not _USE_SQLITE:
+            return True
         try:
             with self.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                cursor.execute("""
-                    INSERT INTO logs (user_id, level, message, module, timestamp)
-                    VALUES (?, ?, ?, ?, datetime('now'))
-                """, (user_id, level.upper(), message, module))
-                
+                conn.cursor().execute("VACUUM")
+                conn.cursor().execute("ANALYZE")
                 conn.commit()
-                return True
-                
+            return True
         except Exception as e:
-            logger.error(f"Log activity failed: {e}")
+            logger.error(f"optimize_database failed: {e}")
             return False
-    # ==================== HEATMAP DATA ====================
 
-    # Static fallback levels per region when no DB data exists yet.
-    # Based on real-world research baselines (0-100 scale).
-    _REGION_BASELINE = {
-        'pacific':       {'avg': 65.0, 'max': 72.0},
-        'atlantic':      {'avg': 45.0, 'max': 52.0},
-        'indian':        {'avg': 55.0, 'max': 63.0},
-        'mediterranean': {'avg': 40.0, 'max': 48.0},
-    }
-
-    _REGION_COORDS = {
-        'pacific':       (10.0,  -150.0),
-        'atlantic':      (30.0,   -40.0),
-        'indian':        (-20.0,   75.0),
-        'mediterranean': (36.0,    18.0),
-    }
-
-    @staticmethod
-    def _pollution_score(avg_level: float, max_level: float, sample_count: int) -> float:
-        """
-        Compute a 0-1 pollution score.
-        Formula: weighted combination of avg level, max spike, and data frequency.
-        All inputs are on a 0-100 scale so we divide by 100 to get 0-1.
-        """
-        freq_weight = min(sample_count / 30.0, 1.0)
-        # Each component is already 0-1 after /100
-        score = (avg_level / 100 * 0.6) + (max_level / 100 * 0.2) + (freq_weight * 0.2)
-        return round(min(score, 1.0), 4)
-
-    @staticmethod
-    def _intensity(avg_level: float) -> str:
-        if avg_level < 30:   return "Low"
-        if avg_level < 60:   return "Moderate"
-        if avg_level < 80:   return "High"
-        return "Critical"
-
-    def get_heatmap_data(self, days: int = 7) -> List[Dict]:
-        """
-        Return one heatmap point per region (all 4 always present).
-        Regions with DB predictions use real aggregated data.
-        Regions without predictions fall back to research baselines.
-        """
+    def cleanup_old_sessions(self, days: int = 7) -> int:
         try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-
-                cutoff = (datetime.now() - timedelta(days=days)).isoformat()
-
-                cursor.execute("""
-                    SELECT
-                        region,
-                        AVG(predicted_pollution_level) AS avg_level,
-                        MAX(predicted_pollution_level) AS max_level,
-                        COUNT(*)                       AS sample_count
-                    FROM predictions
-                    WHERE created_at >= ?
-                    GROUP BY region
-                """, (cutoff,))
-
-                db_rows = {r['region']: r for r in cursor.fetchall()}
-
-            results = []
-            for region, coords in self._REGION_COORDS.items():
-                if region in db_rows:
-                    row = db_rows[region]
-                    avg_level    = float(row['avg_level'])
-                    max_level    = float(row['max_level'])
-                    sample_count = int(row['sample_count'])
-                    is_estimated = False
-                else:
-                    # Use baseline — mark as estimated so UI can indicate it
-                    baseline     = self._REGION_BASELINE[region]
-                    avg_level    = baseline['avg']
-                    max_level    = baseline['max']
-                    sample_count = 0
-                    is_estimated = True
-
-                results.append({
-                    'region':               region,
-                    'lat':                  coords[0],
-                    'lng':                  coords[1],
-                    'avg_pollution_level':  round(avg_level, 2),
-                    'max_pollution_level':  round(max_level, 2),
-                    'pollution_score':      self._pollution_score(avg_level, max_level, sample_count),
-                    'intensity':            self._intensity(avg_level),
-                    'sample_count':         sample_count,
-                    'time_range_days':      days,
-                    'is_estimated':         is_estimated,
-                })
-
-            return results
-
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    cur = conn.cursor()
+                    cur.execute(
+                        "DELETE FROM sessions WHERE (expires_at<=datetime('now') OR is_active=0) "
+                        "AND created_at<=datetime('now',?)", (f"-{days} days",)
+                    )
+                    count = cur.rowcount; conn.commit(); return count
+            else:
+                cutoff = (datetime.utcnow()-timedelta(days=days)).isoformat()
+                deleted = _sb_delete("sessions", f"created_at=lte.{cutoff}&is_active=eq.false")
+                return deleted
         except Exception as e:
-            logger.error(f"get_heatmap_data failed: {e}")
-            return []
+            logger.error(f"cleanup_old_sessions failed: {e}")
+            return 0
 
-    def get_heatmap_predictions(self) -> List[Dict]:
-        """
-        Return the latest LSTM prediction batch per region for the future overlay.
-        Always returns all 4 regions; missing ones use baselines.
-        """
+    def cleanup_old_logs(self, days: int = 30) -> int:
         try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-
-                # Latest batch = predictions created within 1 minute of the most recent row per region
-                cursor.execute("""
-                    SELECT
-                        p.region,
-                        AVG(p.predicted_pollution_level) AS avg_level,
-                        MAX(p.predicted_pollution_level) AS max_level,
-                        COUNT(*)                         AS sample_count
-                    FROM predictions p
-                    INNER JOIN (
-                        SELECT region, MAX(created_at) AS latest
-                        FROM predictions
-                        GROUP BY region
-                    ) lb ON p.region = lb.region
-                       AND p.created_at >= datetime(lb.latest, '-1 minute')
-                    GROUP BY p.region
-                """)
-
-                db_rows = {r['region']: r for r in cursor.fetchall()}
-
-            results = []
-            for region, coords in self._REGION_COORDS.items():
-                if region in db_rows:
-                    row = db_rows[region]
-                    avg_level    = float(row['avg_level'])
-                    max_level    = float(row['max_level'])
-                    sample_count = int(row['sample_count'])
-                    is_estimated = False
-                else:
-                    baseline     = self._REGION_BASELINE[region]
-                    avg_level    = baseline['avg']
-                    max_level    = baseline['max']
-                    sample_count = 0
-                    is_estimated = True
-
-                results.append({
-                    'region':              region,
-                    'lat':                 coords[0],
-                    'lng':                 coords[1],
-                    'avg_pollution_level': round(avg_level, 2),
-                    'max_pollution_level': round(max_level, 2),
-                    'pollution_score':     self._pollution_score(avg_level, max_level, sample_count),
-                    'intensity':           self._intensity(avg_level),
-                    'sample_count':        sample_count,
-                    'is_prediction':       True,
-                    'is_estimated':        is_estimated,
-                })
-
-            return results
-
+            if _USE_SQLITE:
+                with self.get_connection() as conn:
+                    cur = conn.cursor()
+                    cur.execute(
+                        "DELETE FROM logs WHERE timestamp<=datetime('now',?) AND level NOT IN ('ERROR','CRITICAL')",
+                        (f"-{days} days",)
+                    )
+                    count = cur.rowcount; conn.commit(); return count
+            else:
+                cutoff = (datetime.utcnow()-timedelta(days=days)).isoformat()
+                deleted = _sb_delete("logs", f"timestamp=lte.{cutoff}&level=neq.ERROR&level=neq.CRITICAL")
+                return deleted
         except Exception as e:
-            logger.error(f"get_heatmap_predictions failed: {e}")
-            return []
+            logger.error(f"cleanup_old_logs failed: {e}")
+            return 0
+
+    def export_system_data(self) -> str:
+        return "use_supabase_dashboard_for_export"
 
 
-# Global database instance
+# =============================================================================
+# _FakeConn — lets security.py session methods work transparently on REST backend
+# =============================================================================
+
+class _FakeConn:
+    """
+    Fake connection object returned by get_connection() in REST mode.
+    Intercepts _exec() calls from security.py injected session methods
+    and routes them to the Supabase REST API.
+    """
+    def __init__(self, mgr: "DatabaseManager"):
+        self._mgr = mgr
+        self._last_rowcount = 0
+        self._last_rows = []
+
+    def cursor(self):
+        return self
+
+    def commit(self):
+        pass
+
+    def fetchone(self):
+        return self._last_rows[0] if self._last_rows else None
+
+    def fetchall(self):
+        return self._last_rows
+
+    @property
+    def rowcount(self):
+        return self._last_rowcount
+
+    def _exec(self, query: str, params: tuple = ()):
+        """Route SQL to REST API."""
+        q = query.strip()
+        q_up = q.upper()
+
+        # ── INSERT INTO sessions ────────────────────────────────────────────
+        if q_up.startswith("INSERT INTO SESSIONS"):
+            # (user_id, token_hash, expires_at, ip_address, user_agent)
+            payload = {
+                "user_id": params[0], "token_hash": params[1],
+                "expires_at": params[2].isoformat() if hasattr(params[2], "isoformat") else str(params[2]),
+                "ip_address": params[3] if len(params) > 3 else None,
+                "user_agent": params[4] if len(params) > 4 else None,
+                "is_active": True,
+            }
+            _sb_insert("sessions", payload)
+            self._last_rowcount = 1
+            return self
+
+        # ── SELECT FROM sessions (is_session_active) ────────────────────────
+        if q_up.startswith("SELECT") and "SESSIONS" in q_up:
+            uid, token_hash = params[0], params[1]
+            now_iso = datetime.utcnow().isoformat()
+            rows = _sb_select("sessions", "id",
+                filters=f"user_id=eq.{uid}&token_hash=eq.{token_hash}&is_active=eq.true&expires_at=gte.{now_iso}",
+                limit=1)
+            self._last_rows = rows
+            self._last_rowcount = len(rows)
+            return self
+
+        # ── UPDATE sessions SET last_used ────────────────────────────────────
+        if q_up.startswith("UPDATE SESSIONS") and "LAST_USED" in q_up:
+            uid, token_hash = params[0], params[1]
+            _sb_update("sessions",
+                {"last_used": datetime.utcnow().isoformat()},
+                f"user_id=eq.{uid}&token_hash=eq.{token_hash}")
+            self._last_rowcount = 1
+            return self
+
+        # ── UPDATE sessions SET is_active=false (revoke single) ─────────────
+        if q_up.startswith("UPDATE SESSIONS") and "IS_ACTIVE=FALSE" in q_up.replace(" ", ""):
+            if len(params) == 2:
+                uid, token_hash = params[0], params[1]
+                _sb_update("sessions", {"is_active": False},
+                    f"user_id=eq.{uid}&token_hash=eq.{token_hash}")
+            elif len(params) == 1:
+                uid = params[0]
+                _sb_update("sessions", {"is_active": False}, f"user_id=eq.{uid}")
+            self._last_rowcount = 1
+            return self
+
+        # ── DELETE FROM sessions (cleanup expired) ───────────────────────────
+        if q_up.startswith("DELETE FROM SESSIONS"):
+            now_iso = datetime.utcnow().isoformat()
+            n = _sb_delete("sessions", f"expires_at=lte.{now_iso}")
+            self._last_rowcount = n
+            return self
+
+        # ── Fallback: log and no-op ──────────────────────────────────────────
+        logger.warning(f"_FakeConn._exec: unhandled query: {q[:80]}")
+        self._last_rows = []
+        self._last_rowcount = 0
+        return self
+
+    # execute() alias (used by some legacy paths)
+    def execute(self, query: str, params: tuple = ()):
+        return self._exec(query, params)
+
+
+# Patch DatabaseManager._exec to route through _FakeConn in REST mode
+_orig_exec = DatabaseManager._exec
+
+def _patched_exec(self, conn, query: str, params: tuple = ()):
+    if not _USE_SQLITE and isinstance(conn, _FakeConn):
+        return conn._exec(query, params)
+    return _orig_exec(self, conn, query, params)
+
+DatabaseManager._exec = _patched_exec
+
+
+# =============================================================================
+# Update .env with SUPABASE_SERVICE_KEY if not set
+# =============================================================================
+
+def _update_env_service_key():
+    env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
+    if not os.path.exists(env_path):
+        return
+    with open(env_path, "r") as f:
+        content = f.read()
+    if "SUPABASE_SERVICE_KEY" not in content:
+        with open(env_path, "a") as f:
+            f.write(f"\nSUPABASE_SERVICE_KEY={SUPABASE_SERVICE_KEY}\n")
+
+if not _USE_SQLITE:
+    try:
+        _update_env_service_key()
+    except Exception:
+        pass
+
+
+# =============================================================================
+# Global singleton
+# =============================================================================
 db = DatabaseManager()

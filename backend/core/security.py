@@ -44,7 +44,7 @@ def _save_session(self, user_id: int, token: str,
         token_hash = hashlib.sha256(token.encode()).hexdigest()
         expires_at = datetime.utcnow() + timedelta(hours=JWT_EXPIRATION_HOURS)
         with self.get_connection() as conn:
-            conn.cursor().execute(
+            self._exec(conn,
                 "INSERT INTO sessions (user_id, token_hash, expires_at, ip_address, user_agent) "
                 "VALUES (?, ?, ?, ?, ?)",
                 (user_id, token_hash, expires_at, ip_address, user_agent)
@@ -59,11 +59,12 @@ def _is_session_active(self, user_id: int, token: str) -> bool:
     try:
         token_hash = hashlib.sha256(token.encode()).hexdigest()
         with self.get_connection() as conn:
-            row = conn.cursor().execute(
+            cur = self._exec(conn,
                 "SELECT id FROM sessions "
-                "WHERE user_id=? AND token_hash=? AND is_active=1 AND expires_at>CURRENT_TIMESTAMP",
+                "WHERE user_id=? AND token_hash=? AND is_active=true AND expires_at>CURRENT_TIMESTAMP",
                 (user_id, token_hash)
-            ).fetchone()
+            )
+            row = cur.fetchone()
         return row is not None
     except Exception as e:
         logger.error(f"Check session failed: {e}")
@@ -74,8 +75,7 @@ def _update_session_last_used(self, user_id: int, token: str) -> bool:
     try:
         token_hash = hashlib.sha256(token.encode()).hexdigest()
         with self.get_connection() as conn:
-            cur = conn.cursor()
-            cur.execute(
+            self._exec(conn,
                 "UPDATE sessions SET last_used=CURRENT_TIMESTAMP "
                 "WHERE user_id=? AND token_hash=?",
                 (user_id, token_hash)
@@ -90,9 +90,8 @@ def _revoke_session(self, user_id: int, token: str) -> bool:
     try:
         token_hash = hashlib.sha256(token.encode()).hexdigest()
         with self.get_connection() as conn:
-            cur = conn.cursor()
-            cur.execute(
-                "UPDATE sessions SET is_active=0 WHERE user_id=? AND token_hash=?",
+            self._exec(conn,
+                "UPDATE sessions SET is_active=false WHERE user_id=? AND token_hash=?",
                 (user_id, token_hash)
             )
         return True
@@ -104,8 +103,9 @@ def _revoke_session(self, user_id: int, token: str) -> bool:
 def _revoke_all_sessions(self, user_id: int) -> bool:
     try:
         with self.get_connection() as conn:
-            conn.cursor().execute(
-                "UPDATE sessions SET is_active=0 WHERE user_id=?", (user_id,)
+            self._exec(conn,
+                "UPDATE sessions SET is_active=false WHERE user_id=?",
+                (user_id,)
             )
         return True
     except Exception as e:
@@ -116,9 +116,10 @@ def _revoke_all_sessions(self, user_id: int) -> bool:
 def _cleanup_expired_sessions(self) -> int:
     try:
         with self.get_connection() as conn:
-            cur = conn.cursor()
-            cur.execute("DELETE FROM sessions WHERE expires_at <= CURRENT_TIMESTAMP")
-            count = cur.rowcount
+            cur = self._exec(conn,
+                "DELETE FROM sessions WHERE expires_at <= CURRENT_TIMESTAMP"
+            )
+            count = cur.rowcount if hasattr(cur, "rowcount") else 0
         if count:
             logger.info(f"Cleaned up {count} expired sessions")
         return count

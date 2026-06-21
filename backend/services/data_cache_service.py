@@ -53,8 +53,20 @@ class DataCacheService:
     """Per-region data pipeline: fetch → cache → train → predict."""
 
     def __init__(self):
-        self.cache_dir  = os.path.join(os.path.dirname(__file__), "data_cache")
-        self.models_dir = os.path.join(os.path.dirname(__file__), "models")
+        data_dir = os.getenv("DATA_DIR")
+        default_cache_dir = (
+            os.path.join(data_dir, "data_cache")
+            if data_dir else
+            os.path.join(os.path.dirname(__file__), "data_cache")
+        )
+        default_models_dir = (
+            os.path.join(data_dir, "models")
+            if data_dir else
+            os.path.join(os.path.dirname(__file__), "models")
+        )
+
+        self.cache_dir = os.path.abspath(os.getenv("DATA_CACHE_DIR", default_cache_dir))
+        self.models_dir = os.path.abspath(os.getenv("MODEL_ARTIFACTS_DIR", default_models_dir))
         os.makedirs(self.cache_dir,  exist_ok=True)
         os.makedirs(self.models_dir, exist_ok=True)
 

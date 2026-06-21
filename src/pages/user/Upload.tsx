@@ -198,10 +198,10 @@ export default function UploadPage() {
       const data = await response.json();
       setBackendStatus("online");
       if (!data.yolo_model_loaded) {
-        addLog("⚠️ Backend online but model not loaded. Add weights to backend/weights/best.pt");
+        addLog("Backend online but model not loaded. Set YOLO_WEIGHTS_PATH or mount your weights file.");
         toast({
           title: "Model Not Loaded",
-          description: "Please add your YOLO weights to backend/weights/best.pt",
+          description: "Set YOLO_WEIGHTS_PATH on the backend or mount your best.pt file.",
           variant: "destructive",
         });
       } else {

@@ -1,14 +1,18 @@
 """
 Live API test — tests the full running server on http://localhost:8000
 Tests: register, login, admin login, detections, predictions, reports, analytics, history
+
+Set ADMIN_PASSWORD env var before running:
+    ADMIN_PASSWORD=yourpassword python test_live_api.py
 """
-import requests, time, json
+import os, requests, time, json
 
 BASE = "http://localhost:8000"
 ts = int(time.time())
 TEST_USER = f"livetest_{ts}"
 TEST_EMAIL = f"livetest_{ts}@oceanscan.ai"
 TEST_PASS = "LiveTest@123"
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 
 passed = failed = 0
 
@@ -38,7 +42,7 @@ admin_token = None
 def admin_login():
     global admin_token
     r = requests.post(f"{BASE}/api/auth/login",
-        json={"username": "Admin", "password": "@admin787898"})
+        json={"username": "Admin", "password": ADMIN_PASSWORD})
     assert r.status_code == 200, f"Status {r.status_code}: {r.text[:200]}"
     data = r.json()
     admin_token = data["access_token"]

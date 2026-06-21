@@ -44,8 +44,64 @@ from services.email_service import (
 from models.lstm import EnvironmentalLSTM, EnvironmentalGRU
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+)
 logger = logging.getLogger(__name__)
+
+BASE_DIR = os.path.dirname(__file__)
+DATA_DIR = os.path.abspath(os.getenv("DATA_DIR", BASE_DIR))
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_int(name: str, default: int, min_value: int | None = None, max_value: int | None = None) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except ValueError:
+        logger.warning(f"Invalid integer for {name}; using {default}")
+        value = default
+    if min_value is not None:
+        value = max(min_value, value)
+    if max_value is not None:
+        value = min(max_value, value)
+    return value
+
+
+def _env_float(name: str, default: float, min_value: float | None = None, max_value: float | None = None) -> float:
+    try:
+        value = float(os.getenv(name, str(default)))
+    except ValueError:
+        logger.warning(f"Invalid float for {name}; using {default}")
+        value = default
+    if min_value is not None:
+        value = max(min_value, value)
+    if max_value is not None:
+        value = min(max_value, value)
+    return value
+
+
+def _runtime_path(env_name: str, default_name: str) -> str:
+    configured = os.getenv(env_name)
+    if configured:
+        return os.path.abspath(configured)
+    return os.path.join(DATA_DIR, default_name)
+
+
+MAX_UPLOAD_SIZE_BYTES = _env_int("MAX_UPLOAD_SIZE", 100 * 1024 * 1024, 1)
+MAX_VIDEO_DURATION_SECONDS = _env_int("MAX_VIDEO_DURATION", 300, 1)
+DEFAULT_YOLO_CONFIDENCE = _env_float("YOLO_CONFIDENCE_THRESHOLD", 0.10, 0.01, 1.0)
+DEFAULT_YOLO_IOU = _env_float("YOLO_IOU_THRESHOLD", 0.45, 0.01, 1.0)
+LOAD_YOLO_ON_STARTUP = _env_bool("LOAD_YOLO_ON_STARTUP", True)
+WARMUP_YOLO_ON_LOAD = _env_bool("WARMUP_YOLO_ON_LOAD", True)
+SEED_ADMIN_ON_STARTUP = _env_bool("SEED_ADMIN_ON_STARTUP", True)
 
 async def generate_synthetic_training_data(region: str, days: int = 730) -> pd.DataFrame:
     """
@@ -194,8 +250,9 @@ gru_model  = EnvironmentalGRU()
 # Use more workers so multiple uploads can be processed concurrently
 from concurrent.futures import ThreadPoolExecutor
 import multiprocessing as _mp
-_VIDEO_WORKERS = max(2, min(_mp.cpu_count(), 4))
+_VIDEO_WORKERS = _env_int("VIDEO_WORKERS", min(max(_mp.cpu_count(), 1), 2), 1, 8)
 _video_executor = ThreadPoolExecutor(max_workers=_VIDEO_WORKERS, thread_name_prefix="video_worker")
+logger.info(f"Video worker pool size: {_VIDEO_WORKERS}")
 
 # Analytics cache: user_id -> (data, timestamp)
 _analytics_cache: Dict[int, tuple] = {}
@@ -216,8 +273,9 @@ if os.path.exists(static_path):
     app.mount("/static", StaticFiles(directory=static_path), name="static")
 
 # Mount processed videos directory with proper headers
-processed_videos_path = os.path.join(os.path.dirname(__file__), "processed_videos")
+processed_videos_path = _runtime_path("PROCESSED_VIDEOS_DIR", "processed_videos")
 os.makedirs(processed_videos_path, exist_ok=True)
+logger.info(f"Processed videos directory: {processed_videos_path}")
 
 # Custom video streaming endpoint with proper headers
 @app.get("/processed-video/{filename}")
@@ -340,8 +398,11 @@ async def favicon():
 #            plastic_bag, plastic_fragments, other_debris
 # Trained on Kaggle T4 GPU — 7 Roboflow datasets merged (~16,500 images)
 # 100 epochs, batch=16, imgsz=640, patience=20, augment=True
-WEIGHTS_PATH = os.path.join(os.path.dirname(__file__), "weights", "best.pt")
+WEIGHTS_PATH = os.path.abspath(
+    os.getenv("YOLO_WEIGHTS_PATH", os.path.join(BASE_DIR, "weights", "best.pt"))
+)
 model = None
+_model_loading = False
 
 # YOLOv26s class metadata (thesis Chapter 5)
 YOLO_CLASS_META = {
@@ -356,17 +417,24 @@ YOLO_CLASS_META = {
 }
 
 def load_yolo_model():
-    global model
+    global model, _model_loading
+    if model is not None or _model_loading:
+        return model
+
+    _model_loading = True
     try:
         if not os.path.exists(WEIGHTS_PATH):
             logger.error(f"❌ Weights file not found at {WEIGHTS_PATH}")
             model = None
-            return
+            return None
 
         model = YOLO(WEIGHTS_PATH)
         # Ultralytics handles device placement internally — do not call model.to('cpu') manually.
         logger.info(f"✅ YOLOv26s model loaded from {WEIGHTS_PATH}")
         logger.info(f"   Classes: {list(model.names.values()) if model.names else 'Unknown'}")
+
+        if not WARMUP_YOLO_ON_LOAD:
+            return model
 
         # Warmup: run one dummy inference so the first real video has no cold-start penalty
         try:
@@ -375,10 +443,20 @@ def load_yolo_model():
             logger.info("   🔥 Model warmed up — ready for fast inference")
         except Exception:
             pass
+        return model
     except Exception as e:
         logger.error(f"❌ Failed to load model from {WEIGHTS_PATH}: {e}")
         logger.error("   Ensure ultralytics>=8.4.0 is installed: pip install 'ultralytics>=8.4.0'")
         model = None
+        return None
+    finally:
+        _model_loading = False
+
+
+def ensure_yolo_model_loaded() -> bool:
+    if model is not None:
+        return True
+    return load_yolo_model() is not None
 
 def clear_all_cache():
     """Clear all cached data and models — call ONLY when explicitly requested, NOT on startup"""
@@ -411,10 +489,14 @@ async def startup():
     # Run email verification column migration (safe to run every time)
     db.add_email_verification_columns()
     # Ensure admin account always exists with correct credentials
-    _ensure_admin()
+    if SEED_ADMIN_ON_STARTUP:
+        _ensure_admin()
     # Load YOLO model in thread pool — non-blocking, won't delay request handling
-    loop = asyncio.get_event_loop()
-    await loop.run_in_executor(None, load_yolo_model)
+    if LOAD_YOLO_ON_STARTUP:
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, load_yolo_model)
+    else:
+        logger.info("Skipping YOLO startup load; model will load on first detection request")
     logger.info("🚀 API server started")
 
 
@@ -423,9 +505,9 @@ def _ensure_admin():
     Guarantee the permanent Admin account exists on every startup.
     Uses Supabase-backed db methods directly.
     """
-    ADMIN_USERNAME = "Admin"
-    ADMIN_EMAIL    = "admin@oceanscan.ai"
-    ADMIN_PASSWORD = "@admin787898"
+    ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "Admin")
+    ADMIN_EMAIL    = os.getenv("ADMIN_EMAIL", "admin@oceanscan.ai")
+    ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
 
     try:
         # Check if admin already exists
@@ -436,14 +518,20 @@ def _ensure_admin():
             existing = next((u for u in all_users if u.get("role") == "ADMIN"), None)
 
         if existing:
-            db.set_user_admin_state(
-                existing["id"],
-                ADMIN_USERNAME,
-                ADMIN_EMAIL,
-                ADMIN_PASSWORD,
-            )
+            if ADMIN_PASSWORD:
+                db.set_user_admin_state(
+                    existing["id"],
+                    ADMIN_USERNAME,
+                    ADMIN_EMAIL,
+                    ADMIN_PASSWORD,
+                )
+            else:
+                db.set_user_admin_state(existing["id"], ADMIN_USERNAME, ADMIN_EMAIL)
             logger.info(f"Admin account verified/updated (id={existing['id']})")
         else:
+            if not ADMIN_PASSWORD:
+                logger.warning("ADMIN_PASSWORD is not set; skipping admin auto-create")
+                return
             uid = db.create_user(ADMIN_USERNAME, ADMIN_EMAIL, ADMIN_PASSWORD, role="ADMIN")
             if uid:
                 db.set_user_admin_state(uid, ADMIN_USERNAME, ADMIN_EMAIL)
@@ -2089,7 +2177,7 @@ def _run_tiled_inference(model, image_bgr: np.ndarray, confidence: float,
                                           cv2.BORDER_CONSTANT, value=(114, 114, 114))
 
             try:
-                res = model(tile, conf=confidence, iou=0.45, agnostic_nms=True,
+                res = model(tile, conf=confidence, iou=DEFAULT_YOLO_IOU, agnostic_nms=True,
                             imgsz=tile_size, verbose=False)[0]
             except Exception:
                 continue
@@ -2145,13 +2233,13 @@ def _run_tiled_inference(model, image_bgr: np.ndarray, confidence: float,
 @app.post("/detect")
 async def detect_objects(
     file: UploadFile = File(...),
-    confidence: float = 0.10,
+    confidence: float = DEFAULT_YOLO_CONFIDENCE,
     current_user: dict = Depends(get_current_user)
 ):
-    if model is None:
+    if not ensure_yolo_model_loaded():
         raise HTTPException(
             status_code=503, 
-            detail="Model not loaded. Please place your weights at backend/weights/best.pt and restart the server."
+            detail=f"Model not loaded. Set YOLO_WEIGHTS_PATH or place weights at {WEIGHTS_PATH}."
         )
     
     start_time = time.time()
@@ -2160,6 +2248,11 @@ async def detect_objects(
         # Read image
         contents = await file.read()
         file_size = len(contents)
+        if file_size > MAX_UPLOAD_SIZE_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large. Maximum upload size is {MAX_UPLOAD_SIZE_BYTES // (1024 * 1024)} MB."
+            )
         image = Image.open(io.BytesIO(contents))
         image_np = np.array(image)
         
@@ -2195,7 +2288,7 @@ async def detect_objects(
         full_res = model(
             image_bgr,
             conf=confidence,
-            iou=0.5,
+            iou=DEFAULT_YOLO_IOU,
             imgsz=infer_size,
             max_det=1000,
             verbose=False
@@ -2387,7 +2480,7 @@ async def detect_objects(
 @app.post("/detect-video")
 async def detect_video(
     file: UploadFile = File(...),
-    confidence: float = 0.10,
+    confidence: float = DEFAULT_YOLO_CONFIDENCE,
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -2395,8 +2488,8 @@ async def detect_video(
     Saves upload, creates DB record, processes in background thread.
     Returns immediately — poll /api/detections/{detection_id}/status for progress.
     """
-    if model is None:
-        raise HTTPException(status_code=503, detail="Model not loaded. Place weights at backend/weights/best.pt and restart.")
+    if not ensure_yolo_model_loaded():
+        raise HTTPException(status_code=503, detail=f"Model not loaded. Set YOLO_WEIGHTS_PATH or place weights at {WEIGHTS_PATH}.")
     
     if not file.content_type or not file.content_type.startswith('video/'):
         raise HTTPException(status_code=400, detail=f"Invalid file type: {file.content_type}. Only video files are supported.")
@@ -2407,6 +2500,11 @@ async def detect_video(
     try:
         contents = await file.read()
         file_size_bytes = len(contents)
+        if file_size_bytes > MAX_UPLOAD_SIZE_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large. Maximum upload size is {MAX_UPLOAD_SIZE_BYTES // (1024 * 1024)} MB."
+            )
         file_size_mb = file_size_bytes / (1024 * 1024)
         video_id = str(uuid.uuid4())
         file_ext = file.filename.rsplit('.', 1)[-1] if '.' in file.filename else 'mp4'
@@ -2522,9 +2620,9 @@ def _process_video_sync(
     # ── Tuning knobs ──────────────────────────────────────────────────────────
     # SKIP_N=3  → run YOLO on 1 in every 3 frames (copy detections to the other 2)
     # Increase for more speed, decrease for higher accuracy on fast-moving objects
-    SKIP_N      = 3
-    BATCH_SIZE  = 8   # frames fed to YOLO at once
-    INFER_SIZE  = 640 # YOLO input resolution
+    SKIP_N      = _env_int("VIDEO_FRAME_SKIP", 3, 1, 30)
+    BATCH_SIZE  = _env_int("VIDEO_BATCH_SIZE", 8, 1, 32)   # frames fed to YOLO at once
+    INFER_SIZE  = _env_int("YOLO_INFER_SIZE", 640, 320, 1280) # YOLO input resolution
     # ─────────────────────────────────────────────────────────────────────────
 
     start_time = _time.time()
@@ -2544,6 +2642,11 @@ def _process_video_sync(
         height       = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         duration     = total_frames / fps if fps > 0 else 0
+
+        if duration > MAX_VIDEO_DURATION_SECONDS:
+            raise RuntimeError(
+                f"Video duration {duration:.1f}s exceeds configured limit of {MAX_VIDEO_DURATION_SECONDS}s"
+            )
 
         if fps <= 0 or width <= 0 or height <= 0 or total_frames <= 0:
             raise RuntimeError(f"Invalid video properties: {width}x{height} @ {fps}fps, {total_frames} frames")
@@ -2625,7 +2728,7 @@ def _process_video_sync(
 
             # Batch inference — standard NMS (not agnostic) to preserve class separation
             try:
-                batch_results = model(batch_small, conf=confidence, iou=0.5,
+                batch_results = model(batch_small, conf=confidence, iou=DEFAULT_YOLO_IOU,
                                       verbose=False, imgsz=INFER_SIZE)
             except Exception as e:
                 logger.warning(f"Batch inference failed: {e}")

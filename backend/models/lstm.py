@@ -37,9 +37,15 @@ class EnvironmentalLSTM:
     Uses ONLY cached datasets â€” never calls external APIs during training.
     """
 
-    def __init__(self, model_dir: str = "models"):
-        self.model_dir = model_dir
-        os.makedirs(model_dir, exist_ok=True)
+    def __init__(self, model_dir: Optional[str] = None):
+        if model_dir is None:
+            data_dir = os.getenv("DATA_DIR")
+            model_dir = os.getenv(
+                "MODEL_ARTIFACTS_DIR",
+                os.path.join(data_dir, "models") if data_dir else "models",
+            )
+        self.model_dir = os.path.abspath(model_dir)
+        os.makedirs(self.model_dir, exist_ok=True)
 
         self.model = None
         self.feature_scaler = RobustScaler()
@@ -507,7 +513,7 @@ class EnvironmentalGRU(EnvironmentalLSTM):
       â€¢ Often matches LSTM on datasets < ~10k rows
     """
 
-    def __init__(self, model_dir: str = "models"):
+    def __init__(self, model_dir: Optional[str] = None):
         super().__init__(model_dir)
         self.config['model_type'] = 'GRU'
         # Own logger so logs show  INFO:models.gru  instead of  INFO:models.lstm

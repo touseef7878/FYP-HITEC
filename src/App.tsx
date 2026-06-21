@@ -7,7 +7,6 @@ import { AnimatePresence, motion } from "framer-motion";
 import { ThemeProvider, useTheme } from "@/hooks/useTheme";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
-import { OceanAssistant } from "@/components/features/assistant/OceanAssistant";
 import { Suspense, lazy, useRef, memo, useEffect } from "react";
 
 // Lazy load pages
@@ -28,6 +27,11 @@ const PrivacyPolicy   = lazy(() => import("@/pages/PrivacyPolicy"));
 const AuthPage        = lazy(() => import("@/pages/Auth"));
 const VerifyEmailPage = lazy(() => import("@/pages/VerifyEmail"));
 const NotFound        = lazy(() => import("@/pages/NotFound"));
+const OceanAssistant  = lazy(() =>
+  import("@/components/features/assistant/OceanAssistant").then((module) => ({
+    default: module.OceanAssistant,
+  }))
+);
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -201,7 +205,11 @@ const AppRoutes = () => {
 // Only show the assistant to authenticated users — not on the auth/login page
 const AssistantGate = () => {
   const { isAuthenticated } = useAuth();
-  return isAuthenticated ? <OceanAssistant /> : null;
+  return isAuthenticated ? (
+    <Suspense fallback={null}>
+      <OceanAssistant />
+    </Suspense>
+  ) : null;
 };
 
 const App = () => (

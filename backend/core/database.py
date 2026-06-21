@@ -29,8 +29,14 @@ except ImportError as exc:
     raise ImportError("httpx is required for the Supabase REST database backend") from exc
 
 
-SUPABASE_URL = os.getenv("SUPABASE_URL", "https://zuophfoyuxlxumwcdvuz.supabase.co").rstrip("/")
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+
+if not SUPABASE_URL:
+    raise ValueError(
+        "SUPABASE_URL environment variable is required. "
+        "Set it in backend/.env or your hosting provider secrets."
+    )
 
 if not SUPABASE_SERVICE_KEY:
     raise ValueError(

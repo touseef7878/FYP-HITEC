@@ -63,6 +63,7 @@ models/*.pkl
 public/*.mp4
 public/*.webm
 backend/processed_videos/
+backend_data/
 
 # ── Cached data ───────────────────────────────────────────────────────────────
 backend/services/data_cache/*.csv

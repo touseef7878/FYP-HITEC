@@ -86,6 +86,23 @@ EMAIL_FROM_NAME=OceanGuard AI
 
 NOAA_CDO_TOKEN=optional_noaa_token
 WAQI_TOKEN=optional_waqi_token
+
+DATA_DIR=./backend_data
+PROCESSED_VIDEOS_DIR=./backend_data/processed_videos
+DATA_CACHE_DIR=./backend_data/data_cache
+MODEL_ARTIFACTS_DIR=./backend_data/models
+
+YOLO_WEIGHTS_PATH=./backend/weights/best.pt
+LOAD_YOLO_ON_STARTUP=true
+WARMUP_YOLO_ON_LOAD=true
+VIDEO_WORKERS=1
+VIDEO_FRAME_SKIP=3
+VIDEO_BATCH_SIZE=4
+YOLO_INFER_SIZE=640
+
+ADMIN_USERNAME=Admin
+ADMIN_EMAIL=admin@oceanscan.ai
+ADMIN_PASSWORD=change_this_before_production
 ```
 
 Generate a JWT secret:
@@ -100,11 +117,13 @@ Install backend dependencies:
 pip install -r backend/requirements.txt
 ```
 
-Place the YOLO weights at:
+Place the YOLO weights at the path configured by `YOLO_WEIGHTS_PATH`. Locally the default is:
 
 ```text
 backend/weights/best.pt
 ```
+
+On Render, `backend/render.yaml` points `YOLO_WEIGHTS_PATH` to `/app/data/weights/best.pt` so the model can live on the persistent disk instead of inside the Git repo.
 
 ### Frontend
 
@@ -168,13 +187,13 @@ Backups, point-in-time recovery, and exports are handled in Supabase, not by a l
 
 ## Admin Account
 
-On backend startup, `_ensure_admin()` guarantees this admin account exists:
+On backend startup, `_ensure_admin()` guarantees one admin account exists when `SEED_ADMIN_ON_STARTUP=true`.
 
 | Username | Email | Password |
 |---|---|---|
-| `Admin` | `admin@oceanscan.ai` | `@admin787898` |
+| `ADMIN_USERNAME` | `ADMIN_EMAIL` | `ADMIN_PASSWORD` |
 
-Change these values in `backend/main.py` before production deployment.
+Set `ADMIN_EMAIL` and `ADMIN_PASSWORD` in hosting secrets before production deployment. If `ADMIN_PASSWORD` is not set, the backend will not create a new admin automatically.
 
 ## Main API Areas
 
@@ -249,28 +268,101 @@ python backend/test_live_api.py
 
 ## Deployment Notes
 
-Frontend deploys as a Vite static site, configured by `vercel.json`.
+### Recommended Production Split
 
-Backend deployment uses `backend/render.yaml`. Required secrets in Render:
+| Layer | Recommended host | Notes |
+|---|---|---|
+| Frontend | Vercel | Static Vite build from `dist`, configured by `vercel.json` |
+| Backend API | Render or Railway | FastAPI web service with one worker and persistent storage |
+| Database | Supabase | Already external; do not deploy a local database |
+| Large model inference | Backend disk for MVP, Hugging Face Space or GPU service for scale | Use a separate service when video/model workload becomes heavy |
 
-- `JWT_SECRET_KEY`
+### Vercel Frontend
+
+Required Vercel environment variables:
+
+- `VITE_API_URL`: deployed FastAPI URL, for example `https://oceanscan-ai-backend.onrender.com`
+- `VITE_GEMINI_API_KEY`: optional browser-exposed Gemini key for the assistant
+- `VITE_MAX_FILE_SIZE`, `VITE_MAX_VIDEO_DURATION`: keep aligned with backend limits
+
+The frontend build is optimized with lazy route loading, lazy AI assistant loading, cache headers for `/assets/*`, and manual chunks for React, UI, charts, maps, PDFs, animation, and AI libraries.
+
+### Render Backend
+
+Backend deployment uses `backend/render.yaml`. Required Render secrets:
+
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_KEY`
+- `JWT_SECRET_KEY`
+- `ADMIN_EMAIL`
+- `ADMIN_PASSWORD`
 - `EMAIL_HOST_USER`
 - `EMAIL_HOST_PASSWORD`
 - optional `NOAA_CDO_TOKEN`
 - optional `WAQI_TOKEN`
 
-Set `ALLOWED_ORIGINS` and `FRONTEND_URL` to the deployed frontend domain.
+The Render disk mounts at `/app/data`. Put model weights at:
+
+```text
+/app/data/weights/best.pt
+```
+
+Runtime paths are configured for that disk:
+
+- `DATA_DIR=/app/data`
+- `PROCESSED_VIDEOS_DIR=/app/data/processed_videos`
+- `DATA_CACHE_DIR=/app/data/data_cache`
+- `MODEL_ARTIFACTS_DIR=/app/data/models`
+- `YOLO_WEIGHTS_PATH=/app/data/weights/best.pt`
+
+### Railway Backend
+
+`railway.json` is included for Railway. Set the same backend secrets as Render. If using a Railway volume, point these variables to the mounted path:
+
+- `DATA_DIR`
+- `PROCESSED_VIDEOS_DIR`
+- `DATA_CACHE_DIR`
+- `MODEL_ARTIFACTS_DIR`
+- `YOLO_WEIGHTS_PATH`
+
+Use `VIDEO_WORKERS=1` on small CPU plans. Increase `VIDEO_BATCH_SIZE` and lower `VIDEO_FRAME_SKIP` only on stronger instances.
+
+### Hugging Face Spaces For YOLO/LSTM/GRU
+
+Hugging Face Spaces is useful for model demos or a separate inference API, especially if you need GPU-backed YOLO video processing. It should not replace the main FastAPI backend because the website still needs auth, Supabase persistence, admin endpoints, reports, and email workflows.
+
+Practical path:
+
+- MVP: keep YOLO and LSTM/GRU in the FastAPI backend with persistent disk.
+- Better scale: move YOLO inference to a separate Hugging Face Docker Space with a small HTTP API, then have FastAPI call it.
+- Training jobs: keep LSTM/GRU training out of the request path. Use a background worker or separate model service for long training runs.
+- Production: prefer a queue-based worker or dedicated GPU service for video inference; Spaces can sleep on free tiers and cold starts can be slow.
+
+### Professional Features Still Missing
+
+The app is functional, but a professional production launch should add:
+
+- Background job queue for video processing and LSTM/GRU training instead of in-process threads.
+- Object storage for uploads and processed media, such as Supabase Storage or S3-compatible storage.
+- Rate limiting for auth, uploads, reports, and AI assistant endpoints.
+- Request IDs, structured logs, error monitoring, and uptime alerts.
+- Admin audit log details for sensitive actions and login attempts.
+- Stronger secret handling: rotate any exposed browser/API keys and move Gemini calls behind the backend if quota abuse matters.
+- CI/CD gates for build, tests, backend syntax checks, and a smoke test against `/health`.
+- Data retention policy and cleanup jobs for old processed videos and cached model artifacts.
+- Health and readiness separation: `/health` for process health, `/ready` for Supabase/model readiness.
+- User-facing job progress, retry, cancellation, and failure recovery for long videos/training.
+- Supabase row-level security policy review, even though the backend uses the service role.
 
 ## Troubleshooting
 
 | Problem | Fix |
 |---|---|
+| `SUPABASE_URL environment variable is required` | Add `SUPABASE_URL` to `backend/.env` or hosting secrets |
 | `SUPABASE_SERVICE_KEY environment variable is required` | Add `SUPABASE_SERVICE_KEY` to `backend/.env` or hosting secrets |
 | Login returns unverified | Verify email through the link or set `email_verified` in Supabase for test accounts |
 | CORS error | Add the frontend URL to `ALLOWED_ORIGINS` |
-| YOLO unavailable | Place weights at `backend/weights/best.pt` |
+| YOLO unavailable | Set `YOLO_WEIGHTS_PATH` to the deployed `best.pt` path |
 | Prediction says no model | Fetch data, train a model, then run prediction |
 | Heatmap only shows baseline data | Save prediction results so rows exist in `predictions` |
 | AI assistant does not answer | Set `VITE_GEMINI_API_KEY` and restart the frontend dev server |

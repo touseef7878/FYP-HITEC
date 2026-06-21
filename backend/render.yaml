@@ -18,7 +18,7 @@ services:
 
       # ── Database: Supabase PostgreSQL ─────────────────────────────────────
       - key: SUPABASE_URL
-        value: https://zuophfoyuxlxumwcdvuz.supabase.co
+        sync: false    # Set to your Supabase project URL
       - key: SUPABASE_SERVICE_KEY
         sync: false    # Set in Render dashboard from Supabase Project Settings > API
 
@@ -45,10 +45,42 @@ services:
         value: "0.25"
       - key: YOLO_IOU_THRESHOLD
         value: "0.45"
+      - key: YOLO_WEIGHTS_PATH
+        value: /app/data/weights/best.pt
+      - key: LOAD_YOLO_ON_STARTUP
+        value: "true"
+      - key: WARMUP_YOLO_ON_LOAD
+        value: "true"
       - key: MAX_UPLOAD_SIZE
         value: "104857600"
       - key: MAX_VIDEO_DURATION
         value: "300"
+      - key: DATA_DIR
+        value: /app/data
+      - key: PROCESSED_VIDEOS_DIR
+        value: /app/data/processed_videos
+      - key: DATA_CACHE_DIR
+        value: /app/data/data_cache
+      - key: MODEL_ARTIFACTS_DIR
+        value: /app/data/models
+      - key: VIDEO_WORKERS
+        value: "1"
+      - key: VIDEO_FRAME_SKIP
+        value: "3"
+      - key: VIDEO_BATCH_SIZE
+        value: "4"
+      - key: YOLO_INFER_SIZE
+        value: "640"
+
+      # Admin bootstrap
+      - key: SEED_ADMIN_ON_STARTUP
+        value: "true"
+      - key: ADMIN_USERNAME
+        value: Admin
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
 
       # ── Logging ───────────────────────────────────────────────────────────
       - key: LOG_LEVEL

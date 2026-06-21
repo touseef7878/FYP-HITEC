@@ -32,7 +32,7 @@ import time
 load_dotenv()
 
 # Import enhanced components
-from core.database import db, _USE_SQLITE
+from core.database import db
 from core.security import (
     AuthManager, get_current_user, get_current_active_user, get_admin_user,
     UserRegistration, UserLogin, TokenResponse, UserProfile, PasswordChange, ProfileUpdate
@@ -421,8 +421,7 @@ async def startup():
 def _ensure_admin():
     """
     Guarantee the permanent Admin account exists on every startup.
-    Uses db methods directly — works on both SQLite and Supabase REST.
-    The Supabase trigger protects this account from being demoted/deleted.
+    Uses Supabase-backed db methods directly.
     """
     ADMIN_USERNAME = "Admin"
     ADMIN_EMAIL    = "admin@oceanscan.ai"
@@ -436,51 +435,19 @@ def _ensure_admin():
             all_users = db.get_all_users()
             existing = next((u for u in all_users if u.get("role") == "ADMIN"), None)
 
-        pwd_hash = db.hash_password(ADMIN_PASSWORD)
-
         if existing:
-            # Update to ensure correct credentials
-            db.update_user_profile(existing["id"], email=ADMIN_EMAIL)
-            db.update_user_password(existing["id"], ADMIN_PASSWORD)
-            # Ensure verified + active
-            if not _USE_SQLITE:
-                from core.database import _sb_update
-                _sb_update("users", {
-                    "username": ADMIN_USERNAME,
-                    "role": "ADMIN",
-                    "is_active": True,
-                    "email_verified": True,
-                    "verification_token": None,
-                    "verification_token_expires": None,
-                }, f"id=eq.{existing['id']}")
-            else:
-                with db.get_connection() as conn:
-                    conn.cursor().execute(
-                        "UPDATE users SET username=?,role='ADMIN',is_active=1,"
-                        "email_verified=1,verification_token=NULL,"
-                        "verification_token_expires=NULL WHERE id=?",
-                        (ADMIN_USERNAME, existing["id"])
-                    )
-                    conn.commit()
-            logger.info(f"✅ Admin account verified/updated (id={existing['id']})")
+            db.set_user_admin_state(
+                existing["id"],
+                ADMIN_USERNAME,
+                ADMIN_EMAIL,
+                ADMIN_PASSWORD,
+            )
+            logger.info(f"Admin account verified/updated (id={existing['id']})")
         else:
-            # Create fresh admin
             uid = db.create_user(ADMIN_USERNAME, ADMIN_EMAIL, ADMIN_PASSWORD, role="ADMIN")
-            if uid and not _USE_SQLITE:
-                from core.database import _sb_update
-                _sb_update("users", {
-                    "email_verified": True,
-                    "is_active": True,
-                    "verification_token": None,
-                    "verification_token_expires": None,
-                }, f"id=eq.{uid}")
-            elif uid and _USE_SQLITE:
-                with db.get_connection() as conn:
-                    conn.cursor().execute(
-                        "UPDATE users SET email_verified=1,is_active=1 WHERE id=?", (uid,)
-                    )
-                    conn.commit()
-            logger.info("✅ Admin account created on startup")
+            if uid:
+                db.set_user_admin_state(uid, ADMIN_USERNAME, ADMIN_EMAIL)
+            logger.info("Admin account created on startup")
     except Exception as e:
         logger.error(f"_ensure_admin failed: {e}")
 
@@ -1436,26 +1403,22 @@ async def admin_system_action(
     """Admin system maintenance actions"""
     try:
         if action == "backup":
-            # Trigger database backup
-            backup_path = db.backup_database()
-            return {"message": f"Database backup created at {backup_path}"}
+            return {"message": db.backup_database()}
         
         elif action == "cache-clear":
             # Clear application cache
             return {"message": "Application cache cleared"}
         
         elif action == "optimize-db":
-            # Optimize database
             db.optimize_database()
-            return {"message": "Database optimized"}
+            return {"message": "Supabase-managed database maintenance is active"}
         
         elif action == "restart-services":
             # This would restart background services
             return {"message": "Background services restarted"}
         
         elif action == "export-data":
-            # Export system data for backup
-            return {"message": "Data export initiated"}
+            return {"message": db.export_system_data()}
         
         elif action == "maintenance":
             # Enable/disable maintenance mode
@@ -3126,7 +3089,7 @@ async def get_analytics(
 
         avg_confidence = sum(all_confidences) / len(all_confidences) if all_confidences else 0
 
-        # This-week count — safe parse for SQLite timestamps (space or T separator)
+        # This-week count: safely parse ISO strings and legacy space-separated timestamps.
         def _parse_dt(s: str):
             if not s:
                 return None
@@ -3346,7 +3309,7 @@ async def generate_report(
                 
                 avg_confidence = sum(all_confidences) / len(all_confidences) if all_confidences else 0
                 
-                # This week count — safe parse for SQLite timestamps
+                # This week count: safely parse ISO strings and legacy space-separated timestamps.
                 def _safe_parse(s):
                     if not s:
                         return None
@@ -3752,7 +3715,7 @@ async def get_user_history(
                     except:
                         metadata = {}
                 
-                # Safely parse date and time — handles both SQLite space format and ISO T format
+                # Safely parse date and time from ISO or legacy space-separated strings.
                 created_at = detection.get('created_at', '')
                 date_str = ''
                 time_str = ''

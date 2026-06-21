@@ -1,6 +1,6 @@
 /**
  * Database Service for Marine Plastic Detection Platform
- * Handles API calls to the SQLite database backend
+ * Handles API calls to the Supabase-backed API.
  */
 
 import ENV from '@/config/env';

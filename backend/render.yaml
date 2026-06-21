@@ -17,10 +17,10 @@ services:
         value: https://oceanscan-ai.vercel.app
 
       # ── Database: Supabase PostgreSQL ─────────────────────────────────────
-      - key: USE_SQLITE
-        value: "false"
-      - key: DATABASE_URL
-        sync: false    # Set in Render dashboard: postgresql://postgres.zuophfoyuxlxumwcdvuz:touseef787898@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres?sslmode=require
+      - key: SUPABASE_URL
+        value: https://zuophfoyuxlxumwcdvuz.supabase.co
+      - key: SUPABASE_SERVICE_KEY
+        sync: false    # Set in Render dashboard from Supabase Project Settings > API
 
       # ── Email (Gmail SMTP) ────────────────────────────────────────────────
       - key: EMAIL_HOST

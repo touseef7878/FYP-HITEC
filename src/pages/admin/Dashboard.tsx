@@ -183,7 +183,7 @@ const AdminDashboard: React.FC = () => {
                 className="bg-white/15 hover:bg-white/25 text-white border-white/20 border font-semibold text-xs"
               >
                 <Download className="h-4 w-4 mr-2" />
-                Backup System
+                Backup Info
               </Button>
             </div>
           </div>
@@ -318,7 +318,7 @@ const AdminDashboard: React.FC = () => {
                   onClick={() => handleSystemAction('optimize-db')}
                 >
                   <Database className="h-4 w-4" />
-                  Optimize DB
+                  Check DB
                 </Button>
 
                 <Link to="/admin/logs" className="w-full">

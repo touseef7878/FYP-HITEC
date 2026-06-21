@@ -133,18 +133,18 @@ export default function AdminSettings() {
                 <Database className="h-4 w-4 text-primary" />
                 Database Operations
               </CardTitle>
-              <CardDescription className="text-xs">Backup, optimize, and maintain the database</CardDescription>
+              <CardDescription className="text-xs">Manage Supabase data operations and maintenance tasks</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               {[
                 {
-                  action: 'backup', label: 'Backup Database', icon: Download,
-                  desc: 'Create a timestamped backup of the SQLite database',
+                  action: 'backup', label: 'Backup Guidance', icon: Download,
+                  desc: 'Show Supabase-managed backup and export guidance',
                   variant: 'outline' as const, safe: true,
                 },
                 {
-                  action: 'optimize-db', label: 'Optimize Database', icon: Zap,
-                  desc: 'Run VACUUM + ANALYZE to reclaim space and improve query speed',
+                  action: 'optimize-db', label: 'Check Database', icon: Zap,
+                  desc: 'Confirm Supabase-managed database maintenance status',
                   variant: 'outline' as const, safe: true,
                 },
                 {
@@ -261,7 +261,7 @@ export default function AdminSettings() {
             <CardContent className="space-y-3">
               {[
                 { key: 'maintenanceMode' as const, label: 'Maintenance Mode', desc: 'Block all non-admin access', danger: true },
-                { key: 'autoBackup' as const,      label: 'Auto Backup',      desc: 'Daily automatic database backups' },
+                { key: 'autoBackup' as const,      label: 'Managed Backups',  desc: 'Supabase project backup policy enabled' },
                 { key: 'debugLogging' as const,    label: 'Debug Logging',    desc: 'Verbose server-side logging' },
                 { key: 'rateLimiting' as const,    label: 'Rate Limiting',    desc: 'Protect API from abuse' },
                 { key: 'gzipCompression' as const, label: 'GZip Compression', desc: 'Compress API responses' },
@@ -321,7 +321,7 @@ export default function AdminSettings() {
                   onClick={async () => {
                     setActionLoading('cleanup-sessions');
                     try {
-                      // Cleanup expired sessions via optimize-db action
+                      // Run the Supabase maintenance endpoint.
                       await runAction('optimize-db', 'Cleanup Sessions');
                     } finally { setActionLoading(null); }
                   }}

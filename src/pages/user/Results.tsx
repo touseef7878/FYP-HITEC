@@ -226,8 +226,8 @@ export default function ResultsPage() {
         ) : (
         <div className="max-w-6xl mx-auto">
           {/* Header */}
-          <div className="flex items-center justify-between mb-8">
-            <div>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-5 sm:mb-8">
+            <div className="min-w-0">
               <Link
                 to="/upload"
                 className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground mb-2"
@@ -239,7 +239,7 @@ export default function ResultsPage() {
                 Detection Results
                 {isVideo && <Video className="h-6 w-6 text-primary" />}
               </h1>
-              <p className="text-muted-foreground flex items-center gap-2">
+              <p className="text-muted-foreground flex flex-wrap items-center gap-2 text-xs sm:text-sm break-all">
                 {currentResult.filename}
                 {isVideo && (
                   <Badge variant="secondary" className="text-xs">
@@ -249,7 +249,7 @@ export default function ResultsPage() {
                 )}
               </p>
             </div>
-            <div className="flex gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-shrink-0">
               <Button variant="outline" size="sm" onClick={() => {
                 const url = window.location.href;
                 navigator.clipboard.writeText(url).then(() => {
@@ -261,9 +261,9 @@ export default function ResultsPage() {
                 <Share2 className="h-4 w-4 mr-2" />
                 Share
               </Button>
-              <Button size="sm" onClick={handleDownload} disabled={!currentResult.annotatedImage && !currentResult.annotatedVideo && !currentResult.annotatedVideoUrl && !isVideo}>
+              <Button size="sm" className="min-w-0" onClick={handleDownload} disabled={!currentResult.annotatedImage && !currentResult.annotatedVideo && !currentResult.annotatedVideoUrl && !isVideo}>
                 <Download className="h-4 w-4 mr-2" />
-                Download {isVideo ? 'Video' : 'Image'}
+                <span className="truncate">Download {isVideo ? 'Video' : 'Image'}</span>
               </Button>
             </div>
           </div>
@@ -421,18 +421,18 @@ export default function ResultsPage() {
               variants={staggerContainer}
               initial="hidden"
               animate="show"
-              className="space-y-4"
+              className="grid grid-cols-2 gap-3 sm:gap-4 lg:block lg:space-y-4"
             >
               <motion.div variants={fadeInUp}>
                 <Card className="glass-card hover-lift">
-                  <CardContent className="pt-6">
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
+                  <CardContent className="pt-4 sm:pt-6">
+                    <div className="flex items-center gap-3 sm:gap-4">
+                      <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
                         <Package className="h-6 w-6 text-primary" />
                       </div>
-                      <div>
-                        <p className="text-3xl font-bold">{totalObjects}</p>
-                        <p className="text-sm text-muted-foreground">Total Objects</p>
+                      <div className="min-w-0">
+                        <p className="text-2xl sm:text-3xl font-bold">{totalObjects}</p>
+                        <p className="text-xs sm:text-sm text-muted-foreground">Total Objects</p>
                       </div>
                     </div>
                   </CardContent>
@@ -441,14 +441,14 @@ export default function ResultsPage() {
 
               <motion.div variants={fadeInUp}>
                 <Card className="glass-card hover-lift">
-                  <CardContent className="pt-6">
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 rounded-xl bg-success/10 flex items-center justify-center">
+                  <CardContent className="pt-4 sm:pt-6">
+                    <div className="flex items-center gap-3 sm:gap-4">
+                      <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-success/10 flex items-center justify-center flex-shrink-0">
                         <Percent className="h-6 w-6 text-success" />
                       </div>
-                      <div>
-                        <p className="text-3xl font-bold">{avgConfidence}%</p>
-                        <p className="text-sm text-muted-foreground">Avg Confidence</p>
+                      <div className="min-w-0">
+                        <p className="text-2xl sm:text-3xl font-bold">{avgConfidence}%</p>
+                        <p className="text-xs sm:text-sm text-muted-foreground">Avg Confidence</p>
                       </div>
                     </div>
                   </CardContent>
@@ -456,24 +456,24 @@ export default function ResultsPage() {
               </motion.div>
 
               <motion.div variants={fadeInUp}>
-                <Card className="glass-card">
+                <Card className="glass-card col-span-2 lg:col-span-1">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm">Processing Info</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-2 text-sm">
-                    <div className="flex justify-between">
+                    <div className="flex justify-between gap-3">
                       <span className="text-muted-foreground">Model</span>
                       <span>YOLOv26s</span>
                     </div>
-                    <div className="flex justify-between">
+                    <div className="flex justify-between gap-3">
                       <span className="text-muted-foreground">mAP50</span>
                       <span>71%</span>
                     </div>
-                    <div className="flex justify-between">
+                    <div className="flex justify-between gap-3">
                       <span className="text-muted-foreground">Classes</span>
                       <span>{currentResult.summary.length} / 8</span>
                     </div>
-                    <div className="flex justify-between">
+                    <div className="flex justify-between gap-3">
                       <span className="text-muted-foreground">Detections</span>
                       <span>{currentResult.totalDetections}</span>
                     </div>
@@ -548,9 +548,9 @@ export default function ResultsPage() {
                         className="w-3 h-12 rounded-full"
                         style={{ backgroundColor: chartColors[index % chartColors.length] }}
                       />
-                      <div className="flex-1">
+                      <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between mb-1">
-                          <span className="font-medium">{detection.class}</span>
+                          <span className="font-medium truncate pr-2">{detection.class}</span>
                           <Badge variant="secondary">{detection.count}</Badge>
                         </div>
                         <div className="flex items-center gap-2">
@@ -588,7 +588,7 @@ export default function ResultsPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 {[
                   { cls: "Fishing Net",       map: 99.4, status: "Exceptional" },
                   { cls: "Tyre",              map: 89.1, status: "Excellent"   },
@@ -628,13 +628,14 @@ export default function ResultsPage() {
           </Card>
 
           {/* Action Bar */}
-          <div className="flex gap-4 mt-6">            <Button asChild className="flex-1">
+          <div className="flex flex-col sm:flex-row gap-3 mt-6">
+            <Button asChild className="w-full">
               <Link to="/history">
                 <CheckCircle className="mr-2 h-5 w-5" />
                 Save to History
               </Link>
             </Button>
-            <Button variant="outline" asChild>
+            <Button variant="outline" asChild className="w-full sm:w-auto">
               <Link to="/upload">New Detection</Link>
             </Button>
           </div>

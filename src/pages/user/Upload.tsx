@@ -56,7 +56,7 @@ const FileItem = memo(({ file, isProcessing, onRemove }: {
       initial={{ opacity: 0, x: -20 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: 20 }}
-      className="flex items-center gap-3.5 p-3 bg-muted/40 rounded-xl"
+      className="flex items-start gap-3 p-3 bg-muted/40 rounded-xl"
     >
       <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
         {file.file.type.startsWith("image/") ? (
@@ -65,7 +65,7 @@ const FileItem = memo(({ file, isProcessing, onRemove }: {
           <Video className="h-5 w-5 text-primary" />
         )}
       </div>
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-0 pt-0.5">
         <p className="text-[13px] font-semibold truncate tracking-tight">
           {file.file.name}
         </p>
@@ -81,7 +81,7 @@ const FileItem = memo(({ file, isProcessing, onRemove }: {
           </span>
         </div>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5 flex-shrink-0">
         {file.status === "complete" && (
           <CheckCircle className="h-5 w-5 text-success" />
         )}
@@ -317,7 +317,7 @@ export default function UploadPage() {
         }
         
         // Build API URL with optimization parameters
-        let apiUrl = `${API_URL}${endpoint}?confidence=${confidence / 100}`;
+        const apiUrl = `${API_URL}${endpoint}?confidence=${confidence / 100}`;
         
         // Process all frames for maximum accuracy (no frame skipping)
         if (isVideo) {
@@ -615,7 +615,7 @@ export default function UploadPage() {
               <label className="flex flex-col items-center justify-center cursor-pointer">
                 <div
                   className={cn(
-                    "w-16 h-16 sm:w-18 sm:h-18 rounded-2xl ocean-gradient flex items-center justify-center mb-4 transition-transform duration-200 shadow-glow",
+                    "w-16 h-16 sm:w-20 sm:h-20 rounded-2xl ocean-gradient flex items-center justify-center mb-4 transition-transform duration-200 shadow-glow",
                     isDragOver && "scale-110"
                   )}
                 >
@@ -734,10 +734,10 @@ export default function UploadPage() {
           </AnimatePresence>
 
           {/* Action Buttons */}
-          <div className="flex gap-2 sm:gap-3">
+          <div className="grid grid-cols-1 sm:flex gap-2 sm:gap-3">
             <Button
               size="lg"
-              className="flex-1 text-sm sm:text-base"
+              className="sm:flex-1 text-sm sm:text-base"
               onClick={processFiles}
               disabled={files.length === 0 || isProcessing || isComplete}
             >

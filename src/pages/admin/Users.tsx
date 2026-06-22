@@ -221,72 +221,72 @@ const AdminUsers: React.FC = () => {
   return (
     <AdminLayout>
       <div className="space-y-6">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold tracking-tight">User Management</h1>
-          <p className="text-muted-foreground">
+        <div className="mb-5 sm:mb-8">
+          <h1 className="text-xl sm:text-3xl font-bold tracking-tight">User Management</h1>
+          <p className="text-muted-foreground text-xs sm:text-sm font-medium">
             Manage user accounts and monitor activity
           </p>
         </div>
 
         {/* User Statistics */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
           <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-full bg-blue-500/10 flex items-center justify-center">
-                  <Users className="h-6 w-6 text-blue-500" />
+            <CardContent className="p-3 sm:p-6">
+              <div className="flex items-center gap-3 sm:gap-4">
+                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-blue-500/10 flex items-center justify-center flex-shrink-0">
+                  <Users className="h-5 w-5 sm:h-6 sm:w-6 text-blue-500" />
                 </div>
-                <div>
-                  <div className="text-2xl font-bold">{users.length}</div>
-                  <div className="text-sm text-muted-foreground">Total Users</div>
+                <div className="min-w-0">
+                  <div className="text-xl sm:text-2xl font-bold">{users.length}</div>
+                  <div className="text-xs sm:text-sm text-muted-foreground">Total Users</div>
                 </div>
               </div>
             </CardContent>
           </Card>
 
           <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-full bg-green-500/10 flex items-center justify-center">
-                  <CheckCircle className="h-6 w-6 text-green-500" />
+            <CardContent className="p-3 sm:p-6">
+              <div className="flex items-center gap-3 sm:gap-4">
+                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-green-500/10 flex items-center justify-center flex-shrink-0">
+                  <CheckCircle className="h-5 w-5 sm:h-6 sm:w-6 text-green-500" />
                 </div>
-                <div>
-                  <div className="text-2xl font-bold">
+                <div className="min-w-0">
+                  <div className="text-xl sm:text-2xl font-bold">
                     {users.filter(u => u.is_active).length}
                   </div>
-                  <div className="text-sm text-muted-foreground">Active Users</div>
+                  <div className="text-xs sm:text-sm text-muted-foreground">Active Users</div>
                 </div>
               </div>
             </CardContent>
           </Card>
 
           <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-full bg-purple-500/10 flex items-center justify-center">
-                  <Shield className="h-6 w-6 text-purple-500" />
+            <CardContent className="p-3 sm:p-6">
+              <div className="flex items-center gap-3 sm:gap-4">
+                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-purple-500/10 flex items-center justify-center flex-shrink-0">
+                  <Shield className="h-5 w-5 sm:h-6 sm:w-6 text-purple-500" />
                 </div>
-                <div>
-                  <div className="text-2xl font-bold">
+                <div className="min-w-0">
+                  <div className="text-xl sm:text-2xl font-bold">
                     {users.filter(u => u.role === 'ADMIN').length}
                   </div>
-                  <div className="text-sm text-muted-foreground">Administrators</div>
+                  <div className="text-xs sm:text-sm text-muted-foreground">Administrators</div>
                 </div>
               </div>
             </CardContent>
           </Card>
 
           <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-full bg-orange-500/10 flex items-center justify-center">
-                  <Database className="h-6 w-6 text-orange-500" />
+            <CardContent className="p-3 sm:p-6">
+              <div className="flex items-center gap-3 sm:gap-4">
+                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-orange-500/10 flex items-center justify-center flex-shrink-0">
+                  <Database className="h-5 w-5 sm:h-6 sm:w-6 text-orange-500" />
                 </div>
-                <div>
-                  <div className="text-2xl font-bold">
+                <div className="min-w-0">
+                  <div className="text-xl sm:text-2xl font-bold">
                     {users.reduce((sum, u) => sum + u.storage_used, 0).toFixed(1)}MB
                   </div>
-                  <div className="text-sm text-muted-foreground">Storage Used</div>
+                  <div className="text-xs sm:text-sm text-muted-foreground">Storage Used</div>
                 </div>
               </div>
             </CardContent>
@@ -302,7 +302,7 @@ const AdminUsers: React.FC = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="flex flex-col md:flex-row gap-4">
+            <div className="flex flex-col md:flex-row gap-3 sm:gap-4">
               <div className="flex-1">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -362,10 +362,10 @@ const AdminUsers: React.FC = () => {
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: index * 0.05 }}
-                    className="flex items-center justify-between p-4 rounded-lg border bg-card/50 hover:bg-card/80 transition-colors"
+                    className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4 p-3 sm:p-4 rounded-lg border bg-card/50 hover:bg-card/80 transition-colors"
                   >
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                    <div className="flex items-start gap-3 sm:gap-4 min-w-0">
+                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
                         {adminUser.role === 'ADMIN' ? (
                           <Shield className="h-5 w-5 text-primary" />
                         ) : (
@@ -373,9 +373,9 @@ const AdminUsers: React.FC = () => {
                         )}
                       </div>
                       
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="font-medium">{adminUser.username}</h3>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2 mb-1">
+                          <h3 className="font-medium truncate">{adminUser.username}</h3>
                           <Badge 
                             variant={adminUser.role === 'ADMIN' ? 'default' : 'secondary'}
                             className="text-xs"
@@ -400,11 +400,11 @@ const AdminUsers: React.FC = () => {
                           </Badge>
                         </div>
                         
-                        <p className="text-sm text-muted-foreground mb-1">
+                        <p className="text-sm text-muted-foreground mb-1 break-all">
                           {adminUser.email}
                         </p>
                         
-                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                        <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs text-muted-foreground">
                           <span className="flex items-center gap-1">
                             <Calendar className="h-3 w-3" />
                             Joined {formatDate(adminUser.created_at)}
@@ -417,19 +417,20 @@ const AdminUsers: React.FC = () => {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-4">
-                      <div className="text-right text-sm">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 xl:flex-shrink-0">
+                      <div className="text-left sm:text-right text-sm">
                         <div className="font-medium">{adminUser.total_detections} detections</div>
                         <div className="text-muted-foreground">{adminUser.storage_used.toFixed(1)}MB used</div>
                       </div>
 
                       {adminUser.id !== user?.id && (
-                        <div className="flex gap-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           <Button 
                             variant="outline" 
                             size="sm"
                             onClick={() => openActionDialog(adminUser, 'deactivate')}
                             disabled={!adminUser.is_active}
+                            className="w-full"
                           >
                             <UserX className="h-4 w-4 mr-2" />
                             Deactivate
@@ -438,6 +439,7 @@ const AdminUsers: React.FC = () => {
                             variant="destructive" 
                             size="sm"
                             onClick={() => openActionDialog(adminUser, 'delete')}
+                            className="w-full"
                           >
                             <Trash2 className="h-4 w-4 mr-2" />
                             Delete Data
@@ -454,7 +456,7 @@ const AdminUsers: React.FC = () => {
 
         {/* Confirmation Dialog */}
         <Dialog open={showDialog} onOpenChange={setShowDialog}>
-          <DialogContent>
+          <DialogContent className="max-w-sm mx-4 sm:mx-auto rounded-2xl">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <AlertTriangle className="h-5 w-5 text-destructive" />
@@ -475,13 +477,14 @@ const AdminUsers: React.FC = () => {
                 )}
               </DialogDescription>
             </DialogHeader>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setShowDialog(false)}>
+            <DialogFooter className="flex-col sm:flex-row gap-2">
+              <Button variant="outline" onClick={() => setShowDialog(false)} className="w-full sm:w-auto">
                 Cancel
               </Button>
               <Button
                 onClick={executeAction}
                 variant={actionType === 'delete' ? 'destructive' : 'default'}
+                className="w-full sm:w-auto"
               >
                 {actionType === 'deactivate' ? 'Deactivate' : 'Delete All Data'}
               </Button>

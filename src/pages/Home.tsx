@@ -7,16 +7,16 @@ import { useAuth } from "@/contexts/AuthContext";
 import logoImg from "@/assets/images/marine-logo.png";
 
 const features = [
-  { icon: Sparkles, title: "Object Detection",    description: "YOLOv26s model trained on ~16,500 marine debris images across 9 debris categories" },
+  { icon: Sparkles, title: "Object Detection",    description: "YOLOv26s model trained on ~16,500 marine debris images across 8 debris classes" },
   { icon: TrendingUp, title: "Trend Forecasting", description: "Predict pollution trends and identify accumulation zones" },
   { icon: Map,        title: "Interactive Maps",  description: "Visualize pollution density across marine regions" },
   { icon: Shield,     title: "Real-time Processing", description: "Process images and videos with live progress tracking" },
 ];
 
 const stats = [
-  { value: "70.3%", label: "mAP50 Accuracy" },
+  { value: "71%", label: "mAP50 Accuracy" },
   { value: "8",     label: "Debris Classes" },
-  { value: "17K+",  label: "Training Images" },
+  { value: "~16.5K", label: "Training Images" },
   { value: "~25ms", label: "Inference Time" },
 ];
 
@@ -49,11 +49,11 @@ export default function HomePage() {
         <div className="hero-overlay-tb" />
 
         {/* Content — top padding accounts for mobile hamburger */}
-        <div className="relative z-10 px-4 pt-16 pb-10 sm:px-8 sm:pt-12 sm:pb-14 lg:pt-16 lg:pb-20 xl:pb-28 lg:px-14 xl:px-20">
+        <div className="relative z-10 px-4 pt-8 pb-10 sm:px-8 sm:pt-12 sm:pb-14 lg:pt-16 lg:pb-20 xl:pb-24 lg:px-14 xl:px-20">
           <div className="max-w-3xl xl:max-w-4xl">
 
             {/* Badge */}
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 border border-white/20 mb-4">
+            <div className="inline-flex max-w-full items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 border border-white/20 mb-4">
               <GraduationCap className="h-3.5 w-3.5 text-cyan-300 flex-shrink-0" />
               <span className="text-white/90 text-xs sm:text-sm font-semibold tracking-wide">HITEC University Taxila — FYP 2026</span>
             </div>
@@ -67,7 +67,7 @@ export default function HomePage() {
             </div>
 
             {/* Headline */}
-            <h1 className="font-display text-3xl sm:text-4xl md:text-5xl lg:text-[3.5rem] font-bold text-white mb-3 sm:mb-5 leading-[1.1] tracking-tight text-shadow-sm">
+            <h1 className="font-display text-[2rem] sm:text-4xl md:text-5xl lg:text-[3.5rem] font-bold text-white mb-3 sm:mb-5 leading-[1.1] tracking-tight text-shadow-sm">
               Marine Plastic Pollution
               <br />
               <span className="bg-gradient-to-r from-cyan-300 via-teal-300 to-emerald-300 bg-clip-text text-transparent">
@@ -179,9 +179,9 @@ export default function HomePage() {
           <h2 className="font-display text-base sm:text-lg font-bold mb-3 tracking-tight">Quick Actions</h2>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-4">
             {[
-              { to: "/upload",      icon: Upload,    bg: "bg-primary/10 group-hover:bg-primary/18",   ic: "text-primary",   title: "Upload Media",     desc: "Detect plastic in images/videos" },
-              { to: "/heatmap",     icon: Map,       bg: "bg-secondary/10 group-hover:bg-secondary/18", ic: "text-secondary", title: "Explore Map",      desc: "View global pollution zones" },
-              { to: "/predictions", icon: Zap,       bg: "bg-accent/10 group-hover:bg-accent/18",     ic: "text-accent",    title: "View Predictions", desc: "Trend analysis and forecasting" },
+              { to: "/upload",      icon: Upload,    bg: "bg-primary/10 group-hover:bg-primary/20",   ic: "text-primary",   title: "Upload Media",     desc: "Detect plastic in images/videos" },
+              { to: "/heatmap",     icon: Map,       bg: "bg-secondary/10 group-hover:bg-secondary/20", ic: "text-secondary", title: "Explore Map",      desc: "View global pollution zones" },
+              { to: "/predictions", icon: Zap,       bg: "bg-accent/10 group-hover:bg-accent/20",     ic: "text-accent",    title: "View Predictions", desc: "Trend analysis and forecasting" },
             ].map((item) => (
               <Link key={item.to} to={item.to}>
                 <Card className="glass-card hover-lift cursor-pointer group">

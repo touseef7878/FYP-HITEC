@@ -27,8 +27,8 @@ Built as a Final Year Project at HITEC University Taxila (2026).
 Team: Touseef Ur Rehman (ML), Qasim Shahzad (Backend), Zohaib Ashraf (Frontend).
 
 PLATFORM FEATURES:
-1. Upload & Detect — Upload images/videos; YOLOv26s detects 9 debris classes (71% mAP50, ~16,500 training images)
-   Classes: Fishing Net (99.4%), Tyre (89.1%), Glass Container (74.7%), Metal Can (70.3%), Other Debris (62.1%), Plastic Bag (61.2%), Plastic Bottle (53.6%), Plastic Fragments (21%), Background
+1. Upload & Detect — Upload images/videos; YOLOv26s detects 8 marine debris classes (71% mAP50, ~16,500 training images)
+   Classes: Fishing Net (99.4%), Tyre (89.1%), Glass Container (74.7%), Metal Can (70.3%), Other Debris (62.1%), Plastic Bag (61.2%), Plastic Bottle (53.6%), Plastic Fragments (21%); background is treated as the non-object class
 2. Predictions — 3-step LSTM pipeline per region: Fetch Data → Train Model → Generate 7–90 day forecasts
    Regions: Pacific Ocean, Atlantic Ocean, Indian Ocean, Mediterranean Sea
    Data sources: Open-Meteo (free weather), WAQI (air quality), NOAA CDO (climate)
@@ -249,13 +249,13 @@ export function OceanAssistant() {
             exit={{   opacity: 0, y: 20, scale: 0.95 }}
             transition={{ duration: 0.2, ease: 'easeOut' }}
             className={cn(
-              'fixed bottom-20 right-5 z-50',
-              'w-[calc(100vw-2.5rem)] max-w-sm',
+              'fixed inset-x-3 bottom-20 z-50 sm:inset-x-auto sm:right-5',
+              'w-auto sm:w-[calc(100vw-2.5rem)] sm:max-w-sm',
               'rounded-2xl border border-border/60 shadow-2xl shadow-black/20',
               'bg-background/95 backdrop-blur-xl',
               'flex flex-col overflow-hidden',
             )}
-            style={{ height: 'min(520px, calc(100dvh - 6rem))' }}
+            style={{ height: 'min(520px, calc(100dvh - 7rem - env(safe-area-inset-bottom)))' }}
           >
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-border/50 bg-gradient-to-r from-cyan-500/10 to-teal-500/10 flex-shrink-0">
@@ -293,7 +293,7 @@ export function OceanAssistant() {
                     <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-cyan-500 to-teal-500 flex items-center justify-center flex-shrink-0 mt-0.5 overflow-hidden">
                       <img src={logoImg} alt="" className="w-5 h-5 rounded-lg" />
                     </div>
-                    <div className="bg-muted/50 rounded-2xl rounded-tl-sm px-3.5 py-2.5 text-sm leading-relaxed max-w-[85%]">
+                <div className="bg-muted/50 rounded-2xl rounded-tl-sm px-3.5 py-2.5 text-sm leading-relaxed max-w-[85%] break-words">
                       Hi! I'm your OceanGuard assistant 🌊<br />
                       Ask me anything about marine pollution, how to use this platform, or the science behind it.
                     </div>
@@ -331,7 +331,7 @@ export function OceanAssistant() {
                       : <img src={logoImg} alt="" className="w-4 h-4 rounded-md" />}
                   </div>
                   <div className={cn(
-                    'max-w-[82%] rounded-2xl px-3.5 py-2.5 text-xs leading-relaxed space-y-1',
+                    'max-w-[82%] rounded-2xl px-3.5 py-2.5 text-xs leading-relaxed space-y-1 break-words',
                     msg.role === 'user'
                       ? 'bg-primary text-primary-foreground rounded-tr-sm'
                       : 'bg-muted/60 rounded-tl-sm'

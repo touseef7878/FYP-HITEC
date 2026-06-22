@@ -405,27 +405,29 @@ export default function ReportsPage() {
                     <motion.div
                       key={report.id}
                       variants={fadeInUp}
-                      className="flex items-center gap-3 p-3 sm:p-4 bg-muted/40 rounded-2xl hover:bg-muted/60 transition-colors"
+                      className="flex flex-col sm:flex-row sm:items-center gap-3 p-3 sm:p-4 bg-muted/40 rounded-2xl hover:bg-muted/60 transition-colors"
                     >
-                      <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
-                        <FileText className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5 mb-0.5">
-                          <h3 className="font-semibold truncate text-[12.5px] sm:text-[13.5px] tracking-tight">{report.title}</h3>
-                          <Badge variant={getReportTypeBadge(report.report_type) as any} className="text-[10px] px-1.5 py-0 flex-shrink-0 font-bold">
-                            {getReportTypeLabel(report.report_type)}
-                          </Badge>
+                      <div className="flex w-full min-w-0 items-start gap-3 sm:flex-1">
+                        <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
+                          <FileText className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
                         </div>
-                        <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground font-medium">
-                          <span className="flex items-center gap-1">
-                            <Calendar className="h-3 w-3" />
-                            {new Date(report.created_at).toLocaleDateString()}
-                          </span>
-                          <span>{report.size}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-1.5 mb-0.5">
+                            <h3 className="font-semibold truncate text-[12.5px] sm:text-[13.5px] tracking-tight">{report.title}</h3>
+                            <Badge variant={getReportTypeBadge(report.report_type) as any} className="text-[10px] px-1.5 py-0 flex-shrink-0 font-bold">
+                              {getReportTypeLabel(report.report_type)}
+                            </Badge>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground font-medium">
+                            <span className="flex items-center gap-1">
+                              <Calendar className="h-3 w-3" />
+                              {new Date(report.created_at).toLocaleDateString()}
+                            </span>
+                            <span>{report.size}</span>
+                          </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-1 flex-shrink-0">
+                      <div className="flex w-full items-center justify-end gap-1 sm:w-auto sm:flex-shrink-0">
                         <Badge variant="secondary" className="text-[10px] px-1.5 py-0 hidden sm:flex items-center gap-1 font-bold">
                           <CheckCircle className="h-3 w-3" />
                           Ready
@@ -450,7 +452,7 @@ export default function ReportsPage() {
 
         {/* Delete Confirmation Dialog */}
         <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-          <DialogContent>
+          <DialogContent className="max-w-sm mx-4 sm:mx-auto rounded-2xl">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <AlertTriangle className="h-5 w-5 text-destructive" />
@@ -461,11 +463,12 @@ export default function ReportsPage() {
                 This will permanently remove the report and its PDF file. This action cannot be undone.
               </DialogDescription>
             </DialogHeader>
-            <DialogFooter>
+            <DialogFooter className="flex-col sm:flex-row gap-2">
               <Button 
                 variant="outline" 
                 onClick={() => setShowDeleteDialog(false)}
                 disabled={isDeleting}
+                className="w-full sm:w-auto"
               >
                 Cancel
               </Button>
@@ -473,6 +476,7 @@ export default function ReportsPage() {
                 variant="destructive" 
                 onClick={confirmDeleteReport}
                 disabled={isDeleting}
+                className="w-full sm:w-auto"
               >
                 {isDeleting ? "Deleting..." : "Delete Report"}
               </Button>

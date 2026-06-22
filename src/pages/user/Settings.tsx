@@ -231,7 +231,7 @@ export default function SettingsPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="p-3 bg-primary/8 rounded-xl flex items-start gap-2.5 mb-3 border border-primary/15">
+              <div className="p-3 bg-primary/10 rounded-xl flex items-start gap-2.5 mb-3 border border-primary/20">
                 <Info className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
                 <div>
                   <p className="font-semibold text-[12.5px] sm:text-[13.5px]">YOLOv26s — Custom Marine Debris Model</p>
@@ -294,7 +294,7 @@ export default function SettingsPage() {
               </div>
 
               {/* Clear History */}
-              <div className="p-3 sm:p-4 bg-destructive/6 rounded-xl border border-destructive/15">
+              <div className="p-3 sm:p-4 bg-destructive/10 rounded-xl border border-destructive/20">
                 <h4 className="font-bold text-destructive text-[12.5px] sm:text-[13.5px] mb-1">Clear Detection History</h4>
                 <p className="text-[11px] text-muted-foreground mb-3 font-medium">Permanently delete all detection history.</p>
                 <Button
@@ -311,7 +311,7 @@ export default function SettingsPage() {
               </div>
 
               {/* Delete All */}
-              <div className="p-3 sm:p-4 bg-destructive/6 rounded-xl border border-destructive/15">
+              <div className="p-3 sm:p-4 bg-destructive/10 rounded-xl border border-destructive/20">
                 <h4 className="font-bold text-destructive text-[12.5px] sm:text-[13.5px] mb-1 flex items-center gap-1.5">
                   <AlertTriangle className="h-3.5 w-3.5" />
                   Delete ALL Account Data

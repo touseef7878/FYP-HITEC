@@ -167,9 +167,9 @@ const AdminDashboard: React.FC = () => {
     <AdminLayout>
       <div className="space-y-5">
         {/* Welcome Section */}
-        <div className="ocean-gradient rounded-2xl p-5 sm:p-6 text-white shadow-glow">
-          <div className="flex items-center justify-between gap-4">
-            <div>
+        <div className="ocean-gradient rounded-2xl p-4 sm:p-6 text-white shadow-glow">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="min-w-0">
               <h1 className="font-display text-xl sm:text-2xl font-bold mb-1 tracking-tight">Welcome back, {user?.username}</h1>
               <p className="text-white/75 text-sm font-medium">
                 System administration and monitoring
@@ -190,14 +190,14 @@ const AdminDashboard: React.FC = () => {
         </div>
 
         {/* System Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           <Card className="glass-card hover-lift border-l-4 border-l-primary">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-[12px] font-bold uppercase tracking-wider text-muted-foreground">Active Users</CardTitle>
               <Users className="h-4 w-4 text-primary" />
             </CardHeader>
             <CardContent>
-              <div className="font-display text-2xl font-bold tracking-tight">{stats?.active_users || 0}</div>
+              <div className="font-display text-xl sm:text-2xl font-bold tracking-tight">{stats?.active_users || 0}</div>
               <p className="text-xs text-muted-foreground font-medium mt-0.5">
                 {stats?.active_sessions || 0} active sessions
               </p>
@@ -210,7 +210,7 @@ const AdminDashboard: React.FC = () => {
               <Activity className="h-4 w-4 text-success" />
             </CardHeader>
             <CardContent>
-              <div className="font-display text-2xl font-bold tracking-tight">{stats?.total_detections || 0}</div>
+              <div className="font-display text-xl sm:text-2xl font-bold tracking-tight">{stats?.total_detections || 0}</div>
               <p className="text-xs text-muted-foreground font-medium mt-0.5">
                 {stats?.api_requests_today || 0} API requests today
               </p>
@@ -223,7 +223,7 @@ const AdminDashboard: React.FC = () => {
               <Database className="h-4 w-4 text-warning" />
             </CardHeader>
             <CardContent>
-              <div className="font-display text-2xl font-bold tracking-tight">{stats?.database_size || 0} MB</div>
+              <div className="font-display text-xl sm:text-2xl font-bold tracking-tight">{stats?.database_size || 0} MB</div>
               <p className="text-xs text-muted-foreground font-medium mt-0.5">
                 {stats?.storage_used || 0} MB used
               </p>
@@ -236,7 +236,7 @@ const AdminDashboard: React.FC = () => {
               <Shield className="h-4 w-4 text-secondary" />
             </CardHeader>
             <CardContent>
-              <div className="font-display text-2xl font-bold tracking-tight text-success">{systemHealth}%</div>
+              <div className="font-display text-xl sm:text-2xl font-bold tracking-tight text-success">{systemHealth}%</div>
               <p className="text-xs text-muted-foreground font-medium mt-0.5">
                 Uptime: {stats?.system_uptime || '24h 15m'}
               </p>

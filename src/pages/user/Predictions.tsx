@@ -800,8 +800,8 @@ export default function PredictionsPage() {
                   )}
                 </CardHeader>
                 <CardContent>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs sm:text-sm">
+                  <div className="mobile-scroll">
+                    <table className="w-full text-xs sm:text-sm mobile-min">
                       <thead>
                         <tr className="border-b">
                           <th className="text-left py-2 pr-4 text-muted-foreground font-medium">Date</th>
@@ -846,8 +846,8 @@ export default function PredictionsPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs sm:text-sm">
+                  <div className="mobile-scroll">
+                    <table className="w-full text-xs sm:text-sm mobile-min">
                       <thead>
                         <tr className="border-b">
                           <th className="text-left py-2 pr-4 text-muted-foreground font-medium">Metric</th>

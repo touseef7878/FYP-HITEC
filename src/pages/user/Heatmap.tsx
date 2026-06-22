@@ -205,17 +205,17 @@ export default function HeatmapPage() {
     <MainLayout>
       <PageTransition className="page-container">
         {/* Header */}
-        <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
+        <div className="mb-5 sm:mb-6 flex flex-col xl:flex-row xl:items-start justify-between gap-4">
+          <div className="min-w-0">
             <h1 className="section-header">Pollution Heatmap</h1>
-            <p className="text-muted-foreground text-sm">
+            <p className="text-muted-foreground text-xs sm:text-sm font-medium">
               {mode === "predicted"
                 ? "LSTM-predicted future pollution intensity by ocean region"
                 : "Aggregated pollution scores from LSTM model predictions"}
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 xl:justify-end">
             {/* Mode toggle */}
             <div className="flex rounded-md border overflow-hidden">
               <Button
@@ -286,10 +286,10 @@ export default function HeatmapPage() {
           </div>
         )}
 
-        <div className="grid lg:grid-cols-4 gap-6">
+        <div className="grid lg:grid-cols-4 gap-4 sm:gap-6">
           {/* Map */}
           <div className="lg:col-span-3">
-            <Card className="glass-card h-[600px] overflow-hidden">
+            <Card className="glass-card h-[420px] sm:h-[520px] lg:h-[600px] overflow-hidden">
               <CardContent className="p-0 h-full">
                 {isLoading ? (
                   <div className="flex items-center justify-center h-full">
@@ -306,7 +306,7 @@ export default function HeatmapPage() {
           </div>
 
           {/* Sidebar */}
-          <div className="space-y-4">
+          <div className="space-y-4 min-w-0">
             {/* Selected zone detail */}
             {selectedHotspot && (
               <Card className="glass-card">

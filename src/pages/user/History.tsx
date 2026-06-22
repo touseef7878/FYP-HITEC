@@ -296,9 +296,9 @@ export default function HistoryPage() {
                 <motion.div key={item.id} variants={fadeInUp}>
                   <Card className="glass-card hover-lift cursor-pointer group">
                     <CardContent className="py-3 sm:py-4 px-3 sm:px-4">
-                      <div className="flex items-center gap-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                         {/* Icon */}
-                        <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
+                        <div className="hidden sm:flex w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-primary/10 items-center justify-center flex-shrink-0">
                           {item.type === "image"
                             ? <Image className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
                             : <Video className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />}
@@ -306,7 +306,12 @@ export default function HistoryPage() {
 
                         {/* Content */}
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5 mb-0.5">
+                          <div className="flex flex-wrap items-center gap-1.5 mb-0.5">
+                            <span className="sm:hidden w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                              {item.type === "image"
+                                ? <Image className="h-4 w-4 text-primary" />
+                                : <Video className="h-4 w-4 text-primary" />}
+                            </span>
                             <h3 className="font-semibold truncate text-[12.5px] sm:text-[13.5px] tracking-tight">
                               {item.filename}
                             </h3>
@@ -340,7 +345,7 @@ export default function HistoryPage() {
                         </div>
 
                         {/* Actions */}
-                        <div className="flex items-center gap-1 flex-shrink-0">
+                        <div className="flex w-full sm:w-auto items-center justify-end gap-1 flex-shrink-0">
                           <Link to={`/results/${item.id}`}>
                             <Button variant="ghost" size="icon" className="h-7 w-7 sm:h-8 sm:w-8" title="View">
                               <Eye className="h-3.5 w-3.5" />

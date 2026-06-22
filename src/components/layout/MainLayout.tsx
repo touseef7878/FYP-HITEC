@@ -19,15 +19,15 @@ const MainContent = memo(({ children }: MainLayoutProps) => {
      * - This means: sidebar always visible, content scrolls freely
      * - On mobile: sidebar is a fixed overlay (hamburger menu)
      */
-    <div className="flex bg-background min-h-screen">
+    <div className="flex bg-background h-[100dvh] overflow-hidden">
       <Sidebar />
 
       {/* Main content column — this is what scrolls */}
       <main
         className={cn(
-          "flex-1 min-w-0",
+          "flex-1 min-w-0 overflow-y-auto overflow-x-hidden",
           // Mobile: push content down past the hamburger button
-          "pt-14 lg:pt-0"
+          "pt-[calc(3.5rem+env(safe-area-inset-top))] lg:pt-0"
         )}
       >
         {children}

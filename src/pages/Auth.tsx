@@ -136,7 +136,7 @@ export default function AuthPage() {
         <MobileVideoBg />
         <div className="relative z-10 flex flex-col justify-center min-h-screen lg:min-h-0
                         px-5 py-8 sm:px-10 lg:bg-background lg:px-12 xl:px-16">
-          <div className="bg-background/92 backdrop-blur-xl rounded-3xl p-6 sm:p-8 shadow-2xl border border-border/50
+          <div className="bg-background backdrop-blur-xl rounded-3xl p-6 sm:p-8 shadow-2xl border border-border/50
                           lg:bg-transparent lg:backdrop-blur-none lg:rounded-none lg:p-0 lg:shadow-none lg:border-0">
             <CheckEmailScreen
               email={screen.email}
@@ -156,7 +156,7 @@ export default function AuthPage() {
         <MobileVideoBg />
         <div className="relative z-10 flex flex-col justify-center min-h-screen lg:min-h-0
                         px-5 py-8 sm:px-10 lg:bg-background lg:px-12 xl:px-16">
-          <div className="bg-background/92 backdrop-blur-xl rounded-3xl p-6 sm:p-8 shadow-2xl border border-border/50
+          <div className="bg-background backdrop-blur-xl rounded-3xl p-6 sm:p-8 shadow-2xl border border-border/50
                           lg:bg-transparent lg:backdrop-blur-none lg:rounded-none lg:p-0 lg:shadow-none lg:border-0">
             <UnverifiedScreen
               emailHint={screen.emailHint}
@@ -178,7 +178,7 @@ export default function AuthPage() {
 
       <div className="relative z-10 flex flex-col justify-center min-h-screen lg:min-h-0
                       px-5 py-8 sm:px-10 lg:bg-background lg:px-12 xl:px-16">
-        <div className="bg-background/92 backdrop-blur-xl rounded-3xl p-6 sm:p-8 shadow-2xl border border-border/50
+        <div className="bg-background backdrop-blur-xl rounded-3xl p-6 sm:p-8 shadow-2xl border border-border/50
                         lg:bg-transparent lg:backdrop-blur-none lg:rounded-none lg:p-0 lg:shadow-none lg:border-0">
 
           {/* Logo */}

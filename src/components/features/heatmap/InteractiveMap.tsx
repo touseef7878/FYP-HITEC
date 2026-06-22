@@ -263,7 +263,7 @@ export function InteractiveMap({ hotspots, onHotspotClick }: InteractiveMapProps
       <div ref={mapRef} className="w-full h-full rounded-lg overflow-hidden" />
 
       {/* Map Controls */}
-      <div className="absolute top-4 right-4 flex flex-col gap-2 z-[1000]">
+      <div className="absolute top-2 right-2 sm:top-4 sm:right-4 flex flex-col gap-2 z-[1000]">
         {/* Layer Switcher */}
         <Card className="glass-card">
           <CardContent className="p-2">
@@ -272,7 +272,7 @@ export function InteractiveMap({ hotspots, onHotspotClick }: InteractiveMapProps
                 variant={currentLayer === 'ocean' ? 'default' : 'ghost'}
                 size="sm"
                 onClick={() => switchLayer('ocean')}
-                className="justify-start text-xs"
+                className="justify-start text-[11px] sm:text-xs h-8"
               >
                 Ocean
               </Button>
@@ -280,7 +280,7 @@ export function InteractiveMap({ hotspots, onHotspotClick }: InteractiveMapProps
                 variant={currentLayer === 'satellite' ? 'default' : 'ghost'}
                 size="sm"
                 onClick={() => switchLayer('satellite')}
-                className="justify-start text-xs"
+                className="justify-start text-[11px] sm:text-xs h-8"
               >
                 Satellite
               </Button>
@@ -288,7 +288,7 @@ export function InteractiveMap({ hotspots, onHotspotClick }: InteractiveMapProps
                 variant={currentLayer === 'street' ? 'default' : 'ghost'}
                 size="sm"
                 onClick={() => switchLayer('street')}
-                className="justify-start text-xs"
+                className="justify-start text-[11px] sm:text-xs h-8"
               >
                 Street
               </Button>
@@ -315,10 +315,10 @@ export function InteractiveMap({ hotspots, onHotspotClick }: InteractiveMapProps
       </div>
 
       {/* Legend */}
-      <Card className="glass-card absolute bottom-4 left-4 z-[1000]">
-        <CardContent className="p-4">
-          <h4 className="text-sm font-medium mb-2">Pollution Intensity</h4>
-          <div className="space-y-1">
+      <Card className="glass-card absolute bottom-2 left-2 right-2 z-[1000] sm:bottom-4 sm:left-4 sm:right-auto">
+        <CardContent className="p-2.5 sm:p-4">
+          <h4 className="text-xs sm:text-sm font-medium mb-2">Pollution Intensity</h4>
+          <div className="grid grid-cols-2 gap-x-3 gap-y-1 sm:block sm:space-y-1">
             <div className="flex items-center gap-2">
               <div className="w-4 h-4 rounded-full bg-red-500" />
               <span className="text-xs">Critical</span>

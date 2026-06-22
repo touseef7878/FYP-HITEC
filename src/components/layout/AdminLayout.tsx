@@ -69,11 +69,17 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
 
   return (
     // Outer wrapper: full viewport height, no overflow on the root
-    <div className="h-screen flex flex-col overflow-hidden bg-background">
+    <div className="h-[100dvh] flex flex-col overflow-hidden bg-background">
 
       {/* ── Top header — fixed height, never scrolls ── */}
-      <header className="shrink-0 z-50 border-b bg-background/95 backdrop-blur">
-        <div className="flex h-14 items-center justify-between px-4 sm:px-6">
+      <header
+        className="shrink-0 z-50 border-b bg-background/95 backdrop-blur flex items-center"
+        style={{
+          paddingTop: "env(safe-area-inset-top)",
+          height: "calc(3.5rem + env(safe-area-inset-top))",
+        }}
+      >
+        <div className="flex h-full w-full items-center justify-between px-4 sm:px-6">
           {/* Left */}
           <div className="flex items-center gap-3">
             <button
@@ -143,15 +149,21 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
       {mobileOpen && (
         <div
           className="fixed inset-0 z-40 bg-background/80 backdrop-blur-sm md:hidden"
+          style={{ top: "calc(3.5rem + env(safe-area-inset-top))" }}
           onClick={() => setMobileOpen(false)}
         />
       )}
 
       {/* ── Mobile sidebar drawer ── */}
-      <div className={cn(
-        'fixed top-14 left-0 bottom-0 z-40 w-64 bg-background border-r flex flex-col transition-transform duration-200 md:hidden',
-        mobileOpen ? 'translate-x-0' : '-translate-x-full'
-      )}>
+      <div
+        className={cn(
+          'fixed left-0 bottom-0 z-40 w-64 bg-background border-r flex flex-col transition-transform duration-200 md:hidden',
+          mobileOpen ? 'translate-x-0' : '-translate-x-full'
+        )}
+        style={{
+          top: "calc(3.5rem + env(safe-area-inset-top))",
+        }}
+      >
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
           {/* Different pillId so Framer Motion doesn't conflict with desktop */}
           <NavLinks

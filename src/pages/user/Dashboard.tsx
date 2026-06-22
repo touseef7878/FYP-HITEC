@@ -121,12 +121,12 @@ export default function DashboardPage() {
   return (
     <MainLayout>
       <PageTransition className="page-container">
-        <div className="mb-5 sm:mb-6 flex flex-col xs:flex-row xs:items-center justify-between gap-3">
+        <div className="mb-5 sm:mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h1 className="section-header mb-1">Analytics Dashboard</h1>
             <p className="text-muted-foreground text-xs sm:text-sm font-medium">Real-time insights from marine plastic detection analysis</p>
           </div>
-          <Button onClick={handleRefresh} variant="outline" size="sm" disabled={isFetching} className="self-start xs:self-auto font-semibold">
+          <Button onClick={handleRefresh} variant="outline" size="sm" disabled={isFetching} className="self-start sm:self-auto font-semibold">
             <RefreshCw className={`h-4 w-4 mr-2 ${isFetching ? "animate-spin" : ""}`} />
             Refresh
           </Button>
@@ -169,7 +169,7 @@ export default function DashboardPage() {
               {analyticsData.trendData.length > 0 ? (
                 <div className="h-[220px] sm:h-[280px]">
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={analyticsData.trendData}>
+                    <AreaChart data={analyticsData.trendData} margin={{ top: 8, right: 6, left: -22, bottom: 0 }}>
                       <defs>
                         <linearGradient id="colorDetections" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor="hsl(207, 90%, 30%)" stopOpacity={0.28} />
@@ -203,10 +203,10 @@ export default function DashboardPage() {
             <CardContent>
               {analyticsData.classDistribution.length > 0 ? (
                 <>
-                  <div className="h-[180px] sm:h-[220px] flex items-center">
+                  <div className="h-[190px] sm:h-[220px] flex items-center">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
-                        <Pie data={analyticsData.classDistribution} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={2} dataKey="value">
+                        <Pie data={analyticsData.classDistribution} cx="50%" cy="50%" innerRadius={42} outerRadius={76} paddingAngle={2} dataKey="value">
                           {analyticsData.classDistribution.map((entry, index) => (
                             <Cell key={`cell-${index}`} fill={entry.color} />
                           ))}
@@ -215,7 +215,7 @@ export default function DashboardPage() {
                       </PieChart>
                     </ResponsiveContainer>
                   </div>
-                  <div className="flex flex-wrap justify-center gap-2 sm:gap-3 mt-3">
+                  <div className="flex flex-wrap justify-center gap-2 sm:gap-3 mt-3 max-h-20 overflow-y-auto">
                     {analyticsData.classDistribution.map((item, index) => (
                       <div key={index} className="flex items-center gap-1.5">
                         <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }} />
@@ -242,7 +242,7 @@ export default function DashboardPage() {
             {analyticsData.objectCounts.length > 0 ? (
               <div className="h-[220px] sm:h-[280px]">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={analyticsData.objectCounts}>
+                  <BarChart data={analyticsData.objectCounts} margin={{ top: 8, right: 6, left: -22, bottom: 4 }}>
                     <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
                     <XAxis dataKey="class" className="text-xs" tick={{ fontSize: 11, fontFamily: 'Plus Jakarta Sans' }} />
                     <YAxis className="text-xs" tick={{ fontSize: 11, fontFamily: 'Plus Jakarta Sans' }} />

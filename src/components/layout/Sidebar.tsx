@@ -70,34 +70,36 @@ export const Sidebar = memo(() => {
   const toggleCollapse = useCallback(() => setIsCollapsed(v => !v), [setIsCollapsed]);
 
   // ── Shared inner content ──────────────────────────────────────────────
-  const SidebarContent = (
+  const renderSidebarContent = (collapsed: boolean, closeOnNavigate: () => void, hideLogo = false) => (
     <>
       {/* Logo */}
-      <div className={cn(
-        "flex items-center gap-3 border-b border-sidebar-border flex-shrink-0",
-        isCollapsed ? "px-0 py-5 justify-center" : "px-4 py-5"
-      )}>
-        <img src={logoImg} alt="OceanGuard AI" className="w-9 h-9 rounded-xl flex-shrink-0" />
-        {!isCollapsed && (
-          <div className="overflow-hidden min-w-0">
-            <h1 className="font-display font-bold text-[15px] whitespace-nowrap gradient-text">OceanGuard AI</h1>
-            <p className="text-[11px] text-muted-foreground whitespace-nowrap font-medium tracking-wide">Marine Plastic Detection</p>
-          </div>
-        )}
-      </div>
+      {!hideLogo && (
+        <div className={cn(
+          "flex items-center gap-3 border-b border-sidebar-border flex-shrink-0",
+          collapsed ? "px-0 py-5 justify-center" : "px-4 py-5"
+        )}>
+          <img src={logoImg} alt="OceanGuard AI" className="w-9 h-9 rounded-xl flex-shrink-0" />
+          {!collapsed && (
+            <div className="overflow-hidden min-w-0">
+              <h1 className="font-display font-bold text-[15px] whitespace-nowrap gradient-text">OceanGuard AI</h1>
+              <p className="text-[11px] text-muted-foreground whitespace-nowrap font-medium tracking-wide">Marine Plastic Detection</p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Nav */}
       <nav className={cn(
         "flex-1 py-3 space-y-0.5 overflow-y-auto overflow-x-hidden",
-        isCollapsed ? "px-2" : "px-3"
+        collapsed ? "px-2" : "px-3"
       )}>
         {navItems.map(item => (
           <NavItem
             key={item.path}
             {...item}
             isActive={pathname === item.path}
-            isCollapsed={isCollapsed}
-            onClose={closeMobile}
+            isCollapsed={collapsed}
+            onClose={closeOnNavigate}
           />
         ))}
       </nav>
@@ -105,20 +107,20 @@ export const Sidebar = memo(() => {
       {/* Bottom */}
       <div className={cn(
         "border-t border-sidebar-border flex-shrink-0 space-y-1",
-        isCollapsed ? "p-2" : "p-3"
+        collapsed ? "p-2" : "p-3"
       )}>
         <Button
           variant="ghost"
           className={cn(
             "w-full gap-3 text-sm",
-            isCollapsed ? "justify-center px-0 h-10 w-10 mx-auto" : "justify-start"
+            collapsed ? "justify-center px-0 h-10 w-10 mx-auto" : "justify-start"
           )}
           onClick={toggleTheme}
         >
           {theme === "light"
             ? <Moon className="h-4 w-4 flex-shrink-0" />
             : <Sun  className="h-4 w-4 flex-shrink-0" />}
-          {!isCollapsed && (theme === "light" ? "Dark Mode" : "Light Mode")}
+          {!collapsed && (theme === "light" ? "Dark Mode" : "Light Mode")}
         </Button>
 
         <Button
@@ -126,7 +128,7 @@ export const Sidebar = memo(() => {
           className="w-full hidden lg:flex justify-center h-9"
           onClick={toggleCollapse}
         >
-          {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+          {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
         </Button>
       </div>
     </>
@@ -134,14 +136,48 @@ export const Sidebar = memo(() => {
 
   return (
     <>
-      {/* ── Mobile hamburger ── */}
-      <button
-        className="fixed top-3 left-3 z-50 lg:hidden flex items-center justify-center w-9 h-9 rounded-xl bg-background/90 border border-border shadow-sm backdrop-blur-sm"
-        onClick={toggleMobile}
-        aria-label="Toggle menu"
+      {/* ── Mobile Top Header ── */}
+      <header
+        className="fixed top-0 left-0 right-0 z-50 lg:hidden flex items-center justify-between px-4 bg-background/95 border-b border-border/80 backdrop-blur-sm shadow-sm"
+        style={{
+          paddingTop: "env(safe-area-inset-top)",
+          height: "calc(3.5rem + env(safe-area-inset-top))",
+        }}
       >
-        {isMobileOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
-      </button>
+        <div className="flex items-center gap-3">
+          <button
+            className="flex items-center justify-center w-10 h-10 rounded-xl hover:bg-muted border border-border/50 bg-background/50 shadow-sm transition-colors duration-150"
+            onClick={toggleMobile}
+            aria-label="Toggle menu"
+            aria-expanded={isMobileOpen}
+            aria-controls="mobile-sidebar"
+          >
+            {isMobileOpen ? <X className="h-4.5 w-4.5" /> : <Menu className="h-4.5 w-4.5" />}
+          </button>
+          <div className="flex items-center gap-2 min-w-0">
+            <img src={logoImg} alt="OceanGuard AI" className="w-7 h-7 rounded-lg flex-shrink-0" />
+            <span className="font-display font-bold text-[14.5px] tracking-tight truncate gradient-text">
+              OceanGuard AI
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9 rounded-xl hover:bg-muted"
+            onClick={toggleTheme}
+            aria-label="Toggle theme"
+          >
+            {theme === "light" ? (
+              <Moon className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+            ) : (
+              <Sun className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+            )}
+          </Button>
+        </div>
+      </header>
 
       {/* ── Mobile backdrop ── */}
       <AnimatePresence>
@@ -151,6 +187,7 @@ export const Sidebar = memo(() => {
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
             className="fixed inset-0 bg-background/80 backdrop-blur-sm z-40 lg:hidden"
+            style={{ top: "calc(3.5rem + env(safe-area-inset-top))" }}
             onClick={closeMobile}
           />
         )}
@@ -175,7 +212,7 @@ export const Sidebar = memo(() => {
         )}
         style={{ height: "100dvh" }}
       >
-        {SidebarContent}
+        {renderSidebarContent(isCollapsed, closeMobile)}
       </aside>
 
       {/*
@@ -184,15 +221,19 @@ export const Sidebar = memo(() => {
         Completely separate from the desktop sidebar above.
       */}
       <aside
+        id="mobile-sidebar"
         className={cn(
-          "lg:hidden fixed left-0 top-0 z-40 flex flex-col w-[280px]",
+          "lg:hidden fixed left-0 z-40 flex flex-col w-[min(20rem,calc(100vw-2rem))]",
           "bg-sidebar border-r border-sidebar-border overflow-hidden",
           "transition-transform duration-200 ease-out",
           isMobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
-        style={{ height: "100dvh" }}
+        style={{
+          top: "calc(3.5rem + env(safe-area-inset-top))",
+          height: "calc(100dvh - 3.5rem - env(safe-area-inset-top))",
+        }}
       >
-        {SidebarContent}
+        {renderSidebarContent(false, closeMobile, true)}
       </aside>
     </>
   );

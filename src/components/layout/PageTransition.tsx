@@ -8,8 +8,12 @@ interface PageTransitionProps {
 
 /** Inner page padding wrapper — no animation, just layout */
 export function PageTransition({ children, className = "" }: PageTransitionProps) {
+  const basePadding = className.includes("page-container")
+    ? ""
+    : "px-3 sm:px-4 lg:px-6 xl:px-8 py-4 sm:py-6 lg:py-8";
+
   return (
-    <div className={`px-3 sm:px-4 lg:px-6 xl:px-8 py-4 sm:py-6 lg:py-8 ${className}`}>
+    <div className={`${basePadding} ${className}`.trim()}>
       {children}
     </div>
   );

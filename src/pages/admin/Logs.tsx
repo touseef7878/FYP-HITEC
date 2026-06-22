@@ -3,7 +3,6 @@ import { motion } from 'framer-motion';
 import logger from '@/utils/logger';
 import { 
   FileText, 
-  Filter, 
   Search, 
   RefreshCw, 
   AlertTriangle, 
@@ -20,10 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { MainLayout } from '@/components/layout/MainLayout';
 import AdminLayout from '@/components/layout/AdminLayout';
-import { PageTransition } from '@/components/layout/PageTransition';
-import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import ENV from '@/config/env';
 
@@ -39,7 +35,6 @@ interface LogEntry {
 }
 
 const AdminLogs: React.FC = () => {
-  const { user } = useAuth();
   const { toast } = useToast();
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -165,10 +160,10 @@ const AdminLogs: React.FC = () => {
 
   return (
     <AdminLayout>
-      <div className="space-y-6">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold tracking-tight">System Logs</h1>
-          <p className="text-muted-foreground">
+      <div className="space-y-5 sm:space-y-6">
+        <div className="mb-5 sm:mb-8">
+          <h1 className="text-xl sm:text-3xl font-bold tracking-tight">System Logs</h1>
+          <p className="text-muted-foreground text-xs sm:text-sm font-medium">
             View system activity and events
           </p>
         </div>
@@ -182,7 +177,7 @@ const AdminLogs: React.FC = () => {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="flex flex-col md:flex-row gap-4">
+              <div className="flex flex-col md:flex-row gap-3 sm:gap-4">
                 <div className="flex-1">
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -223,7 +218,7 @@ const AdminLogs: React.FC = () => {
                   </SelectContent>
                 </Select>
 
-                <div className="flex gap-2">
+                <div className="grid grid-cols-2 gap-2 md:flex">
                   <Button
                     variant="outline"
                     size="sm"
@@ -289,14 +284,14 @@ const AdminLogs: React.FC = () => {
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: index * 0.02 }}
-                      className="flex items-start gap-3 p-3 rounded-lg border bg-card/50 hover:bg-card/80 transition-colors"
+                    className="flex items-start gap-3 p-3 rounded-lg border bg-card/50 hover:bg-card/80 transition-colors"
                     >
                       <div className="flex-shrink-0 mt-0.5">
                         {getLevelIcon(log.level)}
                       </div>
                       
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
+                        <div className="flex flex-wrap items-center gap-2 mb-1">
                           <Badge 
                             variant="outline" 
                             className={`text-xs ${getLevelColor(log.level)}`}

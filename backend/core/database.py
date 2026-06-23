@@ -991,63 +991,153 @@ class DatabaseManager:
             return []
 
     @staticmethod
-    def _pollution_score(avg: float, max_level: float, sample_count: int) -> float:
-        return round(min((avg / 100 * 0.6) + (max_level / 100 * 0.2) + (min(sample_count / 30, 1) * 0.2), 1.0), 4)
+    def _pollution_score(avg: float, max_level: float, sample_count: int, trend_delta: float = 0) -> float:
+        level_score = max(0.0, min(avg / 100, 1.0))
+        peak_score = max(0.0, min(max_level / 100, 1.0))
+        confidence_score = min(sample_count / 60, 1.0)
+        trend_score = max(0.0, min((trend_delta + 15) / 30, 1.0))
+        return round(
+            min(
+                level_score * 0.58
+                + peak_score * 0.22
+                + confidence_score * 0.12
+                + trend_score * 0.08,
+                1.0,
+            ),
+            4,
+        )
 
     @staticmethod
-    def _intensity(avg: float) -> str:
-        if avg < 30:
+    def _intensity(avg: float, trend_delta: float = 0) -> str:
+        adjusted = avg + max(trend_delta, 0) * 0.35
+        if adjusted < 35:
             return "Low"
-        if avg < 60:
+        if adjusted < 60:
             return "Moderate"
-        if avg < 80:
+        if adjusted < 78:
             return "High"
         return "Critical"
 
-    def _heatmap_from_predictions(self, days: int = 7) -> Dict[str, Dict]:
+    @staticmethod
+    def _prediction_model_type(row: Dict) -> str:
+        features = _json_loads(row.get("input_features"))
+        model_type = str(features.get("model_type") or features.get("model_label") or "lstm").lower()
+        return "gru" if "gru" in model_type else "lstm"
+
+    @staticmethod
+    def _parse_dt(value: Any) -> datetime:
+        if not value:
+            return datetime.min
+        try:
+            return datetime.fromisoformat(str(value).replace("Z", "").replace(" ", "T").split("+")[0])
+        except Exception:
+            return datetime.min
+
+    def _aggregate_heatmap_rows(self, rows: List[Dict]) -> Dict[str, Dict]:
+        aggregated: Dict[str, Dict] = {}
+        for row in rows:
+            region = row["region"]
+            value = float(row["predicted_pollution_level"])
+            model_type = self._prediction_model_type(row)
+            lower = row.get("confidence_interval_lower")
+            upper = row.get("confidence_interval_upper")
+            pred_date = str(row.get("prediction_date") or "")
+            created_at = str(row.get("created_at") or "")
+
+            data = aggregated.setdefault(
+                region,
+                {
+                    "values": [],
+                    "dated_values": [],
+                    "model_counts": {},
+                    "widths": [],
+                    "max_level": value,
+                    "min_level": value,
+                    "latest_prediction_date": pred_date,
+                    "latest_created_at": created_at,
+                },
+            )
+            data["values"].append(value)
+            data["dated_values"].append((pred_date, value))
+            data["max_level"] = max(data["max_level"], value)
+            data["min_level"] = min(data["min_level"], value)
+            data["model_counts"][model_type] = data["model_counts"].get(model_type, 0) + 1
+            if lower is not None and upper is not None:
+                data["widths"].append(float(upper) - float(lower))
+            if pred_date > data["latest_prediction_date"]:
+                data["latest_prediction_date"] = pred_date
+            if created_at > data["latest_created_at"]:
+                data["latest_created_at"] = created_at
+
+        result: Dict[str, Dict] = {}
+        for region, data in aggregated.items():
+            values = data["values"]
+            dated_values = sorted(data["dated_values"], key=lambda item: item[0])
+            recent = [value for _, value in dated_values[-3:]]
+            older = [value for _, value in dated_values[:3]]
+            recent_avg = sum(recent) / len(recent) if recent else 0
+            older_avg = sum(older) / len(older) if older else recent_avg
+            trend_delta = recent_avg - older_avg if len(dated_values) >= 2 else 0
+            result[region] = {
+                "avg_level": sum(values) / len(values),
+                "max_level": data["max_level"],
+                "min_level": data["min_level"],
+                "sample_count": len(values),
+                "trend_delta": trend_delta,
+                "trend": "Increasing" if trend_delta > 1 else "Decreasing" if trend_delta < -1 else "Stable",
+                "model_counts": data["model_counts"],
+                "confidence_width": sum(data["widths"]) / len(data["widths"]) if data["widths"] else 0,
+                "latest_prediction_date": data["latest_prediction_date"],
+                "latest_created_at": data["latest_created_at"],
+            }
+        return result
+
+    def _heatmap_from_predictions(self, days: int = 7, user_id: int = None) -> Dict[str, Dict]:
         try:
             cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
+            filters = f"created_at=gte.{cutoff}"
+            if user_id is not None:
+                filters += f"&user_id=eq.{user_id}"
             rows = _sb_select(
                 "predictions",
-                "region,predicted_pollution_level",
-                filters=f"created_at=gte.{cutoff}",
+                "region,prediction_date,predicted_pollution_level,"
+                "confidence_interval_lower,confidence_interval_upper,input_features,created_at",
+                filters=filters,
+                limit=5000,
             )
-            aggregated: Dict[str, Dict] = {}
-            for row in rows:
-                region = row["region"]
-                value = float(row["predicted_pollution_level"])
-                if region not in aggregated:
-                    aggregated[region] = {"values": [], "max_level": value}
-                aggregated[region]["values"].append(value)
-                aggregated[region]["max_level"] = max(aggregated[region]["max_level"], value)
-            return {
-                region: {
-                    "avg_level": sum(data["values"]) / len(data["values"]),
-                    "max_level": data["max_level"],
-                    "sample_count": len(data["values"]),
-                }
-                for region, data in aggregated.items()
-            }
+            return self._aggregate_heatmap_rows(rows)
         except Exception as exc:
             logger.error(f"_heatmap_from_predictions failed: {exc}")
             return {}
 
-    def get_heatmap_data(self, days: int = 7) -> List[Dict]:
-        db_rows = self._heatmap_from_predictions(days)
+    def _heatmap_rows_to_response(self, db_rows: Dict[str, Dict], days: int, mode: str) -> List[Dict]:
         results = []
         for region, coords in self._REGION_COORDS.items():
             if region in db_rows:
                 data = db_rows[region]
                 avg = float(data["avg_level"])
                 max_level = float(data["max_level"])
+                min_level = float(data.get("min_level", avg))
                 samples = int(data["sample_count"])
+                trend_delta = float(data.get("trend_delta", 0))
                 estimated = False
             else:
                 baseline = self._REGION_BASELINE[region]
                 avg = baseline["avg"]
                 max_level = baseline["max"]
+                min_level = max(0, avg - 8)
                 samples = 0
+                trend_delta = 0
+                data = {
+                    "trend": "Baseline",
+                    "model_counts": {},
+                    "confidence_width": 0,
+                    "latest_prediction_date": None,
+                    "latest_created_at": None,
+                }
                 estimated = True
+            model_counts = data.get("model_counts", {})
+            models_present = " + ".join(k.upper() for k in sorted(model_counts)) if model_counts else "Reference"
             results.append(
                 {
                     "region": region,
@@ -1055,20 +1145,69 @@ class DatabaseManager:
                     "lng": coords[1],
                     "avg_pollution_level": round(avg, 2),
                     "max_pollution_level": round(max_level, 2),
-                    "pollution_score": self._pollution_score(avg, max_level, samples),
-                    "intensity": self._intensity(avg),
+                    "min_pollution_level": round(min_level, 2),
+                    "pollution_score": self._pollution_score(avg, max_level, samples, trend_delta),
+                    "intensity": self._intensity(avg, trend_delta),
                     "sample_count": samples,
                     "time_range_days": days,
+                    "trend": data.get("trend", "Stable"),
+                    "trend_delta": round(trend_delta, 2),
+                    "model_counts": model_counts,
+                    "models_present": models_present,
+                    "confidence_width": round(float(data.get("confidence_width", 0)), 2),
+                    "latest_prediction_date": data.get("latest_prediction_date"),
+                    "latest_created_at": data.get("latest_created_at"),
+                    "is_prediction": mode == "predicted",
                     "is_estimated": estimated,
                 }
             )
         return results
 
-    def get_heatmap_predictions(self) -> List[Dict]:
-        rows = self.get_heatmap_data(days=1)
-        for row in rows:
-            row["is_prediction"] = True
-        return rows
+    def get_heatmap_data(self, days: int = 7, user_id: int = None) -> List[Dict]:
+        db_rows = self._heatmap_from_predictions(days, user_id=user_id)
+        return self._heatmap_rows_to_response(db_rows, days, "current")
+
+    def get_heatmap_predictions(self, user_id: int = None, horizon_days: int = 7) -> List[Dict]:
+        try:
+            filters = ""
+            if user_id is not None:
+                filters = f"user_id=eq.{user_id}"
+            rows = _sb_select(
+                "predictions",
+                "region,prediction_date,predicted_pollution_level,"
+                "confidence_interval_lower,confidence_interval_upper,input_features,created_at",
+                filters=filters,
+                order="created_at.desc",
+                limit=5000,
+            )
+            if not rows:
+                return self._heatmap_rows_to_response({}, horizon_days, "predicted")
+
+            by_region: Dict[str, List[Dict]] = {}
+            for row in rows:
+                by_region.setdefault(row["region"], []).append(row)
+
+            selected_rows = []
+            for region_rows in by_region.values():
+                latest_created_dt = max(self._parse_dt(row.get("created_at")) for row in region_rows)
+                batch_floor = latest_created_dt - timedelta(minutes=10)
+                latest_rows = [
+                    row for row in region_rows
+                    if self._parse_dt(row.get("created_at")) >= batch_floor
+                ]
+                latest_prediction_dt = max(self._parse_dt(row.get("prediction_date")) for row in latest_rows)
+                horizon_floor = latest_prediction_dt - timedelta(days=max(horizon_days - 1, 1))
+                latest_rows = [
+                    row for row in latest_rows
+                    if self._parse_dt(row.get("prediction_date")) >= horizon_floor
+                ]
+                selected_rows.extend(latest_rows)
+
+            db_rows = self._aggregate_heatmap_rows(selected_rows)
+            return self._heatmap_rows_to_response(db_rows, horizon_days, "predicted")
+        except Exception as exc:
+            logger.error(f"get_heatmap_predictions failed: {exc}")
+            return self._heatmap_rows_to_response({}, horizon_days, "predicted")
 
     # ---------------------------------------------------------------------
     # Analytics

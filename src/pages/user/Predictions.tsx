@@ -128,7 +128,7 @@ export default function PredictionsPage() {
   const [selectedRegion, setSelectedRegion] = useState(() => loadCache()?.region      ?? 'pacific');
   const [epochs,         setEpochs]         = useState([50]);
   const [daysAhead,      setDaysAhead]       = useState(() => loadCache()?.daysAhead   ?? '7');
-  const [modelType,      setModelType]       = useState<ModelType>(() => (loadCache()?.modelType as ModelType) ?? 'lstm');
+  const [modelType,      setModelType]       = useState<ModelType>(() => (loadCache()?.modelType as ModelType) ?? 'both');
 
   const [statuses,    setStatuses]    = useState<Record<string, RegionStatus>>({});
   const [predictions, setPredictions] = useState<Prediction[] | null>(() => loadCache()?.predictions ?? null);
@@ -344,7 +344,7 @@ export default function PredictionsPage() {
       // Re-run predict which saves to DB — or call a dedicated save endpoint
       const res  = await fetch(`${API}/api/predict`, {
         method: 'POST', headers: authH(),
-        body: JSON.stringify({ region: selectedRegion, days_ahead: parseInt(daysAhead) }),
+        body: JSON.stringify({ region: selectedRegion, days_ahead: parseInt(daysAhead), model_type: modelType }),
       });
       const data = await res.json();
       if (data.success) {
@@ -441,7 +441,7 @@ export default function PredictionsPage() {
             <div>
               <h1 className="section-header mb-1">Marine Pollution Forecasting</h1>
               <p className="text-muted-foreground text-xs sm:text-sm font-medium">
-                LSTM neural network predictions using real environmental data
+                LSTM and GRU neural network predictions using real environmental data
               </p>
             </div>
             <Button variant="outline" size="sm" onClick={checkApiHealth} disabled={loadingHealth} className="gap-1.5 text-[12.5px] font-semibold self-start sm:self-auto">

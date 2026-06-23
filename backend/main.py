@@ -906,14 +906,19 @@ async def predict_pollution_trends(
                 "average_confidence":     float(np.mean([p['confidence'] for p in predictions])),
             }
 
-        def _save_predictions(predictions: list, model_info: dict) -> int:
+        def _save_predictions(predictions: list, model_info: dict, model_type: str) -> int:
             saved = 0
             model_version = (model_info.get('config') or {}).get('last_trained', datetime.now().strftime('%Y-%m-%d'))[:10]
             input_features = {
                 col: float(recent_df[col].iloc[-1]) if col in recent_df.columns else 0
                 for col in ('temperature', 'humidity', 'aqi', 'wind_speed', 'ocean_temp')
             }
-            input_features.update({'days_ahead': request.days_ahead, 'region': request.region})
+            input_features.update({
+                'days_ahead': request.days_ahead,
+                'region': request.region,
+                'model_type': model_type,
+                'model_label': model_type.upper(),
+            })
             for pred in predictions:
                 try:
                     conf   = pred.get('confidence', 0.85)
@@ -943,12 +948,12 @@ async def predict_pollution_trends(
         if request.model_type in ("lstm", "both"):
             res              = _run_prediction(lstm_model, "LSTM")
             results["lstm"]  = res
-            saved_counts["lstm"] = _save_predictions(res['predictions'], res.get('model_info', {}))
+            saved_counts["lstm"] = _save_predictions(res['predictions'], res.get('model_info', {}), "lstm")
 
         if request.model_type in ("gru", "both"):
             res             = _run_prediction(gru_model, "GRU")
             results["gru"]  = res
-            saved_counts["gru"] = _save_predictions(res['predictions'], res.get('model_info', {}))
+            saved_counts["gru"] = _save_predictions(res['predictions'], res.get('model_info', {}), "gru")
 
         # Primary result for backwards-compatible single-model callers
         primary_key    = request.model_type if request.model_type != "both" else "lstm"
@@ -1183,10 +1188,12 @@ async def get_heatmap(
         range_map = {"1d": 1, "7d": 7, "30d": 30, "90d": 90}
         days = range_map.get(range, 7)
 
+        user_id = current_user['user_id']
+
         if mode == "predicted":
-            raw = db.get_heatmap_predictions()
+            raw = db.get_heatmap_predictions(user_id=user_id, horizon_days=days)
         else:
-            raw = db.get_heatmap_data(days=days)
+            raw = db.get_heatmap_data(days=days, user_id=user_id)
 
         # Enrich with display metadata
         hotspots = []
@@ -3340,7 +3347,7 @@ async def generate_report(
             logger.info(f"📊 Found {len(detections)} detections for user {user_id} in last {request.date_range_days} days")
         
         if request.report_type in ['prediction', 'both']:
-            predictions = db.get_user_predictions(user_id, days=request.date_range_days)
+            predictions = db.get_user_predictions(user_id, limit=2000, days=request.date_range_days)
             logger.info(f"📊 Found {len(predictions)} predictions for user {user_id} in last {request.date_range_days} days")
         
         # Only fail if specifically requesting a type with no data
@@ -3351,7 +3358,7 @@ async def generate_report(
         
         if request.report_type == 'prediction' and not predictions:
             logger.warning(f"❌ No prediction data for user {user_id} in last {request.date_range_days} days")
-            raise HTTPException(status_code=400, detail="No prediction data available. Please generate some LSTM predictions first.")
+            raise HTTPException(status_code=400, detail="No prediction data available. Please generate LSTM and GRU predictions first.")
         
         # For 'both' type, we need at least one type of data
         if request.report_type == 'both' and not detections and not predictions:
@@ -3362,7 +3369,7 @@ async def generate_report(
         if not request.title:
             type_name = {
                 'detection': 'YOLO Detection',
-                'prediction': 'LSTM Prediction', 
+                'prediction': 'LSTM & GRU Prediction', 
                 'both': 'Comprehensive Analysis'
             }[request.report_type]
             request.title = f"{type_name} Report - {datetime.now().strftime('%B %d, %Y')}"
@@ -3530,11 +3537,74 @@ async def generate_report(
                 from collections import defaultdict
                 from datetime import timedelta
                 
-                # Group predictions by region
+                def _prediction_model_type(prediction: dict) -> str:
+                    features = prediction.get('input_features') or {}
+                    model_type = (
+                        prediction.get('model_type')
+                        or features.get('model_type')
+                        or features.get('model_label')
+                        or 'lstm'
+                    )
+                    model_type = str(model_type).strip().lower()
+                    if 'gru' in model_type:
+                        return 'gru'
+                    return 'lstm'
+
+                def _risk_level(value: float) -> str:
+                    if value > 80:
+                        return "Critical"
+                    if value > 60:
+                        return "High"
+                    if value > 40:
+                        return "Medium"
+                    return "Low"
+
+                def _trend_for(rows: list) -> str:
+                    sorted_rows = sorted(rows, key=lambda x: x.get('prediction_date', ''))
+                    if len(sorted_rows) < 2:
+                        return "Insufficient data"
+                    recent_avg = sum(p.get('predicted_pollution_level', 0) for p in sorted_rows[-3:]) / min(3, len(sorted_rows))
+                    older_avg = sum(p.get('predicted_pollution_level', 0) for p in sorted_rows[:3]) / min(3, len(sorted_rows))
+                    return "Increasing" if recent_avg > older_avg else "Decreasing" if recent_avg < older_avg else "Stable"
+
+                def _confidence_width(rows: list) -> float:
+                    widths = []
+                    for row in rows:
+                        upper = row.get('confidence_interval_upper')
+                        lower = row.get('confidence_interval_lower')
+                        if upper is not None and lower is not None:
+                            widths.append(float(upper) - float(lower))
+                    return round(sum(widths) / len(widths), 2) if widths else 0
+
+                def _summarize_model(rows: list, model_type: str) -> dict:
+                    levels = [float(p.get('predicted_pollution_level', 0)) for p in rows]
+                    avg_level = sum(levels) / len(levels) if levels else 0
+                    regions = sorted({p.get('region', 'Unknown') for p in rows})
+                    versions = sorted({str(p.get('model_version', 'Unknown')) for p in rows if p.get('model_version')})
+                    return {
+                        "model_type": model_type,
+                        "model_label": model_type.upper(),
+                        "total_predictions": len(rows),
+                        "regions_analyzed": len(regions),
+                        "avg_pollution_level": round(avg_level, 2),
+                        "max_pollution_level": round(max(levels), 2) if levels else 0,
+                        "min_pollution_level": round(min(levels), 2) if levels else 0,
+                        "trend": _trend_for(rows),
+                        "risk_level": _risk_level(avg_level),
+                        "model_version": ", ".join(versions) if versions else "Unknown",
+                        "confidence_width": _confidence_width(rows),
+                    }
+
+                # Group predictions by region and model. Older rows did not store model_type,
+                # so they are treated as legacy LSTM predictions for backwards compatibility.
                 region_analysis = defaultdict(list)
+                model_analysis = defaultdict(list)
                 for prediction in predictions:
                     region = prediction.get('region', 'Unknown')
+                    model_type = _prediction_model_type(prediction)
+                    prediction['model_type'] = model_type
                     region_analysis[region].append(prediction)
+                    model_analysis[model_type].append(prediction)
                 
                 # Calculate regional statistics
                 regional_stats = []
@@ -3546,28 +3616,29 @@ async def generate_report(
                         max_pollution = max(pollution_levels)
                         min_pollution = min(pollution_levels)
                         
-                        # Determine trend
-                        sorted_predictions = sorted(region_predictions, key=lambda x: x.get('prediction_date', ''))
-                        if len(sorted_predictions) >= 2:
-                            recent_avg = sum(p.get('predicted_pollution_level', 0) for p in sorted_predictions[-3:]) / min(3, len(sorted_predictions))
-                            older_avg = sum(p.get('predicted_pollution_level', 0) for p in sorted_predictions[:3]) / min(3, len(sorted_predictions))
-                            trend = "Increasing" if recent_avg > older_avg else "Decreasing" if recent_avg < older_avg else "Stable"
-                        else:
-                            trend = "Insufficient data"
-                        
-                        # Risk assessment
-                        risk_level = "Critical" if avg_pollution > 80 else "High" if avg_pollution > 60 else "Medium" if avg_pollution > 40 else "Low"
-                        
+                        models_present = sorted({_prediction_model_type(p).upper() for p in region_predictions})
+                        model_breakdown = [
+                            _summarize_model(model_rows, model_type)
+                            for model_type, model_rows in sorted(
+                                defaultdict(list, {
+                                    mt: [p for p in region_predictions if _prediction_model_type(p) == mt]
+                                    for mt in sorted({_prediction_model_type(p) for p in region_predictions})
+                                }).items()
+                            )
+                        ]
+
                         regional_stats.append({
                             "region": region,
                             "total_predictions": len(region_predictions),
                             "avg_pollution_level": round(avg_pollution, 2),
                             "max_pollution_level": round(max_pollution, 2),
                             "min_pollution_level": round(min_pollution, 2),
-                            "trend": trend,
-                            "risk_level": risk_level,
+                            "trend": _trend_for(region_predictions),
+                            "risk_level": _risk_level(avg_pollution),
                             "latest_prediction_date": max(p.get('prediction_date', '') for p in region_predictions),
-                            "model_confidence": round(sum(p.get('confidence_interval_upper', 0) - p.get('confidence_interval_lower', 0) for p in region_predictions) / len(region_predictions), 2)
+                            "model_confidence": _confidence_width(region_predictions),
+                            "models_present": " + ".join(models_present),
+                            "model_breakdown": model_breakdown,
                         })
                 
                 # Sort by pollution level descending
@@ -3576,6 +3647,12 @@ async def generate_report(
                 # Overall prediction summary
                 all_pollution_levels = [p.get('predicted_pollution_level', 0) for p in predictions]
                 overall_avg = sum(all_pollution_levels) / len(all_pollution_levels) if all_pollution_levels else 0
+                model_stats = [
+                    _summarize_model(rows, model_type)
+                    for model_type, rows in sorted(model_analysis.items())
+                ]
+                models_present = sorted({item["model_label"] for item in model_stats})
+                comparison_ready = {'LSTM', 'GRU'}.issubset(set(models_present))
                 
                 prediction_analytics = {
                     "summary": {
@@ -3585,9 +3662,12 @@ async def generate_report(
                         "date_range":             f"{request.date_range_days} days",
                         "model_version":          predictions[0].get('model_version', 'Unknown') if predictions else 'Unknown',
                         "prediction_reliability": "High" if len(predictions) > 20 else "Medium" if len(predictions) > 5 else "Low",
-                        "models_available":       "LSTM & GRU (select model_type=both to compare)",
+                        "models_available":       "LSTM & GRU Forecasting",
+                        "models_included":        " + ".join(models_present) if models_present else "None",
+                        "comparison_ready":       comparison_ready,
                     },
                     "regional_analysis": regional_stats,
+                    "model_comparison": model_stats,
                     "risk_assessment": {
                         "highest_risk_region": regional_stats[0]['region'] if regional_stats else "None",
                         "lowest_risk_region": regional_stats[-1]['region'] if regional_stats else "None",
@@ -3643,7 +3723,7 @@ async def generate_report(
         if request.report_type in ['detection', 'both'] and detections:
             report_data['report_metadata']['data_sources'].append("YOLO Detection Results")
         if request.report_type in ['prediction', 'both'] and predictions:
-            report_data['report_metadata']['data_sources'].append("LSTM Pollution Predictions")
+            report_data['report_metadata']['data_sources'].append("LSTM & GRU Pollution Predictions")
         
         # Generate recommendations based on findings
         recommendations = []
@@ -3709,7 +3789,8 @@ async def generate_report(
         elif request.report_type == 'prediction':
             total_predictions = report_data.get('prediction_analytics', {}).get('summary', {}).get('total_predictions', 0)
             regions = report_data.get('prediction_analytics', {}).get('summary', {}).get('regions_analyzed', 0)
-            report_data['executive_summary'] = f"LSTM-based pollution forecasting analysis covering {total_predictions} predictions across {regions} ocean regions over {request.date_range_days} days. Includes trend analysis, risk assessment, and future outlook for marine pollution levels."
+            models_included = report_data.get('prediction_analytics', {}).get('summary', {}).get('models_included', 'LSTM + GRU')
+            report_data['executive_summary'] = f"LSTM and GRU pollution forecasting analysis covering {total_predictions} predictions across {regions} ocean regions over {request.date_range_days} days. Models included: {models_included}. Includes trend analysis, risk assessment, model comparison, and future outlook for marine pollution levels."
             
         else:  # both
             det_count = report_data.get('detection_analytics', {}).get('summary', {}).get('total_detections', 0)

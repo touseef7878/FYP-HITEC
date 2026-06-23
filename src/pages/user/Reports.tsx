@@ -151,7 +151,7 @@ export default function ReportsPage() {
       if (error.message.includes("No detection data available")) {
         errorMessage = "No detection data found. Please perform some detections first.";
       } else if (error.message.includes("No prediction data available")) {
-        errorMessage = "No prediction data found. Please generate some LSTM predictions first.";
+        errorMessage = "No prediction data found. Please generate LSTM and GRU predictions first.";
       } else if (error.message.includes("No data available")) {
         errorMessage = "No data available. Please perform detections or generate predictions first.";
       } else if (error.name === 'TypeError' && error.message.includes('fetch')) {
@@ -318,7 +318,7 @@ export default function ReportsPage() {
                       Create a PDF report with detection statistics, charts, and analysis.
                     </p>
                     <div className="flex flex-wrap gap-1.5">
-                      {["Detection Summary", "Class Distribution", "Trend Analysis", "LSTM Predictions", "GRU Comparison", "Email Verification"].map(b => (
+                      {["Detection Summary", "Class Distribution", "Trend Analysis", "LSTM + GRU Forecasts", "Model Comparison", "Email Verification"].map(b => (
                         <Badge key={b} variant="secondary" className="text-[11px] font-semibold">{b}</Badge>
                       ))}
                     </div>

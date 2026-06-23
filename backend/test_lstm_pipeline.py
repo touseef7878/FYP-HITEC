@@ -29,7 +29,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 from dotenv import load_dotenv
-load_dotenv()
+# Load from project root .env — scripts live in backend/, so root is one level up
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"), override=False)
 
 # ── colour helpers ────────────────────────────────────────────────────────────
 GREEN  = "\033[92m"

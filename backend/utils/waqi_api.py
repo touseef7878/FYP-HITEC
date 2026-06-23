@@ -13,8 +13,9 @@ import os
 from dotenv import load_dotenv
 import time
 
-# Load environment variables
-load_dotenv()
+# Load environment variables from the project root .env (single source of truth)
+_ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+load_dotenv(os.path.join(_ROOT_DIR, ".env"), override=False)
 
 logger = logging.getLogger(__name__)
 

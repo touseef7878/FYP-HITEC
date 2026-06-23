@@ -15,11 +15,14 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from dotenv import load_dotenv
 
+# Always resolve env from the project root (two levels up from core/)
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 BACKEND_DIR = os.path.dirname(os.path.dirname(__file__))
 
-load_dotenv(os.path.join(ROOT_DIR, ".env"))
-load_dotenv(os.path.join(BACKEND_DIR, ".env"), override=True)
+# Load from root .env only — single source of truth
+# backend/.env is no longer used; all variables live in the root .env
+_root_env = os.path.join(ROOT_DIR, ".env")
+load_dotenv(_root_env, override=False)
 
 logger = logging.getLogger(__name__)
 

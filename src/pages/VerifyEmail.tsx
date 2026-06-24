@@ -39,8 +39,8 @@ export default function VerifyEmailPage() {
 
     const verify = async () => {
       try {
-        // Use token as-is from URL — do NOT re-encode, it's already URL-decoded by the browser
-        const res = await fetch(`${API_URL}/api/auth/verify-email?token=${token}`);
+        // Use token as-is from URL — browser already URL-decoded it from the email link
+        const res = await fetch(`${API_URL}/api/auth/verify-email?token=${encodeURIComponent(token)}`);
         const data = await res.json();
 
         if (!res.ok) {

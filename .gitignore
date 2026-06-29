@@ -109,3 +109,8 @@ desktop.ini
 thesis.py
 thesis_*.py
 *_thesis.py
+thesis template/
+thesis_final/
+
+# ── YOLOv2 / experiment folders (do not push) ─────────────────────────────────
+Yolov26s on new dataset/

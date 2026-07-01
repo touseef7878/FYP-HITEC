@@ -1,0 +1,40 @@
+{
+  "sequence_length": 30,
+  "n_features": 13,
+  "lstm_units": [
+    64,
+    32
+  ],
+  "dropout_rate": 0.2,
+  "learning_rate": 0.001,
+  "batch_size": 32,
+  "epochs": 10,
+  "validation_split": 0.2,
+  "feature_names": [
+    "temperature",
+    "humidity",
+    "pressure",
+    "wind_speed",
+    "aqi",
+    "pm25",
+    "ocean_temp",
+    "precipitation",
+    "salinity",
+    "chlorophyll",
+    "pollution_lag1",
+    "pollution_lag7",
+    "pollution_lag14"
+  ],
+  "target_name": "pollution_level",
+  "created_at": null,
+  "last_trained": "2026-07-01T13:15:19.840409",
+  "training_samples": 2304,
+  "validation_mae": 1.531787201563517,
+  "validation_rmse": 1.993493729376436,
+  "validation_r2": 0.9432062021599616,
+  "directional_accuracy": 62.08695652173913,
+  "model_type": "GRU",
+  "within_5_units_pct": 97.39583333333334,
+  "within_10_units_pct": 100.0,
+  "region": "atlantic"
+}

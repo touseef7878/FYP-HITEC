@@ -1,0 +1,39 @@
+{
+  "sequence_length": 30,
+  "n_features": 13,
+  "lstm_units": [
+    64,
+    32
+  ],
+  "dropout_rate": 0.2,
+  "learning_rate": 0.001,
+  "batch_size": 32,
+  "epochs": 10,
+  "validation_split": 0.2,
+  "feature_names": [
+    "temperature",
+    "humidity",
+    "pressure",
+    "wind_speed",
+    "aqi",
+    "pm25",
+    "ocean_temp",
+    "precipitation",
+    "salinity",
+    "chlorophyll",
+    "pollution_lag1",
+    "pollution_lag7",
+    "pollution_lag14"
+  ],
+  "target_name": "pollution_level",
+  "created_at": null,
+  "last_trained": "2026-06-30T21:47:38.062573",
+  "training_samples": 2304,
+  "validation_mae": 2.053882811201943,
+  "validation_rmse": 2.6980896426870613,
+  "validation_r2": 0.8959639360386911,
+  "directional_accuracy": 57.913043478260875,
+  "within_5_units_pct": 94.44444444444444,
+  "within_10_units_pct": 99.47916666666666,
+  "region": "mediterranean"
+}

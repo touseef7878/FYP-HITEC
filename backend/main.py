@@ -399,9 +399,19 @@ async def favicon():
 #            plastic_bag, plastic_fragments, other_debris
 # Trained on Kaggle T4 GPU — 7 Roboflow datasets merged (~16,500 images)
 # 100 epochs, batch=16, imgsz=640, patience=20, augment=True
-WEIGHTS_PATH = os.path.abspath(
-    os.getenv("YOLO_WEIGHTS_PATH", os.path.join(BASE_DIR, "weights", "best.pt"))
-)
+WEIGHTS_PATH = os.getenv("YOLO_WEIGHTS_PATH", os.path.join(BASE_DIR, "weights", "best.pt"))
+# If the path is relative, resolve it relative to BASE_DIR (backend/) first,
+# then fall back to the project root — so it works regardless of launch CWD.
+if not os.path.isabs(WEIGHTS_PATH):
+    _candidate = os.path.abspath(os.path.join(BASE_DIR, WEIGHTS_PATH))
+    if not os.path.exists(_candidate):
+        # try resolving from project root as well
+        _candidate2 = os.path.abspath(WEIGHTS_PATH)
+        WEIGHTS_PATH = _candidate2 if os.path.exists(_candidate2) else _candidate
+    else:
+        WEIGHTS_PATH = _candidate
+else:
+    WEIGHTS_PATH = os.path.abspath(WEIGHTS_PATH)
 model = None
 _model_loading = False
 
